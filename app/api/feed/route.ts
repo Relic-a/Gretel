@@ -1,4 +1,4 @@
-import { parseChannelSort, parseTags } from "../../../lib/feed/input";
+import { parseChannelSort, parseFeedNodeWeights, parseTags } from "../../../lib/feed/input";
 import { createFeedObservation, logFeedObservation } from "../../../lib/feed/observation";
 import { createFeed } from "../../../lib/feed/service";
 
@@ -13,15 +13,23 @@ export async function POST(request: Request) {
     const tags = parseTags(body.tags);
     const channels = parseTags(body.channels);
     const channelSort = parseChannelSort(body.channelSort);
+    const weights = parseFeedNodeWeights(body.weights);
 
-    if (tags.length === 0 && channels.length === 0) {
+    if (tags.length === 0 && channels.length === 0 && prompt.length === 0) {
       return Response.json(
-        { error: "Enter at least one tag or channel to build a feed." },
+        { error: "Enter at least one tag, channel, or natural-language prompt to build a feed." },
         { status: 400 }
       );
     }
 
-    const feed = await createFeed(tags, channels, channelSort, prompt, observation);
+    if (Object.values(weights).every((weight) => weight === 0)) {
+      return Response.json(
+        { error: "Set at least one network weight above zero." },
+        { status: 400 }
+      );
+    }
+
+    const feed = await createFeed(tags, channels, channelSort, prompt, weights, observation);
 
     logFeedObservation(observation, {
       tags: tags.length,
@@ -31,7 +39,8 @@ export async function POST(request: Request) {
       searchVideos: feed.searchVideos,
       channelVideos: feed.channelVideos,
       finalVideos: feed.videos.length,
-      usedRecommendations: true
+      activeNodes: feed.nodes.filter((node) => node.weight > 0).length,
+      usedRecommendations: weights.relatedVideos > 0
     });
 
     return Response.json({
@@ -39,7 +48,9 @@ export async function POST(request: Request) {
       tags,
       channels,
       channelSort,
+      weights,
       queries: feed.queries,
+      nodes: feed.nodes,
       videos: feed.videos
     });
   } catch (error) {
@@ -53,4 +64,3 @@ export async function POST(request: Request) {
     );
   }
 }
-

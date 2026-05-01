@@ -8,6 +8,18 @@ export type FeedVideo = {
   query: string;
 };
 
+export type FeedNodeId = "tagSearch" | "channelVideos" | "naturalLanguage" | "relatedVideos";
+
+export type FeedNodeWeights = Record<FeedNodeId, number>;
+
+export type FeedNodeSummary = {
+  id: string;
+  label: string;
+  weight: number;
+  inputVideos: number;
+  outputVideos: number;
+};
+
 export type FeedObservation = {
   requestId: string;
   startedAt: number;
@@ -18,4 +30,3 @@ export type FeedObservation = {
     output?: Record<string, number | string | boolean>;
   }>;
 };
-

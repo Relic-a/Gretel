@@ -7,75 +7,33 @@ import {
   getTitle,
   getVideoId,
   getVideoIdFromLink,
-  nextUniqueVideo,
   promptAvoidsShorts,
   shouldKeepVideo
 } from "./video-utils";
 import { getYoutubeClient } from "./youtube-client";
 
-export async function blendVideosWithRecommendations(
+export async function recommendVideosFromSeeds(
   sourceVideos: FeedVideo[],
   prompt: string,
   observation: FeedObservation
 ) {
   return observeOperation(
     observation,
-    "feed.integrate_recommendations",
+    "feed.related_videos",
     { sourceVideos: sourceVideos.length },
     async () => {
       const seedLinks = sourceVideos
         .slice(0, RECOMMENDATION_SEEDS)
         .map((video) => `https://www.youtube.com/watch?v=${video.id}`);
+
+      if (seedLinks.length === 0) {
+        return { value: [], output: { recommendationVideos: 0 } };
+      }
+
       const recommendationVideos = await recommendVideosFromLinks(seedLinks, prompt, observation);
-
-      if (recommendationVideos.length === 0) {
-        return {
-          value: sourceVideos,
-          output: {
-            recommendationVideos: 0,
-            integratedVideos: sourceVideos.length
-          }
-        };
-      }
-
-      const seen = new Set<string>();
-      const blended: FeedVideo[] = [];
-      let recommendationIndex = 0;
-      let searchIndex = 0;
-
-      while (blended.length < MAX_VIDEOS) {
-        let added = false;
-
-        for (let count = 0; count < 2; count += 1) {
-          const video = nextUniqueVideo(recommendationVideos, seen, recommendationIndex);
-          recommendationIndex = video.nextIndex;
-
-          if (video.item) {
-            blended.push(video.item);
-            added = true;
-          }
-        }
-
-        const video = nextUniqueVideo(sourceVideos, seen, searchIndex);
-        searchIndex = video.nextIndex;
-
-        if (video.item) {
-          blended.push(video.item);
-          added = true;
-        }
-
-        if (!added) {
-          break;
-        }
-      }
-
-      const videos = blended.slice(0, MAX_VIDEOS);
       return {
-        value: videos,
-        output: {
-          recommendationVideos: recommendationVideos.length,
-          integratedVideos: videos.length
-        }
+        value: recommendationVideos,
+        output: { recommendationVideos: recommendationVideos.length }
       };
     }
   );

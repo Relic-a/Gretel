@@ -10,25 +10,60 @@ type FeedVideo = {
   query: string;
 };
 
+type FeedNodeId = "tagSearch" | "channelVideos" | "naturalLanguage" | "relatedVideos";
+
+type FeedNodeWeights = Record<FeedNodeId, number>;
+
+type FeedNodeSummary = {
+  id: FeedNodeId;
+  label: string;
+  weight: number;
+  inputVideos: number;
+  outputVideos: number;
+};
+
 type FeedResponse = {
   prompt?: string;
   tags: string[];
   channels: string[];
   channelSort: "latest" | "popular";
+  weights: FeedNodeWeights;
   queries: string[];
+  nodes: FeedNodeSummary[];
   videos: FeedVideo[];
 };
 
 const starterTags = "AI engineering, TypeScript, product design";
+const starterWeights: FeedNodeWeights = {
+  tagSearch: 2,
+  channelVideos: 2,
+  naturalLanguage: 1,
+  relatedVideos: 3
+};
+
+const nodeControls: Array<{ id: FeedNodeId; label: string }> = [
+  { id: "tagSearch", label: "Tag search" },
+  { id: "channelVideos", label: "Channel videos" },
+  { id: "naturalLanguage", label: "Natural language" },
+  { id: "relatedVideos", label: "Related videos" }
+];
 
 export default function Home() {
   const [tags, setTags] = useState(starterTags);
   const [channels, setChannels] = useState("");
   const [channelSort, setChannelSort] = useState<"latest" | "popular">("latest");
   const [prompt, setPrompt] = useState("");
+  const [weights, setWeights] = useState<FeedNodeWeights>(starterWeights);
   const [feed, setFeed] = useState<FeedResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  function updateWeight(id: FeedNodeId, value: string) {
+    setWeights((current) => ({
+      ...current,
+      [id]: Number(value)
+    }));
+  }
 
   async function createFeed(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -43,7 +78,8 @@ export default function Home() {
           tags,
           channels,
           channelSort,
-          prompt
+          prompt,
+          weights
         })
       });
       const data = await response.json();
@@ -67,8 +103,8 @@ export default function Home() {
           <p className="eyebrow">Gretel MVP</p>
           <h1>Tell the algorithm what you want to watch.</h1>
           <p className="intro">
-            Gretel searches YouTube directly from your tags, blends the
-            results, and gives you an embedded feed.
+            Gretel runs each input through weighted nodes, sends seed videos
+            into related-video discovery, and mixes every line into one feed.
           </p>
         </div>
 
@@ -110,8 +146,27 @@ export default function Home() {
             aria-describedby="prompt-status"
           />
           <p id="prompt-status" className="field-note">
-            Optional. Use this for lightweight filters like avoiding shorts.
+            Optional. This works as its own search line and as lightweight tuning,
+            like avoiding shorts.
           </p>
+
+          <fieldset className="network-settings">
+            <legend>Network weights</legend>
+            {nodeControls.map((node) => (
+              <label className="weight-control" key={node.id}>
+                <span>{node.label}</span>
+                <input
+                  type="range"
+                  min="0"
+                  max="5"
+                  step="1"
+                  value={weights[node.id]}
+                  onChange={(event) => updateWeight(node.id, event.target.value)}
+                />
+                <strong>{weights[node.id]}</strong>
+              </label>
+            ))}
+          </fieldset>
 
           <button type="submit" disabled={loading}>
             {loading ? "Curating..." : "Build feed"}
@@ -125,7 +180,7 @@ export default function Home() {
         <section className="results" aria-live="polite">
           <div className="results-head">
             <div>
-              <p className="eyebrow">Generated searches</p>
+              <p className="eyebrow">Weighted network</p>
               <h2>{feed.videos.length} videos</h2>
             </div>
             <div className="tag-list" aria-label="Tags used">
@@ -141,6 +196,18 @@ export default function Home() {
                 <span key={query}>{query}</span>
               ))}
             </div>
+          </div>
+
+          <div className="node-grid" aria-label="Feed node results">
+            {feed.nodes.map((node) => (
+              <article className="node-card" key={node.id}>
+                <p>{node.label}</p>
+                <strong>{node.weight}</strong>
+                <span>
+                  {node.outputVideos} of {node.inputVideos} used
+                </span>
+              </article>
+            ))}
           </div>
 
           <div className="video-grid">
