@@ -21,6 +21,8 @@ type FeedObservation = {
   }>;
 };
 
+type ChannelSort = "latest" | "popular";
+
 const MAX_QUERIES = 5;
 const MAX_VIDEOS = 18;
 const RECOMMENDATION_SEEDS = 4;
@@ -34,27 +36,39 @@ export async function POST(request: Request) {
     const body = await request.json();
     const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
     const tags = parseTags(body.tags);
+    const channels = parseTags(body.channels);
+    const channelSort = parseChannelSort(body.channelSort);
 
-    if (tags.length === 0) {
+    if (tags.length === 0 && channels.length === 0) {
       return Response.json(
-        { error: "Enter at least one tag to build a feed." },
+        { error: "Enter at least one tag or channel to build a feed." },
         { status: 400 }
       );
     }
 
     const queries = createQueries(tags);
-    const searchVideosForQueries = await searchVideos(queries, prompt, observation);
-    const videos = await blendTagSearchWithRecommendations(searchVideosForQueries, prompt, observation);
+    const searchVideosForQueries =
+      queries.length > 0 ? await searchVideos(queries, prompt, observation) : [];
+    const channelVideos =
+      channels.length > 0 ? await fetchChannelVideos(channels, channelSort, prompt, observation) : [];
+    const videos = await blendVideosWithRecommendations(
+      [...searchVideosForQueries, ...channelVideos],
+      prompt,
+      observation
+    );
 
     logFeedObservation(observation, {
       tags: tags.length,
+      channels: channels.length,
+      channelSort,
       queries: queries.length,
       searchVideos: searchVideosForQueries.length,
+      channelVideos: channelVideos.length,
       finalVideos: videos.length,
       usedRecommendations: true
     });
 
-    return Response.json({ prompt: prompt || undefined, tags, queries, videos });
+    return Response.json({ prompt: prompt || undefined, tags, channels, channelSort, queries, videos });
   } catch (error) {
     logFeedObservation(observation, {
       error: error instanceof Error ? error.message : String(error)
@@ -76,6 +90,10 @@ function parseTags(value: unknown) {
   return cleanQueries(
     values.flatMap((entry) => (typeof entry === "string" ? entry.split(/[,\n]/) : []))
   );
+}
+
+function parseChannelSort(value: unknown): ChannelSort {
+  return value === "popular" ? "popular" : "latest";
 }
 
 function cleanQueries(values: unknown[]) {
@@ -156,28 +174,7 @@ async function searchVideos(
         videosByQuery.push(queryVideos);
       }
 
-      const mixed: FeedVideo[] = [];
-
-      for (let index = 0; mixed.length < MAX_VIDEOS; index += 1) {
-        let added = false;
-
-        for (const queryVideos of videosByQuery) {
-          const video = queryVideos[index];
-
-          if (video) {
-            mixed.push(video);
-            added = true;
-          }
-
-          if (mixed.length >= MAX_VIDEOS) {
-            break;
-          }
-        }
-
-        if (!added) {
-          break;
-        }
-      }
+      const mixed = mixVideoBuckets(videosByQuery);
 
       return {
         value: mixed,
@@ -190,27 +187,177 @@ async function searchVideos(
   );
 }
 
-async function blendTagSearchWithRecommendations(
-  searchVideosForQueries: FeedVideo[],
+async function fetchChannelVideos(
+  channels: string[],
+  sort: ChannelSort,
+  prompt: string,
+  observation: FeedObservation
+) {
+  return observeOperation(
+    observation,
+    "youtube.channel_videos",
+    { channels: channels.length, sort },
+    async () => {
+      if (!youtubeClient) {
+        youtubeClient = Innertube.create();
+      }
+
+      const youtube = await youtubeClient;
+      const seen = new Set<string>();
+      const videosByChannel: FeedVideo[][] = [];
+      const avoidShorts = /\b(no|avoid|exclude|without)\s+shorts?\b/i.test(prompt);
+      const perChannelLimit = Math.max(3, Math.ceil(MAX_VIDEOS / channels.length));
+
+      for (const channelName of channels) {
+        const channelId = await resolveChannelId(channelName, observation);
+
+        if (!channelId) {
+          videosByChannel.push([]);
+          continue;
+        }
+
+        try {
+          const channel = await youtube.getChannel(channelId);
+          const latestChannelVideos = await channel.getVideos();
+          const fallbackVideos = getChannelVideoItems(latestChannelVideos);
+          const sortedChannelVideos = await applyChannelSort(latestChannelVideos, sort, youtube);
+          const sortedVideos = getChannelVideoItems(sortedChannelVideos);
+          const videosToRead = sortedVideos.length > 0 ? sortedVideos : fallbackVideos;
+          const sourceVideos =
+            sort === "popular"
+              ? [...videosToRead].sort((a, b) => getViewCount(b) - getViewCount(a))
+              : videosToRead;
+
+          const channelVideos: FeedVideo[] = [];
+
+          for (const video of sourceVideos) {
+            const id = getVideoId(video);
+            const duration = getDuration(video);
+
+            if (!id || seen.has(id)) {
+              continue;
+            }
+
+            if (avoidShorts && getDurationSeconds(duration) > 0 && getDurationSeconds(duration) < 60) {
+              continue;
+            }
+
+            seen.add(id);
+            channelVideos.push({
+              id,
+              title: getTitle(video),
+              author: getChannelVideoAuthor(video, channelName),
+              duration,
+              query: `${channelName} · ${sort}`
+            });
+
+            if (channelVideos.length >= perChannelLimit) {
+              break;
+            }
+          }
+
+          videosByChannel.push(channelVideos);
+        } catch (error) {
+          console.error(`YouTube channel fetch failed for "${channelName}":`, error);
+          videosByChannel.push([]);
+        }
+      }
+
+      const mixed = mixVideoBuckets(videosByChannel);
+
+      return {
+        value: mixed,
+        output: {
+          rawVideos: videosByChannel.reduce((total, videos) => total + videos.length, 0),
+          integratedVideos: mixed.length
+        }
+      };
+    }
+  );
+}
+
+async function resolveChannelId(channelName: string, observation: FeedObservation) {
+  return observeOperation(
+    observation,
+    "youtube.resolve_channel",
+    { channel: channelName },
+    async () => {
+      const directId = getChannelIdFromInput(channelName);
+
+      if (directId) {
+        return {
+          value: directId,
+          output: { resolved: true, direct: true }
+        };
+      }
+
+      if (!youtubeClient) {
+        youtubeClient = Innertube.create();
+      }
+
+      const youtube = await youtubeClient;
+      const results = await youtube.search(channelName, { type: "channel" });
+      const channel = results.channels[0];
+      const channelId = getChannelId(channel);
+
+      return {
+        value: channelId,
+        output: { resolved: Boolean(channelId), direct: false }
+      };
+    }
+  );
+}
+
+async function applyChannelSort<T extends { sort_filters?: string[]; applySort?: (sort: string) => Promise<T> }>(
+  channel: T,
+  sort: ChannelSort,
+  youtube: Innertube
+) {
+  const preferred = sort === "popular" ? ["Popular"] : ["Latest", "Recently uploaded", "Newest"];
+  const selectedSort = preferred.find((option) => channel.sort_filters?.includes(option));
+
+  if (selectedSort && channel.applySort) {
+    try {
+      return channel.applySort(selectedSort);
+    } catch {
+      // Recent youtubei.js channel pages expose sort chips without wiring sort_filters.
+    }
+  }
+
+  const selectedChip = getChannelSortChip(channel, preferred);
+
+  if (!selectedChip) {
+    return channel;
+  }
+
+  try {
+    return selectedChip.endpoint.call(youtube.actions, { parse: true });
+  } catch {
+    return channel;
+  }
+}
+
+async function blendVideosWithRecommendations(
+  sourceVideos: FeedVideo[],
   prompt: string,
   observation: FeedObservation
 ) {
   return observeOperation(
     observation,
     "feed.integrate_recommendations",
-    { searchVideos: searchVideosForQueries.length },
+    { sourceVideos: sourceVideos.length },
     async () => {
-      const seedLinks = searchVideosForQueries
+      const seedLinks = sourceVideos
         .slice(0, RECOMMENDATION_SEEDS)
         .map((video) => `https://www.youtube.com/watch?v=${video.id}`);
       const recommendationVideos = await recommendVideosFromLinks(seedLinks, prompt, observation);
 
       if (recommendationVideos.length === 0) {
         return {
-          value: searchVideosForQueries,
+          value: sourceVideos,
           output: {
             recommendationVideos: 0,
-            integratedVideos: searchVideosForQueries.length
+            integratedVideos: sourceVideos.length
           }
         };
       }
@@ -233,7 +380,7 @@ async function blendTagSearchWithRecommendations(
           }
         }
 
-        const video = nextUniqueVideo(searchVideosForQueries, seen, searchIndex);
+        const video = nextUniqueVideo(sourceVideos, seen, searchIndex);
         searchIndex = video.nextIndex;
 
         if (video.item) {
@@ -389,6 +536,33 @@ function nextUniqueVideo(videos: FeedVideo[], seen: Set<string>, startIndex: num
   return { item: null, nextIndex: videos.length };
 }
 
+function mixVideoBuckets(videoBuckets: FeedVideo[][]) {
+  const mixed: FeedVideo[] = [];
+
+  for (let index = 0; mixed.length < MAX_VIDEOS; index += 1) {
+    let added = false;
+
+    for (const videos of videoBuckets) {
+      const video = videos[index];
+
+      if (video) {
+        mixed.push(video);
+        added = true;
+      }
+
+      if (mixed.length >= MAX_VIDEOS) {
+        break;
+      }
+    }
+
+    if (!added) {
+      break;
+    }
+  }
+
+  return mixed;
+}
+
 function getVideoIdFromLink(link: string) {
   try {
     const url = new URL(link);
@@ -401,6 +575,170 @@ function getVideoIdFromLink(link: string) {
   } catch {
     return "";
   }
+}
+
+function getChannelIdFromInput(input: string) {
+  if (/^UC[\w-]{20,}$/.test(input)) {
+    return input;
+  }
+
+  try {
+    const url = new URL(input);
+    const channelMatch = url.pathname.match(/\/channel\/([^/?]+)/);
+
+    if (channelMatch) {
+      return channelMatch[1];
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
+function getChannelId(channel: unknown) {
+  if (!channel || typeof channel !== "object") {
+    return "";
+  }
+
+  if ("id" in channel) {
+    return getText(channel.id);
+  }
+
+  if ("channel_id" in channel) {
+    return getText(channel.channel_id);
+  }
+
+  if ("endpoint" in channel) {
+    return getBrowseId(channel.endpoint);
+  }
+
+  return "";
+}
+
+function getChannelVideoItems(page: unknown): unknown[] {
+  if (!page || typeof page !== "object") {
+    return [];
+  }
+
+  if ("videos" in page && Array.isArray(page.videos)) {
+    return page.videos;
+  }
+
+  const richGridVideos = getRichGridVideos(page);
+
+  if (richGridVideos.length > 0) {
+    return richGridVideos;
+  }
+
+  if ("on_response_received_actions_memo" in page) {
+    const memo = page.on_response_received_actions_memo;
+
+    if (memo instanceof Map) {
+      const richItems = memo.get("RichItem");
+
+      if (Array.isArray(richItems)) {
+        return richItems.flatMap((item) => getContentItem(item));
+      }
+    }
+  }
+
+  return [];
+}
+
+function getRichGridVideos(page: unknown): unknown[] {
+  if (!page || typeof page !== "object" || !("current_tab" in page)) {
+    return [];
+  }
+
+  const tab = page.current_tab;
+
+  if (!tab || typeof tab !== "object" || !("content" in tab)) {
+    return [];
+  }
+
+  const content = tab.content;
+
+  if (!content || typeof content !== "object" || !("contents" in content) || !Array.isArray(content.contents)) {
+    return [];
+  }
+
+  return content.contents.flatMap((item) => getContentItem(item));
+}
+
+function getContentItem(item: unknown): unknown[] {
+  if (!item || typeof item !== "object" || !("content" in item)) {
+    return [];
+  }
+
+  const content = item.content;
+
+  if (content && typeof content === "object" && getVideoId(content)) {
+    return [content];
+  }
+
+  return [];
+}
+
+function getChannelSortChip(page: unknown, labels: string[]) {
+  if (!page || typeof page !== "object" || !("current_tab" in page)) {
+    return null;
+  }
+
+  const tab = page.current_tab;
+
+  if (!tab || typeof tab !== "object" || !("content" in tab)) {
+    return null;
+  }
+
+  const content = tab.content;
+
+  if (!content || typeof content !== "object" || !("header" in content)) {
+    return null;
+  }
+
+  const header = content.header;
+
+  if (!header || typeof header !== "object" || !("chips" in header) || !Array.isArray(header.chips)) {
+    return null;
+  }
+
+  for (const chip of header.chips) {
+    if (!chip || typeof chip !== "object" || !("text" in chip) || !("endpoint" in chip)) {
+      continue;
+    }
+
+    const endpoint = chip.endpoint;
+    const text = getText(chip.text);
+
+    if (
+      labels.includes(text) &&
+      endpoint &&
+      typeof endpoint === "object" &&
+      "call" in endpoint &&
+      typeof endpoint.call === "function"
+    ) {
+      return { endpoint };
+    }
+  }
+
+  return null;
+}
+
+function getBrowseId(endpoint: unknown): string {
+  if (!endpoint || typeof endpoint !== "object") {
+    return "";
+  }
+
+  if ("payload" in endpoint) {
+    const payload = endpoint.payload;
+
+    if (payload && typeof payload === "object" && "browseId" in payload) {
+      return getText(payload.browseId);
+    }
+  }
+
+  return "";
 }
 
 function getVideoId(video: unknown) {
@@ -487,6 +825,16 @@ function getAuthor(video: unknown) {
   return "Unknown channel";
 }
 
+function getChannelVideoAuthor(video: unknown, channelName: string) {
+  const author = getAuthor(video);
+
+  if (!author || author === "N/A" || author === "Unknown channel") {
+    return channelName;
+  }
+
+  return author;
+}
+
 function getDuration(video: unknown) {
   if (!video || typeof video !== "object") {
     return "";
@@ -513,6 +861,17 @@ function getDuration(video: unknown) {
   }
 
   return "";
+}
+
+function getViewCount(video: unknown) {
+  if (!video || typeof video !== "object" || !("view_count" in video)) {
+    return 0;
+  }
+
+  const text = getText(video.view_count);
+  const count = Number(text.replace(/[^\d]/g, ""));
+
+  return Number.isFinite(count) ? count : 0;
 }
 
 function getAuthorFromMetadataRows(metadata: unknown) {

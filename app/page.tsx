@@ -13,6 +13,8 @@ type FeedVideo = {
 type FeedResponse = {
   prompt?: string;
   tags: string[];
+  channels: string[];
+  channelSort: "latest" | "popular";
   queries: string[];
   videos: FeedVideo[];
 };
@@ -21,6 +23,8 @@ const starterTags = "AI engineering, TypeScript, product design";
 
 export default function Home() {
   const [tags, setTags] = useState(starterTags);
+  const [channels, setChannels] = useState("");
+  const [channelSort, setChannelSort] = useState<"latest" | "popular">("latest");
   const [prompt, setPrompt] = useState("");
   const [feed, setFeed] = useState<FeedResponse | null>(null);
   const [error, setError] = useState("");
@@ -37,6 +41,8 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tags,
+          channels,
+          channelSort,
           prompt
         })
       });
@@ -74,8 +80,25 @@ export default function Home() {
             onChange={(event) => setTags(event.target.value)}
             minLength={2}
             placeholder="AI engineering, TypeScript, product design"
-            required
           />
+
+          <label htmlFor="channels">Channels</label>
+          <input
+            id="channels"
+            value={channels}
+            onChange={(event) => setChannels(event.target.value)}
+            placeholder="Fireship, ThePrimeTime, @veritasium"
+          />
+
+          <label htmlFor="channel-sort">Channel sort</label>
+          <select
+            id="channel-sort"
+            value={channelSort}
+            onChange={(event) => setChannelSort(event.target.value as "latest" | "popular")}
+          >
+            <option value="latest">Latest</option>
+            <option value="popular">Popular</option>
+          </select>
 
           <label htmlFor="prompt">Natural-language tuning</label>
           <textarea
@@ -108,6 +131,9 @@ export default function Home() {
             <div className="tag-list" aria-label="Tags used">
               {feed.tags.map((tag) => (
                 <span key={tag}>{tag}</span>
+              ))}
+              {feed.channels.map((channel) => (
+                <span key={channel}>{channel}</span>
               ))}
             </div>
             <div className="query-list">
