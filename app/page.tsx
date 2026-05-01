@@ -1,0 +1,144 @@
+"use client";
+
+import { FormEvent, useState } from "react";
+
+type FeedVideo = {
+  id: string;
+  title: string;
+  author: string;
+  duration: string;
+  query: string;
+};
+
+type FeedResponse = {
+  prompt?: string;
+  tags: string[];
+  queries: string[];
+  videos: FeedVideo[];
+};
+
+const starterTags = "AI engineering, TypeScript, product design";
+
+export default function Home() {
+  const [tags, setTags] = useState(starterTags);
+  const [prompt, setPrompt] = useState("");
+  const [feed, setFeed] = useState<FeedResponse | null>(null);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  async function createFeed(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setError("");
+    setLoading(true);
+
+    try {
+      const response = await fetch("/api/feed", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tags,
+          prompt
+        })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not create feed.");
+      }
+
+      setFeed(data);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not create feed.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  return (
+    <main className="shell">
+      <section className="composer">
+        <div>
+          <p className="eyebrow">Gretel MVP</p>
+          <h1>Tell the algorithm what you want to watch.</h1>
+          <p className="intro">
+            Gretel searches YouTube directly from your tags, blends the
+            results, and gives you an embedded feed.
+          </p>
+        </div>
+
+        <form onSubmit={createFeed} className="feed-form">
+          <label htmlFor="tags">Tags</label>
+          <input
+            id="tags"
+            value={tags}
+            onChange={(event) => setTags(event.target.value)}
+            minLength={2}
+            placeholder="AI engineering, TypeScript, product design"
+            required
+          />
+
+          <label htmlFor="prompt">Natural-language tuning</label>
+          <textarea
+            id="prompt"
+            value={prompt}
+            onChange={(event) => setPrompt(event.target.value)}
+            minLength={8}
+            placeholder="Describe topics, tone, formats, creators, and what to avoid."
+            aria-describedby="prompt-status"
+          />
+          <p id="prompt-status" className="field-note">
+            Optional. Use this for lightweight filters like avoiding shorts.
+          </p>
+
+          <button type="submit" disabled={loading}>
+            {loading ? "Curating..." : "Build feed"}
+          </button>
+        </form>
+
+        {error && <p className="error">{error}</p>}
+      </section>
+
+      {feed && (
+        <section className="results" aria-live="polite">
+          <div className="results-head">
+            <div>
+              <p className="eyebrow">Generated searches</p>
+              <h2>{feed.videos.length} videos</h2>
+            </div>
+            <div className="tag-list" aria-label="Tags used">
+              {feed.tags.map((tag) => (
+                <span key={tag}>{tag}</span>
+              ))}
+            </div>
+            <div className="query-list">
+              {feed.queries.map((query) => (
+                <span key={query}>{query}</span>
+              ))}
+            </div>
+          </div>
+
+          <div className="video-grid">
+            {feed.videos.map((video) => (
+              <article className="video-card" key={video.id}>
+                <iframe
+                  src={`https://www.youtube.com/embed/${video.id}`}
+                  title={video.title}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  allowFullScreen
+                />
+                <div className="video-meta">
+                  <p className="source-query">{video.query}</p>
+                  <h3>{video.title}</h3>
+                  <p>
+                    {video.author}
+                    {video.duration ? ` · ${video.duration}` : ""}
+                  </p>
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
+    </main>
+  );
+}
