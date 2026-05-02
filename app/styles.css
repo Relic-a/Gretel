@@ -281,6 +281,11 @@ button:disabled {
   font-weight: 700;
 }
 
+.tag-list .subscription-chip {
+  background: #e7efe9;
+  color: #17483e;
+}
+
 .query-list span,
 .source-query {
   border-radius: 999px;
@@ -341,6 +346,11 @@ button:disabled {
   border-radius: 8px;
 }
 
+.video-card.subscribed {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgb(24 106 94 / 0.12);
+}
+
 .video-card iframe {
   display: block;
   width: 100%;
@@ -353,10 +363,32 @@ button:disabled {
   padding: 13px 14px 16px;
 }
 
+.video-source-row,
+.channel-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.video-source-row {
+  flex-wrap: wrap;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
 .source-query {
   display: inline-block;
-  margin-bottom: 10px;
+  margin-bottom: 0;
   padding: 5px 8px;
+}
+
+.subscribed-mark {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.75rem;
+  font-weight: 800;
 }
 
 .video-meta h3 {
@@ -365,10 +397,34 @@ button:disabled {
   line-height: 1.35;
 }
 
-.video-meta p:last-child {
+.channel-row {
+  justify-content: space-between;
+}
+
+.channel-row p {
   margin-bottom: 0;
   color: var(--muted);
   font-size: 0.9rem;
+}
+
+.subscribe-button {
+  min-height: 34px;
+  padding: 0 10px;
+  border: 1px solid var(--accent);
+  background: #fff;
+  color: var(--accent-dark);
+  font-size: 0.82rem;
+}
+
+.subscribe-button:hover {
+  background: #e7efe9;
+}
+
+.subscribe-button:disabled {
+  cursor: default;
+  background: #eef5f1;
+  color: var(--accent-dark);
+  opacity: 1;
 }
 
 @media (max-width: 900px) {

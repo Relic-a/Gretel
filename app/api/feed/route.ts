@@ -27,7 +27,7 @@ export async function POST(request: Request) {
 
     if (tags.length === 0 && channels.length === 0 && prompt.length === 0) {
       return Response.json(
-        { error: "Enter at least one tag, channel, or natural-language prompt to build a feed." },
+        { error: "Enter at least one tag, subscription, or natural-language prompt to build a feed." },
         { status: 400 }
       );
     }

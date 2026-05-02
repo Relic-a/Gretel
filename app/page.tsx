@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 type FeedVideo = {
   id: string;
@@ -59,7 +59,7 @@ const starterWeights: FeedNodeWeights = {
 
 const nodeControls: Array<{ id: FeedNodeId; label: string }> = [
   { id: "tagSearch", label: "Tag search" },
-  { id: "channelVideos", label: "Channel videos" },
+  { id: "channelVideos", label: "Subscriptions" },
   { id: "naturalLanguage", label: "Natural language" },
   { id: "relatedVideos", label: "Related videos" },
   { id: "watchedVideos", label: "Watched neighbors" }
@@ -77,12 +77,27 @@ export default function Home() {
   const [feed, setFeed] = useState<FeedResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const subscriptions = useMemo(() => parseSubscriptionList(channels), [channels]);
+  const subscribedKeys = useMemo(
+    () => new Set(subscriptions.map((subscription) => normalizeSubscription(subscription))),
+    [subscriptions]
+  );
 
   function updateWeight(id: FeedNodeId, value: string) {
     setWeights((current) => ({
       ...current,
       [id]: Number(value)
     }));
+  }
+
+  function addSubscription(channel: string) {
+    const cleaned = channel.replace(/\s+/g, " ").trim();
+
+    if (!cleaned || subscribedKeys.has(normalizeSubscription(cleaned))) {
+      return;
+    }
+
+    setChannels([...subscriptions, cleaned].join(", "));
   }
 
   async function createFeed(event: FormEvent<HTMLFormElement>) {
@@ -314,15 +329,18 @@ export default function Home() {
             placeholder="AI engineering, TypeScript, product design"
           />
 
-          <label htmlFor="channels">Channels</label>
+          <label htmlFor="subscriptions">Subscriptions</label>
           <input
-            id="channels"
+            id="subscriptions"
             value={channels}
             onChange={(event) => setChannels(event.target.value)}
             placeholder="Fireship, ThePrimeTime, @veritasium"
           />
+          <p className="field-note">
+            Add subscriptions manually, or subscribe from a recommended channel below.
+          </p>
 
-          <label htmlFor="channel-sort">Channel sort</label>
+          <label htmlFor="channel-sort">Subscription sort</label>
           <select
             id="channel-sort"
             value={channelSort}
@@ -384,7 +402,9 @@ export default function Home() {
                 <span key={tag}>{tag}</span>
               ))}
               {feed.channels.map((channel) => (
-                <span key={channel}>{channel}</span>
+                <span className="subscription-chip" key={channel}>
+                  Subscribed: {channel}
+                </span>
               ))}
             </div>
             <div className="query-list">
@@ -407,29 +427,46 @@ export default function Home() {
           </div>
 
           <div className="video-grid">
-            {feed.videos.map((video) => (
-              <article className="video-card" key={video.id}>
-                <iframe
-                  id={`youtube-${video.id}`}
-                  src={`https://www.youtube.com/embed/${video.id}?enablejsapi=1${
-                    typeof window === "undefined"
-                      ? ""
-                      : `&origin=${encodeURIComponent(window.location.origin)}`
-                  }`}
-                  title={video.title}
-                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                  allowFullScreen
-                />
-                <div className="video-meta">
-                  <p className="source-query">{video.query}</p>
-                  <h3>{video.title}</h3>
-                  <p>
-                    {video.author}
-                    {video.duration ? ` · ${video.duration}` : ""}
-                  </p>
-                </div>
-              </article>
-            ))}
+            {feed.videos.map((video) => {
+              const subscribed = subscribedKeys.has(normalizeSubscription(video.author));
+
+              return (
+                <article className={subscribed ? "video-card subscribed" : "video-card"} key={video.id}>
+                  <iframe
+                    id={`youtube-${video.id}`}
+                    src={`https://www.youtube.com/embed/${video.id}?enablejsapi=1${
+                      typeof window === "undefined"
+                        ? ""
+                        : `&origin=${encodeURIComponent(window.location.origin)}`
+                    }`}
+                    title={video.title}
+                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                    allowFullScreen
+                  />
+                  <div className="video-meta">
+                    <div className="video-source-row">
+                      <p className="source-query">{video.query}</p>
+                      {subscribed && <span className="subscribed-mark">Subscribed</span>}
+                    </div>
+                    <h3>{video.title}</h3>
+                    <div className="channel-row">
+                      <p>
+                        {video.author}
+                        {video.duration ? ` · ${video.duration}` : ""}
+                      </p>
+                      <button
+                        type="button"
+                        className="subscribe-button"
+                        onClick={() => addSubscription(video.author)}
+                        disabled={subscribed}
+                      >
+                        {subscribed ? "Subscribed" : "Subscribe"}
+                      </button>
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
           </div>
         </section>
       )}
@@ -479,4 +516,15 @@ function loadYoutubeApi() {
   }
 
   return youtubeApiPromise;
+}
+
+function parseSubscriptionList(value: string) {
+  return value
+    .split(",")
+    .map((item) => item.replace(/\s+/g, " ").trim())
+    .filter(Boolean);
+}
+
+function normalizeSubscription(value: string) {
+  return value.replace(/\s+/g, " ").trim().toLowerCase();
 }

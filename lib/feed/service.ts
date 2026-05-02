@@ -48,7 +48,7 @@ export async function createFeed(
     },
     {
       id: "channelVideos",
-      label: "Channel videos",
+      label: "Subscription videos",
       weight: weights.channelVideos,
       videos: channelVideos
     },
