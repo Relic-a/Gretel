@@ -27,6 +27,10 @@ export async function POST(request: Request) {
     const requestedProfileId = typeof body.profileId === "string" ? body.profileId : "";
     const profile = getProfile(requestedProfileId) || listProfiles()[0];
 
+    if (!profile) {
+      return Response.json({ error: "Create a profile before building a feed." }, { status: 400 });
+    }
+
     if (tags.length === 0 && channels.length === 0) {
       return Response.json(
         { error: "Enter at least one tag or subscription to build a feed." },

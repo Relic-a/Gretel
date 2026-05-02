@@ -8,6 +8,7 @@ export type GretelConfig = {
     cacheRefreshHours: number;
     subscriptionRefreshMinutes: number;
     recommendationSeeds: number;
+    relatedVideosPerSeed: number;
     watchedRecommendationSeeds: number;
     maxNodeWeight: number;
     cacheReadMultiplier: number;
@@ -45,6 +46,7 @@ export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
     cacheRefreshHours: 6,
     subscriptionRefreshMinutes: 45,
     recommendationSeeds: 4,
+    relatedVideosPerSeed: 5,
     watchedRecommendationSeeds: 6,
     maxNodeWeight: 5,
     cacheReadMultiplier: 3,

@@ -188,12 +188,28 @@ export function getViewCount(video: unknown) {
   }
 
   const text = getText(video.view_count);
-  const count = Number(text.replace(/[^\d]/g, ""));
+  const match = text.match(/([\d,.]+)\s*([kmb])?/i);
 
-  return Number.isFinite(count) ? count : 0;
+  if (!match) {
+    return 0;
+  }
+
+  const count = Number(match[1].replace(/,/g, ""));
+  const suffix = (match[2] || "").toLowerCase();
+  const multiplier = suffix === "b" ? 1_000_000_000 : suffix === "m" ? 1_000_000 : suffix === "k" ? 1_000 : 1;
+
+  return Number.isFinite(count) ? count * multiplier : 0;
 }
 
 export function getPublishedText(video: unknown) {
+  if (video && typeof video === "object" && "published" in video) {
+    const published = getText(video.published);
+
+    if (published) {
+      return published;
+    }
+  }
+
   const texts = getMetadataTexts(video);
   return texts.find((text) => /\bago\b|premiered|streamed|published/i.test(text)) || "";
 }
@@ -315,11 +331,7 @@ function getThumbnailFromValue(value: unknown): string {
 
   const source = value as Record<string, unknown>;
 
-  if ("url" in value) {
-    return getText(source.url);
-  }
-
-  for (const key of ["thumbnails", "thumbnail", "image"] as const) {
+  for (const key of ["thumbnails", "thumbnail", "image", "author"] as const) {
     if (!(key in source)) {
       continue;
     }
@@ -330,11 +342,19 @@ function getThumbnailFromValue(value: unknown): string {
       : getThumbnailFromValue(candidate);
 
     if (thumbnail) {
-      return thumbnail;
+      return normalizeThumbnailUrl(thumbnail);
     }
   }
 
+  if ("url" in value) {
+    return normalizeThumbnailUrl(getText(source.url));
+  }
+
   return "";
+}
+
+function normalizeThumbnailUrl(url: string) {
+  return url.startsWith("//") ? `https:${url}` : url;
 }
 
 function getDurationFromThumbnail(contentImage: unknown) {

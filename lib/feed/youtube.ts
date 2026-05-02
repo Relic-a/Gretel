@@ -16,6 +16,7 @@ import {
   getViewCount,
   mixVideoBuckets,
   shouldKeepVideo,
+  getText,
   getTitle
 } from "./video-utils";
 
@@ -183,21 +184,24 @@ export async function fetchChannelVideos(
 export async function searchChannels(query: string, profileId: string) {
   const youtube = await getYoutubeClient(profileId);
   const results = await youtube.search(query, { type: "channel" });
+  let channels = channelsFromSearchResults(results.channels);
 
-  return results.channels.slice(0, 8).flatMap((channel: unknown) => {
-    const id = getChannelId(channel);
-    const name = getChannelName(channel);
+  if (channels.length === 0) {
+    const suggestions = await youtube.getSearchSuggestions(query);
+    const suggestion = suggestions.find((item) => normalizeSearch(item) !== normalizeSearch(query));
 
-    if (!id || !name) {
-      return [];
+    if (suggestion) {
+      const suggestedResults = await youtube.search(suggestion, { type: "channel" });
+      channels = channelsFromSearchResults(suggestedResults.channels);
     }
+  }
 
-    return [{
-      id,
-      name,
-      thumbnailUrl: getThumbnailUrl(channel)
-    }];
-  });
+  if (channels.length === 0) {
+    const videoResults = await youtube.search(query);
+    channels = channelsFromVideoResults(videoResults.videos || []);
+  }
+
+  return channels.slice(0, 8);
 }
 
 async function resolveChannelId(
@@ -221,8 +225,17 @@ async function resolveChannelId(
 
       const youtube = await getYoutubeClient(profileId);
       const results = await youtube.search(channelName, { type: "channel" });
-      const channel = results.channels[0];
-      const channelId = getChannelId(channel);
+      let channelId = getChannelId(results.channels[0]);
+
+      if (!channelId) {
+        const suggestions = await youtube.getSearchSuggestions(channelName);
+        const suggestion = suggestions.find((item) => normalizeSearch(item) !== normalizeSearch(channelName));
+
+        if (suggestion) {
+          const suggestedResults = await youtube.search(suggestion, { type: "channel" });
+          channelId = getChannelId(suggestedResults.channels[0]);
+        }
+      }
 
       return {
         value: channelId,
@@ -291,17 +304,67 @@ function trendingScore(video: unknown) {
   return getViewCount(video) / ageDays;
 }
 
+function channelsFromSearchResults(channels: unknown[] = []) {
+  return channels.flatMap((channel) => {
+    const id = getChannelId(channel);
+    const name = getChannelName(channel);
+
+    if (!id || !name) {
+      return [];
+    }
+
+    return [{
+      id,
+      name,
+      thumbnailUrl: getThumbnailUrl(channel)
+    }];
+  });
+}
+
+function channelsFromVideoResults(videos: unknown[]) {
+  const seen = new Set<string>();
+  const channels: Array<{ id: string; name: string; thumbnailUrl: string }> = [];
+
+  for (const video of videos) {
+    const author = video && typeof video === "object" && "author" in video ? video.author : null;
+
+    if (!author || typeof author !== "object") {
+      continue;
+    }
+
+    const id = "id" in author ? getText(author.id) : "";
+    const name = "name" in author ? getText(author.name) : "";
+
+    if (!id || !name || seen.has(id)) {
+      continue;
+    }
+
+    seen.add(id);
+    channels.push({
+      id,
+      name,
+      thumbnailUrl: getThumbnailUrl(author)
+    });
+  }
+
+  return channels;
+}
+
+function normalizeSearch(value: string) {
+  return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
 function getChannelName(channel: unknown) {
   if (!channel || typeof channel !== "object") {
     return "";
   }
 
   if ("author" in channel && channel.author && typeof channel.author === "object" && "name" in channel.author) {
-    return getTitle({ title: channel.author.name });
+    return getText(channel.author.name);
   }
 
   if ("name" in channel) {
-    return getTitle({ title: channel.name });
+    return getText(channel.name);
   }
 
   if ("title" in channel) {

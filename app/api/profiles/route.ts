@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   if (action === "delete") {
     const profileId = typeof body.profileId === "string" ? body.profileId : "";
     const fallbackProfile = deleteProfile(profileId);
-    return Response.json({ profiles: listProfiles(), profileId: fallbackProfile.id });
+    return Response.json({ profiles: listProfiles(), profileId: fallbackProfile?.id || "" });
   }
 
   const name = typeof body.name === "string" ? body.name : "";

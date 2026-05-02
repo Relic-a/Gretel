@@ -59,6 +59,7 @@ async function recommendVideosFromLinks(
     async () => {
       const youtube = await getYoutubeClient(profileId);
       const maxVideos = getGretelConfig().feed.maxVideos;
+      const maxVideosPerSeed = getGretelConfig().feed.relatedVideosPerSeed;
       const seen = new Set<string>();
       const recommendations: FeedVideo[] = [];
 
@@ -71,6 +72,7 @@ async function recommendVideosFromLinks(
 
         try {
           const info = await youtube.getInfo(seedId);
+          let seedRecommendations = 0;
 
           for (const video of info.watch_next_feed || []) {
             const id = getVideoId(video);
@@ -87,15 +89,20 @@ async function recommendVideosFromLinks(
               title: getTitle(video),
               author,
               duration,
-              query: `${sourceLabel} ${seedId}`,
+              query: sourceLabel,
               channelKey: normalizeChannelKey(author)
             });
+            seedRecommendations += 1;
 
             if (recommendations.length >= maxVideos) {
               return {
                 value: recommendations,
                 output: { recommendationVideos: recommendations.length }
               };
+            }
+
+            if (seedRecommendations >= maxVideosPerSeed) {
+              break;
             }
           }
         } catch (error) {

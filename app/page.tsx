@@ -65,7 +65,7 @@ export default function Home() {
     [channels]
   );
   const activeProfile = profiles.find((profile) => profile.id === profileId);
-  const needsProfile = booted && profiles.length <= 1 && channels.length === 0 && !feed;
+  const needsProfile = booted && profiles.length === 0 && !feed;
   const sideVideos = feed?.videos.filter((video) => video.id !== activeVideo?.id).slice(0, 12) || [];
 
   useEffect(() => {
@@ -83,7 +83,7 @@ export default function Home() {
       setChannels(saved?.channels || []);
       setBooted(true);
 
-      if ((saved?.tags?.length || saved?.channels?.length) && selectedProfileId) {
+      if (selectedProfileId && (saved?.tags?.length || saved?.channels?.length)) {
         await requestFeed({
           nextProfileId: selectedProfileId,
           nextTags: saved?.tags?.length ? saved.tags : starterTags,
@@ -190,18 +190,26 @@ export default function Home() {
       return;
     }
 
-    const controller = new AbortController();
+    let ignore = false;
     const timer = window.setTimeout(async () => {
-      const response = await fetch(
-        `/api/channels/search?q=${encodeURIComponent(channelDraft)}&profileId=${encodeURIComponent(profileId)}`,
-        { signal: controller.signal }
-      );
-      const data = await response.json();
-      setChannelResults(data.channels || []);
+      try {
+        const response = await fetch(
+          `/api/channels/search?q=${encodeURIComponent(channelDraft)}&profileId=${encodeURIComponent(profileId)}`
+        );
+        const data = await response.json();
+
+        if (!ignore) {
+          setChannelResults(data.channels || []);
+        }
+      } catch {
+        if (!ignore) {
+          setChannelResults([]);
+        }
+      }
     }, 300);
 
     return () => {
-      controller.abort();
+      ignore = true;
       window.clearTimeout(timer);
     };
   }, [channelDraft, profileId]);
@@ -218,24 +226,44 @@ export default function Home() {
     return selected?.id || "";
   }
 
-  async function createProfile() {
+  async function createProfileAndBuild(event?: FormEvent) {
+    event?.preventDefault();
+
     if (!profileName.trim()) {
       return;
     }
 
-    const response = await fetch("/api/profiles", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: profileName })
-    });
-    const data = await response.json();
-    setProfiles(data.profiles || []);
-    setProfileId(data.profileId || "");
-    setProfileName("");
-    setTags(starterTags);
-    setChannels([]);
-    setFeed(null);
-    setManageProfiles(false);
+    setError("");
+    setLoading(true);
+
+    try {
+      const response = await fetch("/api/profiles", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: profileName })
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not add this profile.");
+      }
+
+      setProfiles(data.profiles || []);
+      setProfileId(data.profileId || "");
+      setProfileName("");
+      setFeed(null);
+      setManageProfiles(false);
+
+      await requestFeed({
+        nextProfileId: data.profileId || "",
+        nextTags: tags,
+        nextChannels: channels,
+        forceRefresh: true
+      });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not add this profile.");
+      setLoading(false);
+    }
   }
 
   async function deleteProfile(id: string) {
@@ -439,7 +467,7 @@ export default function Home() {
         </section>
       )}
 
-      {(needsProfile || manageProfiles || !feed) && (
+      {(needsProfile || manageProfiles) && (
         <div className="modal-backdrop">
           <section className="profile-modal">
             <div className="modal-head">
@@ -464,15 +492,12 @@ export default function Home() {
               </div>
             )}
 
-            <form onSubmit={buildFeed} className="setup-form">
+            <form onSubmit={createProfileAndBuild} className="setup-form">
               <input
                 value={profileName}
                 onChange={(event) => setProfileName(event.target.value)}
                 placeholder="Profile name"
               />
-              <button type="button" className="secondary-button" onClick={createProfile}>
-                Add profile
-              </button>
 
               <TagEditor
                 label="Tags"
@@ -506,7 +531,7 @@ export default function Home() {
               )}
 
               <button type="submit" disabled={loading}>
-                {loading ? "Building feed..." : "Build feed"}
+                {loading ? "Building feed..." : "Add profile"}
               </button>
               {loading && <div className="progress-bar" />}
               {error && <p className="error">{error}</p>}

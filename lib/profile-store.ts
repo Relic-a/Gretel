@@ -99,7 +99,6 @@ export function getDatabase() {
         FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
       );
     `);
-    ensureDefaultProfile();
   }
 
   return db;
@@ -138,16 +137,9 @@ export function createProfile(name: string) {
 }
 
 export function deleteProfile(profileId: string) {
-  const profiles = listProfiles();
-
-  if (profiles.length <= 1) {
-    resetProfile(profileId);
-    return listProfiles()[0];
-  }
-
   getDatabase().prepare("DELETE FROM profiles WHERE id = ?").run(profileId);
   resetYoutubeProfileCache(profileId);
-  return listProfiles()[0];
+  return listProfiles()[0] || null;
 }
 
 export function resetProfile(profileId: string) {
@@ -269,16 +261,6 @@ export function getChannelBoosts(profileId: string) {
 
 export function normalizeChannelKey(value: string) {
   return value.replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-function ensureDefaultProfile() {
-  const count = getDatabase().prepare("SELECT COUNT(*) AS count FROM profiles").get() as {
-    count: number;
-  };
-
-  if (count.count === 0) {
-    createProfile("Default");
-  }
 }
 
 function bumpNodeAffinity(profileId: string, nodeId: FeedNodeId, updatedAt: number) {

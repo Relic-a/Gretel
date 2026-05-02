@@ -13,6 +13,10 @@ export async function GET(request: Request) {
     return Response.json({ channels: [] });
   }
 
-  const channels = await searchChannels(query, profile.id);
-  return Response.json({ channels });
+  try {
+    const channels = await searchChannels(query, profile?.id || "setup");
+    return Response.json({ channels });
+  } catch {
+    return Response.json({ channels: [] });
+  }
 }

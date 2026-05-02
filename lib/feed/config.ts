@@ -127,6 +127,12 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
         24 * 60 * 30
       ),
       recommendationSeeds: integer(feed.recommendationSeeds, defaults.feed.recommendationSeeds, 0, 50),
+      relatedVideosPerSeed: integer(
+        feed.relatedVideosPerSeed,
+        defaults.feed.relatedVideosPerSeed,
+        1,
+        50
+      ),
       watchedRecommendationSeeds: integer(
         feed.watchedRecommendationSeeds,
         defaults.feed.watchedRecommendationSeeds,
