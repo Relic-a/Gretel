@@ -1,4 +1,4 @@
-import { MAX_VIDEOS } from "./config";
+import { getGretelConfig } from "./config";
 import type { FeedVideo } from "./types";
 
 export function shouldKeepVideo(
@@ -32,9 +32,10 @@ export function nextUniqueVideo(videos: FeedVideo[], seen: Set<string>, startInd
 }
 
 export function mixVideoBuckets(videoBuckets: FeedVideo[][]) {
+  const maxVideos = getGretelConfig().feed.maxVideos;
   const mixed: FeedVideo[] = [];
 
-  for (let index = 0; mixed.length < MAX_VIDEOS; index += 1) {
+  for (let index = 0; mixed.length < maxVideos; index += 1) {
     let added = false;
 
     for (const videos of videoBuckets) {
@@ -45,7 +46,7 @@ export function mixVideoBuckets(videoBuckets: FeedVideo[][]) {
         added = true;
       }
 
-      if (mixed.length >= MAX_VIDEOS) {
+      if (mixed.length >= maxVideos) {
         break;
       }
     }
@@ -311,4 +312,3 @@ export function getText(value: unknown): string {
 
   return "";
 }
-

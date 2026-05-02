@@ -7,10 +7,7 @@ import {
   saveFeedCacheVideos
 } from "./cache";
 import {
-  FEED_CACHE_REFRESH_HOURS,
-  FEED_CACHE_TARGET_VIDEOS,
-  MAX_VIDEOS,
-  SUBSCRIPTION_REFRESH_MINUTES
+  getGretelConfig
 } from "./config";
 import { createWeightedFeed, type FeedNetworkNode, type FeedNetworkOptions } from "./network";
 import { recommendVideosFromSeeds } from "./recommendations";
@@ -34,6 +31,7 @@ export async function createFeed(
   options: CreateFeedOptions = {}
 ) {
   const queries = createQueries(tags);
+  const config = getGretelConfig();
   const cacheKey = createFeedCacheKey({
     tags: queries,
     channels,
@@ -43,8 +41,8 @@ export async function createFeed(
   });
   const now = Date.now();
   const cachedState = getFeedCacheState(profileId, cacheKey);
-  const baseRefreshMs = FEED_CACHE_REFRESH_HOURS * 60 * 60 * 1000;
-  const subscriptionRefreshMs = SUBSCRIPTION_REFRESH_MINUTES * 60 * 1000;
+  const baseRefreshMs = config.feed.cacheRefreshHours * 60 * 60 * 1000;
+  const subscriptionRefreshMs = config.feed.subscriptionRefreshMinutes * 60 * 1000;
   const shouldRefreshBase =
     options.forceRefresh ||
     !cachedState ||
@@ -80,25 +78,26 @@ export async function createFeed(
     );
   }
 
-  const tagSearchVideos = getCachedFeedVideos(profileId, cacheKey, "tagSearch", MAX_VIDEOS * 3);
-  const channelVideos = getCachedFeedVideos(profileId, cacheKey, "channelVideos", MAX_VIDEOS * 3);
+  const cacheReadLimit = Math.ceil(config.feed.maxVideos * config.feed.cacheReadMultiplier);
+  const tagSearchVideos = getCachedFeedVideos(profileId, cacheKey, "tagSearch", cacheReadLimit);
+  const channelVideos = getCachedFeedVideos(profileId, cacheKey, "channelVideos", cacheReadLimit);
   const naturalLanguageVideos = getCachedFeedVideos(
     profileId,
     cacheKey,
     "naturalLanguage",
-    MAX_VIDEOS * 3
+    cacheReadLimit
   );
-  const relatedVideos = getCachedFeedVideos(profileId, cacheKey, "relatedVideos", MAX_VIDEOS * 3);
-  const watchedVideos = getCachedFeedVideos(profileId, cacheKey, "watchedVideos", MAX_VIDEOS * 3);
+  const relatedVideos = getCachedFeedVideos(profileId, cacheKey, "relatedVideos", cacheReadLimit);
+  const watchedVideos = getCachedFeedVideos(profileId, cacheKey, "watchedVideos", cacheReadLimit);
   const state = getFeedCacheState(profileId, cacheKey);
   const cache = {
     key: cacheKey,
     videos: state?.cachedVideos || 0,
-    targetVideos: FEED_CACHE_TARGET_VIDEOS,
+    targetVideos: config.feed.cacheTargetVideos,
     refreshedAt: state?.baseRefreshedAt || now,
     subscriptionRefreshedAt: state?.subscriptionRefreshedAt || 0,
-    refreshHours: FEED_CACHE_REFRESH_HOURS,
-    subscriptionRefreshMinutes: SUBSCRIPTION_REFRESH_MINUTES,
+    refreshHours: config.feed.cacheRefreshHours,
+    subscriptionRefreshMinutes: config.feed.subscriptionRefreshMinutes,
     forced: Boolean(options.forceRefresh)
   };
   const networkNodes = createFeedNetworkNodes(

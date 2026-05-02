@@ -2,6 +2,8 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 
+import { DEFAULT_GRETEL_CONFIG } from "../lib/feed/config-defaults";
+
 type FeedVideo = {
   id: string;
   title: string;
@@ -67,14 +69,34 @@ type SavedClientState = {
   feed?: FeedResponse | null;
 };
 
-const starterTags = "AI engineering, TypeScript, product design";
-const starterWeights: FeedNodeWeights = {
-  tagSearch: 2,
-  channelVideos: 2,
-  naturalLanguage: 1,
-  relatedVideos: 3,
-  watchedVideos: 2
+type PublicGretelConfig = {
+  feed: {
+    maxNodeWeight: number;
+    defaultNodeWeights: FeedNodeWeights;
+  };
+  learning: {
+    watchSaveThreshold: number;
+  };
+  client: {
+    watchProgressPollMs: number;
+  };
 };
+
+const defaultPublicConfig: PublicGretelConfig = {
+  feed: {
+    maxNodeWeight: DEFAULT_GRETEL_CONFIG.feed.maxNodeWeight,
+    defaultNodeWeights: DEFAULT_GRETEL_CONFIG.feed.defaultNodeWeights
+  },
+  learning: {
+    watchSaveThreshold: DEFAULT_GRETEL_CONFIG.learning.watchSaveThreshold
+  },
+  client: {
+    watchProgressPollMs: DEFAULT_GRETEL_CONFIG.client.watchProgressPollMs
+  }
+};
+
+const starterTags = "AI engineering, TypeScript, product design";
+const starterWeights = DEFAULT_GRETEL_CONFIG.feed.defaultNodeWeights;
 
 const nodeControls: Array<{ id: FeedNodeId; label: string }> = [
   { id: "tagSearch", label: "Tag search" },
@@ -95,6 +117,7 @@ export default function Home() {
   const [channelSort, setChannelSort] = useState<"latest" | "popular">("latest");
   const [prompt, setPrompt] = useState("");
   const [weights, setWeights] = useState<FeedNodeWeights>(starterWeights);
+  const [config, setConfig] = useState<PublicGretelConfig>(defaultPublicConfig);
   const [feed, setFeed] = useState<FeedResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -225,7 +248,9 @@ export default function Home() {
     let disposed = false;
 
     async function loadSavedState() {
+      const loadedConfig = await loadPublicConfig();
       const savedState = readSavedClientState();
+      setConfig(loadedConfig);
 
       if (savedState) {
         setProfileId(savedState.profileId || "");
@@ -233,8 +258,10 @@ export default function Home() {
         setChannels(savedState.channels || "");
         setChannelSort(savedState.channelSort || "latest");
         setPrompt(savedState.prompt || "");
-        setWeights({ ...starterWeights, ...savedState.weights });
+        setWeights({ ...loadedConfig.feed.defaultNodeWeights, ...savedState.weights });
         setFeed(savedState.feed || null);
+      } else {
+        setWeights(loadedConfig.feed.defaultNodeWeights);
       }
 
       try {
@@ -332,7 +359,7 @@ export default function Home() {
 
         const watchedSeconds = player.getCurrentTime();
 
-        if (watchedSeconds / durationSeconds <= 0.5) {
+        if (watchedSeconds / durationSeconds <= config.learning.watchSaveThreshold) {
           continue;
         }
 
@@ -348,7 +375,7 @@ export default function Home() {
           })
         }).catch(() => {});
       }
-    }, 2000);
+    }, config.client.watchProgressPollMs);
 
     return () => {
       disposed = true;
@@ -358,7 +385,7 @@ export default function Home() {
         player.player.destroy();
       }
     };
-  }, [feed, profileId]);
+  }, [feed, profileId, config]);
 
   return (
     <main className="shell">
@@ -461,7 +488,7 @@ export default function Home() {
                 <input
                   type="range"
                   min="0"
-                  max="5"
+                  max={config.feed.maxNodeWeight}
                   step="1"
                   value={weights[node.id]}
                   onChange={(event) => updateWeight(node.id, event.target.value)}
@@ -625,6 +652,20 @@ function parseSubscriptionList(value: string) {
 
 function normalizeSubscription(value: string) {
   return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+async function loadPublicConfig() {
+  try {
+    const response = await fetch("/api/config");
+
+    if (!response.ok) {
+      return defaultPublicConfig;
+    }
+
+    return { ...defaultPublicConfig, ...(await response.json()) } as PublicGretelConfig;
+  } catch {
+    return defaultPublicConfig;
+  }
 }
 
 function readSavedClientState() {

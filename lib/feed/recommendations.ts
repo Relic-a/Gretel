@@ -1,4 +1,4 @@
-import { MAX_VIDEOS, RECOMMENDATION_SEEDS } from "./config";
+import { getGretelConfig } from "./config";
 import { observeOperation } from "./observation";
 import type { FeedObservation, FeedVideo } from "./types";
 import { normalizeChannelKey } from "../profile-store";
@@ -26,7 +26,7 @@ export async function recommendVideosFromSeeds(
     { sourceVideos: sourceVideos.length },
     async () => {
       const seedLinks = sourceVideos
-        .slice(0, RECOMMENDATION_SEEDS)
+        .slice(0, getGretelConfig().feed.recommendationSeeds)
         .map((video) => `https://www.youtube.com/watch?v=${video.id}`);
 
       if (seedLinks.length === 0) {
@@ -61,6 +61,7 @@ async function recommendVideosFromLinks(
     { seedLinks: videoLinks.length },
     async () => {
       const youtube = await getYoutubeClient(profileId);
+      const maxVideos = getGretelConfig().feed.maxVideos;
       const seen = new Set<string>();
       const recommendations: FeedVideo[] = [];
       const avoidShorts = promptAvoidsShorts(prompt);
@@ -94,7 +95,7 @@ async function recommendVideosFromLinks(
               channelKey: normalizeChannelKey(author)
             });
 
-            if (recommendations.length >= MAX_VIDEOS) {
+            if (recommendations.length >= maxVideos) {
               return {
                 value: recommendations,
                 output: { recommendationVideos: recommendations.length }

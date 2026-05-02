@@ -2,12 +2,7 @@ import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
-import {
-  CHANNEL_AFFINITY_STEP,
-  MAX_AFFINITY_BOOST,
-  NODE_AFFINITY_STEP,
-  WATCHED_RECOMMENDATION_SEEDS
-} from "./feed/config";
+import { getGretelConfig } from "./feed/config";
 import type { FeedNodeId, FeedVideo } from "./feed/types";
 import { forgetYoutubeClient } from "./feed/youtube-client";
 
@@ -168,8 +163,9 @@ export function resetProfile(profileId: string) {
 
 export function saveWatchedVideo(input: WatchEventInput) {
   const watchedRatio = input.durationSeconds > 0 ? input.watchedSeconds / input.durationSeconds : 0;
+  const config = getGretelConfig();
 
-  if (watchedRatio <= 0.5 || !getProfile(input.profileId)) {
+  if (watchedRatio <= config.learning.watchSaveThreshold || !getProfile(input.profileId)) {
     return false;
   }
 
@@ -237,7 +233,9 @@ export function getLatestWatchedVideos(profileId: string) {
        ORDER BY watched_at DESC
        LIMIT ?`
     )
-    .all(profileId, WATCHED_RECOMMENDATION_SEEDS) as Array<Record<string, string | null>>;
+    .all(profileId, getGretelConfig().feed.watchedRecommendationSeeds) as Array<
+      Record<string, string | null>
+    >;
 
   return rows.map<FeedVideo>((row) => ({
     id: row.video_id || "",
@@ -284,6 +282,8 @@ function ensureDefaultProfile() {
 }
 
 function bumpNodeAffinity(profileId: string, nodeId: FeedNodeId, updatedAt: number) {
+  const config = getGretelConfig();
+
   getDatabase()
     .prepare(
       `INSERT INTO node_affinity (profile_id, node_id, boost, updated_at)
@@ -292,10 +292,19 @@ function bumpNodeAffinity(profileId: string, nodeId: FeedNodeId, updatedAt: numb
          boost = MIN(?, boost + ?),
          updated_at = excluded.updated_at`
     )
-    .run(profileId, nodeId, NODE_AFFINITY_STEP, updatedAt, MAX_AFFINITY_BOOST, NODE_AFFINITY_STEP);
+    .run(
+      profileId,
+      nodeId,
+      config.learning.nodeAffinityStep,
+      updatedAt,
+      config.learning.maxAffinityBoost,
+      config.learning.nodeAffinityStep
+    );
 }
 
 function bumpChannelAffinity(profileId: string, channelKey: string, updatedAt: number) {
+  const config = getGretelConfig();
+
   getDatabase()
     .prepare(
       `INSERT INTO channel_affinity (profile_id, channel_key, boost, updated_at)
@@ -307,10 +316,10 @@ function bumpChannelAffinity(profileId: string, channelKey: string, updatedAt: n
     .run(
       profileId,
       channelKey,
-      CHANNEL_AFFINITY_STEP,
+      config.learning.channelAffinityStep,
       updatedAt,
-      MAX_AFFINITY_BOOST,
-      CHANNEL_AFFINITY_STEP
+      config.learning.maxAffinityBoost,
+      config.learning.channelAffinityStep
     );
 }
 

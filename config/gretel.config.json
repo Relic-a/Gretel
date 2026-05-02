@@ -1,0 +1,33 @@
+{
+  "feed": {
+    "maxQueries": 5,
+    "maxVideos": 48,
+    "cacheTargetVideos": 120,
+    "cacheRefreshHours": 6,
+    "subscriptionRefreshMinutes": 45,
+    "recommendationSeeds": 4,
+    "watchedRecommendationSeeds": 6,
+    "maxNodeWeight": 5,
+    "cacheReadMultiplier": 3,
+    "minVideosPerQuery": 3,
+    "minVideosPerChannel": 3,
+    "maxSharePerNode": 1,
+    "maxSharePerChannel": 1,
+    "defaultNodeWeights": {
+      "tagSearch": 2,
+      "channelVideos": 2,
+      "naturalLanguage": 1,
+      "relatedVideos": 3,
+      "watchedVideos": 2
+    }
+  },
+  "learning": {
+    "watchSaveThreshold": 0.5,
+    "nodeAffinityStep": 0.15,
+    "channelAffinityStep": 0.2,
+    "maxAffinityBoost": 3
+  },
+  "client": {
+    "watchProgressPollMs": 2000
+  }
+}

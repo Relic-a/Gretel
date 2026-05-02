@@ -1,4 +1,4 @@
-import { MAX_VIDEOS } from "./config";
+import { getGretelConfig } from "./config";
 import { applyChannelSort, getChannelId, getChannelIdFromInput, getChannelVideoItems } from "./channel-utils";
 import { observeOperation } from "./observation";
 import type { ChannelSort, FeedObservation, FeedVideo } from "./types";
@@ -31,7 +31,11 @@ export async function searchVideos(
       const seen = new Set<string>();
       const videosByQuery: FeedVideo[][] = [];
       const avoidShorts = promptAvoidsShorts(prompt);
-      const perQueryLimit = Math.max(3, Math.ceil(MAX_VIDEOS / queries.length));
+      const config = getGretelConfig();
+      const perQueryLimit = Math.max(
+        config.feed.minVideosPerQuery,
+        Math.ceil(config.feed.maxVideos / queries.length)
+      );
 
       for (const query of queries) {
         const results = await youtube.search(query);
@@ -93,7 +97,11 @@ export async function fetchChannelVideos(
       const seen = new Set<string>();
       const videosByChannel: FeedVideo[][] = [];
       const avoidShorts = promptAvoidsShorts(prompt);
-      const perChannelLimit = Math.max(3, Math.ceil(MAX_VIDEOS / channels.length));
+      const config = getGretelConfig();
+      const perChannelLimit = Math.max(
+        config.feed.minVideosPerChannel,
+        Math.ceil(config.feed.maxVideos / channels.length)
+      );
 
       for (const channelName of channels) {
         const channelId = await resolveChannelId(channelName, observation, profileId);
