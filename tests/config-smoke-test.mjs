@@ -37,6 +37,7 @@ function compileConfigModules() {
       "lib/logger.ts",
       "lib/feed/config.ts",
       "lib/feed/config-defaults.ts",
+      "lib/feed/youtube-client.ts",
       "lib/feed/types.ts",
       "app/api/feed/route.ts",
       "app/api/profiles/route.ts",
@@ -184,6 +185,10 @@ function writeRuntimeConfig(name, overrides = {}) {
       client: {
         watchProgressPollMs: 250,
         ...overrides.client
+      },
+      youtube: {
+        language: "en",
+        ...overrides.youtube
       }
     })
   );
@@ -339,6 +344,9 @@ test("clamps and rounds out-of-range config values before logging applied config
       },
       client: {
         watchProgressPollMs: 99
+      },
+      youtube: {
+        language: " fr "
       }
     })
   );
@@ -356,6 +364,7 @@ test("clamps and rounds out-of-range config values before logging applied config
     assert.equal(config.feed.defaultNodeWeights.channelVideos, 0);
     assert.equal(config.learning.watchSaveThreshold, 0.75);
     assert.equal(config.client.watchProgressPollMs, 250);
+    assert.equal(config.youtube.language, "fr");
   });
 
   const applied = logs.find((log) => log.line.event === "config.applied");
@@ -363,6 +372,7 @@ test("clamps and rounds out-of-range config values before logging applied config
   assert.equal(applied?.stream, "info");
   assert.equal(applied?.line.path, configPath);
   assert.equal(applied?.line.feed.maxVideos, 200);
+  assert.equal(applied?.line.youtube.language, "fr");
 });
 
 test("runtime feed flow logs cache, subscription refresh, profile, and affinity behavior under config changes", async () => {

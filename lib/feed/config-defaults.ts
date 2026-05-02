@@ -26,6 +26,9 @@ export type GretelConfig = {
   client: {
     watchProgressPollMs: number;
   };
+  youtube: {
+    language: string;
+  };
 };
 
 export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
@@ -58,5 +61,8 @@ export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
   },
   client: {
     watchProgressPollMs: 2000
+  },
+  youtube: {
+    language: "en"
   }
 };

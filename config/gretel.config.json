@@ -28,5 +28,8 @@
   },
   "client": {
     "watchProgressPollMs": 2000
+  },
+  "youtube": {
+    "language": "en"
   }
 }

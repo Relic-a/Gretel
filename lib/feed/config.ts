@@ -13,6 +13,7 @@ type ConfigInput = Partial<{
   >;
   learning: Partial<GretelConfig["learning"]>;
   client: Partial<GretelConfig["client"]>;
+  youtube: Partial<GretelConfig["youtube"]>;
 }>;
 
 const CONFIG_ENV_KEY = "GRETEL_CONFIG";
@@ -47,6 +48,9 @@ export function getPublicGretelConfig() {
     },
     client: {
       watchProgressPollMs: config.client.watchProgressPollMs
+    },
+    youtube: {
+      language: config.youtube.language
     }
   };
 }
@@ -94,7 +98,8 @@ function logConfigIfChanged(config: GretelConfig) {
     path: configPath,
     feed: config.feed,
     learning: config.learning,
-    client: config.client
+    client: config.client,
+    youtube: config.youtube
   });
 }
 
@@ -102,6 +107,7 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
   const feed = input.feed || {};
   const learning = input.learning || {};
   const client = input.client || {};
+  const youtube = input.youtube || {};
 
   return {
     feed: {
@@ -172,6 +178,9 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
     },
     client: {
       watchProgressPollMs: integer(client.watchProgressPollMs, defaults.client.watchProgressPollMs, 250, 60000)
+    },
+    youtube: {
+      language: nonEmptyString(youtube.language, defaults.youtube.language)
     }
   };
 }
@@ -209,4 +218,8 @@ function numberInRange(value: unknown, fallback: number, min: number, max: numbe
   }
 
   return Math.min(max, Math.max(min, numeric));
+}
+
+function nonEmptyString(value: unknown, fallback: string) {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
 }

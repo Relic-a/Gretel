@@ -1,21 +1,31 @@
 import path from "node:path";
 
 import { Innertube, UniversalCache } from "youtubei.js";
+import { getGretelConfig } from "./config";
 
 const youtubeClients = new Map<string, Promise<Innertube>>();
 
 export function getYoutubeClient(profileId = "default") {
-  const cacheKey = profileId || "default";
+  const profileKey = profileId || "default";
+  const { language } = getGretelConfig().youtube;
+  const cacheKey = `${profileKey}:${language}`;
   const existingClient = youtubeClients.get(cacheKey);
 
   if (existingClient) {
     return existingClient;
   }
 
-  const cacheDirectory = path.join(process.cwd(), "data", "youtube-sessions", cacheKey);
+  const cacheDirectory = path.join(
+    process.cwd(),
+    "data",
+    "youtube-sessions",
+    profileKey,
+    language.replace(/[^a-z0-9._-]/gi, "_")
+  );
   const client = Innertube.create({
     cache: new UniversalCache(true, cacheDirectory),
-    enable_session_cache: true
+    enable_session_cache: true,
+    lang: language
   });
 
   youtubeClients.set(cacheKey, client);
@@ -23,5 +33,9 @@ export function getYoutubeClient(profileId = "default") {
 }
 
 export function forgetYoutubeClient(profileId: string) {
-  youtubeClients.delete(profileId);
+  for (const cacheKey of youtubeClients.keys()) {
+    if (cacheKey.startsWith(`${profileId}:`)) {
+      youtubeClients.delete(cacheKey);
+    }
+  }
 }
