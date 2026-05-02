@@ -78,6 +78,31 @@ export function getDatabase() {
         PRIMARY KEY (profile_id, channel_key),
         FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS feed_cache_state (
+        profile_id TEXT NOT NULL,
+        cache_key TEXT NOT NULL,
+        base_refreshed_at INTEGER NOT NULL,
+        subscription_refreshed_at INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (profile_id, cache_key),
+        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS feed_cache_videos (
+        profile_id TEXT NOT NULL,
+        cache_key TEXT NOT NULL,
+        node_id TEXT NOT NULL,
+        video_id TEXT NOT NULL,
+        video_json TEXT NOT NULL,
+        first_seen_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        recommendation_count INTEGER NOT NULL DEFAULT 0,
+        last_recommended_at INTEGER,
+        PRIMARY KEY (profile_id, cache_key, node_id, video_id),
+        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+      );
     `);
     ensureDefaultProfile();
   }
@@ -135,6 +160,8 @@ export function resetProfile(profileId: string) {
   database.prepare("DELETE FROM watched_videos WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM node_affinity WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM channel_affinity WHERE profile_id = ?").run(profileId);
+  database.prepare("DELETE FROM feed_cache_state WHERE profile_id = ?").run(profileId);
+  database.prepare("DELETE FROM feed_cache_videos WHERE profile_id = ?").run(profileId);
   database.prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(Date.now(), profileId);
   resetYoutubeProfileCache(profileId);
 }

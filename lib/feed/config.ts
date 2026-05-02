@@ -1,5 +1,8 @@
 export const MAX_QUERIES = 5;
-export const MAX_VIDEOS = 18;
+export const MAX_VIDEOS = 48;
+export const FEED_CACHE_TARGET_VIDEOS = 120;
+export const FEED_CACHE_REFRESH_HOURS = 6;
+export const SUBSCRIPTION_REFRESH_MINUTES = 45;
 export const RECOMMENDATION_SEEDS = 4;
 export const MAX_NODE_WEIGHT = 5;
 

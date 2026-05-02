@@ -74,6 +74,13 @@ h2 {
   font-size: 2rem;
 }
 
+.cache-status {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
 .intro {
   max-width: 620px;
   color: var(--muted);

@@ -22,6 +22,7 @@ export async function POST(request: Request) {
     const channels = parseTags(body.channels);
     const channelSort = parseChannelSort(body.channelSort);
     const weights = parseFeedNodeWeights(body.weights);
+    const forceRefresh = body.forceRefresh === true;
     const requestedProfileId = typeof body.profileId === "string" ? body.profileId : "";
     const profile = getProfile(requestedProfileId) || listProfiles()[0];
 
@@ -54,7 +55,8 @@ export async function POST(request: Request) {
         nodeBoosts: getNodeBoosts(profile.id),
         channelBoosts: getChannelBoosts(profile.id)
       },
-      latestWatchedVideos
+      latestWatchedVideos,
+      { forceRefresh }
     );
 
     logFeedObservation(observation, {
@@ -68,7 +70,9 @@ export async function POST(request: Request) {
       activeNodes: feed.nodes.filter((node) => node.weight > 0).length,
       usedRecommendations: weights.relatedVideos > 0,
       watchedSeeds: latestWatchedVideos.length,
-      watchedExcluded: watchedVideoIds.length
+      watchedExcluded: watchedVideoIds.length,
+      cacheVideos: feed.cache.videos,
+      forcedRefresh: forceRefresh
     });
 
     return Response.json({
@@ -80,6 +84,7 @@ export async function POST(request: Request) {
       weights,
       queries: feed.queries,
       nodes: feed.nodes,
+      cache: feed.cache,
       videos: feed.videos
     });
   } catch (error) {

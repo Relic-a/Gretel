@@ -45,6 +45,15 @@ type FeedResponse = {
   weights: FeedNodeWeights;
   queries: string[];
   nodes: FeedNodeSummary[];
+  cache?: {
+    videos: number;
+    targetVideos: number;
+    refreshedAt: number;
+    subscriptionRefreshedAt: number;
+    refreshHours: number;
+    subscriptionRefreshMinutes: number;
+    forced: boolean;
+  };
   videos: FeedVideo[];
 };
 
@@ -102,6 +111,14 @@ export default function Home() {
 
   async function createFeed(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    await requestFeed(false);
+  }
+
+  async function refreshFeed() {
+    await requestFeed(true);
+  }
+
+  async function requestFeed(forceRefresh: boolean) {
     setError("");
     setLoading(true);
 
@@ -115,7 +132,8 @@ export default function Home() {
           channelSort,
           prompt,
           weights,
-          profileId
+          profileId,
+          forceRefresh
         })
       });
       const data = await response.json();
@@ -396,7 +414,16 @@ export default function Home() {
             <div>
               <p className="eyebrow">Weighted network</p>
               <h2>{feed.videos.length} videos</h2>
+              {feed.cache && (
+                <p className="cache-status">
+                  {feed.cache.videos}/{feed.cache.targetVideos} cached · refreshes every {feed.cache.refreshHours}h ·
+                  subscriptions every {feed.cache.subscriptionRefreshMinutes}m
+                </p>
+              )}
             </div>
+            <button type="button" className="secondary-button" onClick={refreshFeed} disabled={loading}>
+              {loading ? "Refreshing..." : "Refresh feed"}
+            </button>
             <div className="tag-list" aria-label="Tags used">
               {feed.tags.map((tag) => (
                 <span key={tag}>{tag}</span>
