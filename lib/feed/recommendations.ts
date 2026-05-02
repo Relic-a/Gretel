@@ -2,6 +2,7 @@ import { getGretelConfig } from "./config";
 import { observeOperation } from "./observation";
 import type { FeedObservation, FeedVideo } from "./types";
 import { normalizeChannelKey } from "../profile-store";
+import { errorFields, logWarn } from "../logger";
 import {
   getAuthor,
   getDuration,
@@ -98,7 +99,11 @@ async function recommendVideosFromLinks(
             }
           }
         } catch (error) {
-          console.error(`YouTube recommendations failed for "${link}":`, error);
+          logWarn("youtube.recommendations_failed", {
+            requestId: observation.requestId,
+            seedId,
+            ...errorFields(error)
+          });
         }
       }
 

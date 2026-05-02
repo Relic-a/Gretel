@@ -4,6 +4,7 @@ import { observeOperation } from "./observation";
 import type { ChannelSort, FeedObservation, FeedVideo } from "./types";
 import { getYoutubeClient } from "./youtube-client";
 import { normalizeChannelKey } from "../profile-store";
+import { errorFields, logWarn } from "../logger";
 import {
   getAuthor,
   getChannelVideoAuthor,
@@ -147,7 +148,12 @@ export async function fetchChannelVideos(
 
           videosByChannel.push(channelVideos);
         } catch (error) {
-          console.error(`YouTube channel fetch failed for "${channelName}":`, error);
+          logWarn("youtube.channel_fetch_failed", {
+            requestId: observation.requestId,
+            channel: channelName,
+            sort,
+            ...errorFields(error)
+          });
           videosByChannel.push([]);
         }
       }

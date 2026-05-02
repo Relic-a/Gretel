@@ -51,6 +51,11 @@ export async function createFeed(
     (options.forceRefresh ||
       !cachedState ||
       now - cachedState.subscriptionRefreshedAt >= subscriptionRefreshMs);
+  const cacheStatus = !cachedState
+    ? "miss"
+    : shouldRefreshBase || shouldRefreshSubscriptions
+      ? "stale"
+      : "hit";
 
   if (shouldRefreshBase) {
     const freshNodes = await fetchFreshFeedNodes(
@@ -89,7 +94,12 @@ export async function createFeed(
     subscriptionRefreshedAt: state?.subscriptionRefreshedAt || 0,
     refreshHours: config.feed.cacheRefreshHours,
     subscriptionRefreshMinutes: config.feed.subscriptionRefreshMinutes,
-    forced: Boolean(options.forceRefresh)
+    cacheReadMultiplier: config.feed.cacheReadMultiplier,
+    maxVideos: config.feed.maxVideos,
+    forced: Boolean(options.forceRefresh),
+    status: cacheStatus,
+    refreshedBase: shouldRefreshBase,
+    refreshedSubscriptions: shouldRefreshSubscriptions
   };
   const networkNodes = createFeedNetworkNodes(
     weights,
@@ -107,6 +117,7 @@ export async function createFeed(
     nodes: feed.nodes,
     searchVideos: tagSearchVideos.length,
     channelVideos: channelVideos.length,
+    relatedVideos: relatedVideos.length,
     watchedVideos: watchedVideos.length,
     cache
   };

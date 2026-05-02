@@ -3,6 +3,7 @@ import path from "node:path";
 
 import { DEFAULT_GRETEL_CONFIG, type GretelConfig } from "./config-defaults";
 import type { FeedNodeId, FeedNodeWeights } from "./types";
+import { errorFields, logInfo, logWarn } from "../logger";
 
 type ConfigInput = Partial<{
   feed: Partial<
@@ -22,10 +23,15 @@ const DEFAULT_CONFIG_PATH = path.join(
 );
 
 let lastConfigWarning = "";
+let lastConfigLogSignature = "";
 
 export function getGretelConfig() {
   const input = readConfigInput();
-  return mergeConfig(DEFAULT_GRETEL_CONFIG, input);
+  const config = mergeConfig(DEFAULT_GRETEL_CONFIG, input);
+
+  logConfigIfChanged(config);
+
+  return config;
 }
 
 export function getPublicGretelConfig() {
@@ -63,12 +69,31 @@ function readConfigInput(): ConfigInput {
     const message = error instanceof Error ? error.message : String(error);
 
     if (lastConfigWarning !== message) {
-      console.warn(`Could not read Gretel config at ${configPath}: ${message}`);
+      logWarn("config.read_failed", {
+        path: configPath,
+        ...errorFields(error)
+      });
       lastConfigWarning = message;
     }
 
     return {};
   }
+}
+
+function logConfigIfChanged(config: GretelConfig) {
+  const signature = JSON.stringify(config);
+
+  if (signature === lastConfigLogSignature) {
+    return;
+  }
+
+  lastConfigLogSignature = signature;
+  logInfo("config.applied", {
+    path: getConfigPath(),
+    feed: config.feed,
+    learning: config.learning,
+    client: config.client
+  });
 }
 
 function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {

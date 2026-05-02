@@ -34,7 +34,9 @@ export type FeedObservation = {
   operations: Array<{
     name: string;
     durationMs: number;
-    input?: Record<string, number | string | boolean>;
-    output?: Record<string, number | string | boolean>;
+    status: "ok" | "error";
+    input?: Record<string, unknown>;
+    output?: Record<string, unknown>;
+    error?: string;
   }>;
 };

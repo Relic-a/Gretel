@@ -1,6 +1,7 @@
 import { parseChannelSort, parseFeedNodeWeights, parseTags } from "../../../lib/feed/input";
 import { createFeedObservation, logFeedObservation } from "../../../lib/feed/observation";
 import { createFeed } from "../../../lib/feed/service";
+import { errorFields } from "../../../lib/logger";
 import {
   getChannelBoosts,
   getLatestWatchedVideos,
@@ -64,12 +65,18 @@ export async function POST(request: Request) {
       queries: feed.queries.length,
       searchVideos: feed.searchVideos,
       channelVideos: feed.channelVideos,
+      relatedVideos: feed.relatedVideos,
       finalVideos: feed.videos.length,
       activeNodes: feed.nodes.filter((node) => node.weight > 0).length,
       usedRecommendations: weights.relatedVideos > 0,
       watchedSeeds: latestWatchedVideos.length,
       watchedExcluded: watchedVideoIds.length,
       cacheVideos: feed.cache.videos,
+      cacheStatus: feed.cache.status,
+      refreshedBase: feed.cache.refreshedBase,
+      refreshedSubscriptions: feed.cache.refreshedSubscriptions,
+      cacheReadMultiplier: feed.cache.cacheReadMultiplier,
+      configuredMaxVideos: feed.cache.maxVideos,
       forcedRefresh: forceRefresh
     });
 
@@ -86,9 +93,8 @@ export async function POST(request: Request) {
     });
   } catch (error) {
     logFeedObservation(observation, {
-      error: error instanceof Error ? error.message : String(error)
+      ...errorFields(error, { stack: true })
     });
-    console.error(error);
     return Response.json(
       { error: "Feed generation failed. Check your API key and network access." },
       { status: 500 }
