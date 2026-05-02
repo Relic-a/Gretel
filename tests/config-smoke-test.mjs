@@ -214,7 +214,8 @@ function createFakeYoutubeClient() {
         videos: Array.from({ length: 10 }, (_, index) =>
           fakeVideo(
             `search-${slug(query)}-${index}`,
-            index % 2 === 0 ? "Search One" : "Search Two"
+            index % 2 === 0 ? "Search One" : "Search Two",
+            index % 2 === 0 ? `Video about ${query}` : "Completely unrelated"
           )
         )
       };
@@ -256,10 +257,10 @@ function channelPage(channelId, callNumber, sort) {
   };
 }
 
-function fakeVideo(id, author) {
+function fakeVideo(id, author, title = `Video ${id}`) {
   return {
     id,
-    title: `Video ${id}`,
+    title,
     author: { name: author },
     duration: { text: "10:00" },
     view_count: { text: "100 views" }
@@ -406,6 +407,12 @@ test("runtime feed flow logs cache, subscription refresh, profile, and affinity 
       assert.equal(firstFeed.body.cache.status, "miss");
       assert.equal(firstFeed.body.cache.refreshedBase, true);
       assert.equal(firstFeed.body.cache.refreshedSubscriptions, true);
+      assert.equal(
+        firstFeed.body.videos.some(
+          (video) => video.sourceNodeId === "tagSearch" && !/alpha/i.test(video.title)
+        ),
+        false
+      );
 
       const firstCounts = { ...fakeYoutubeClient.calls };
       const secondFeed = await postJson(feedRoute, {

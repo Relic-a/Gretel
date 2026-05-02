@@ -46,8 +46,9 @@ export async function searchVideos(
         for (const video of results.videos) {
           const id = getVideoId(video);
           const duration = getDuration(video);
+          const title = getTitle(video);
 
-          if (!shouldKeepVideo(id, seen)) {
+          if (!titleMatchesQuery(title, query) || !shouldKeepVideo(id, seen)) {
             continue;
           }
 
@@ -55,7 +56,7 @@ export async function searchVideos(
           const author = getAuthor(video);
           queryVideos.push({
             id,
-            title: getTitle(video),
+            title,
             author,
             duration,
             query,
@@ -86,6 +87,10 @@ export async function searchVideos(
       };
     }
   );
+}
+
+function titleMatchesQuery(title: string, query: string) {
+  return title.toLowerCase().includes(query.toLowerCase());
 }
 
 export async function fetchChannelVideos(
