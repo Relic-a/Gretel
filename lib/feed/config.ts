@@ -67,13 +67,14 @@ function readConfigInput(): ConfigInput {
     return parsed && typeof parsed === "object" ? parsed : {};
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    const warningSignature = JSON.stringify({ path: configPath, message });
 
-    if (lastConfigWarning !== message) {
+    if (lastConfigWarning !== warningSignature) {
       logWarn("config.read_failed", {
         path: configPath,
         ...errorFields(error)
       });
-      lastConfigWarning = message;
+      lastConfigWarning = warningSignature;
     }
 
     return {};
@@ -81,7 +82,8 @@ function readConfigInput(): ConfigInput {
 }
 
 function logConfigIfChanged(config: GretelConfig) {
-  const signature = JSON.stringify(config);
+  const configPath = getConfigPath();
+  const signature = JSON.stringify({ path: configPath, config });
 
   if (signature === lastConfigLogSignature) {
     return;
@@ -89,7 +91,7 @@ function logConfigIfChanged(config: GretelConfig) {
 
   lastConfigLogSignature = signature;
   logInfo("config.applied", {
-    path: getConfigPath(),
+    path: configPath,
     feed: config.feed,
     learning: config.learning,
     client: config.client
