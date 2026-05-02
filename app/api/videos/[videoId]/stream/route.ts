@@ -1,5 +1,5 @@
 import { getYoutubeClient } from "../../../../../lib/feed/youtube-client";
-import { getProfile, listProfiles } from "../../../../../lib/profile-store";
+import { getProfile } from "../../../../../lib/profile-store";
 
 export const runtime = "nodejs";
 
@@ -10,7 +10,11 @@ export async function GET(
   const { videoId } = await context.params;
   const url = new URL(request.url);
   const requestedProfileId = url.searchParams.get("profileId") || "";
-  const profile = getProfile(requestedProfileId) || listProfiles()[0];
+  const profile = requestedProfileId ? getProfile(requestedProfileId) : null;
+
+  if (!profile) {
+    return Response.json({ error: "Profile not found." }, { status: 404 });
+  }
 
   try {
     const youtube = await getYoutubeClient(profile.id);

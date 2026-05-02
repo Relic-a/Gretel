@@ -3,34 +3,12 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import type { MediaPlayerClass } from "dashjs";
 
-type FeedVideo = {
-  id: string;
-  title: string;
-  author: string;
-  duration: string;
-  thumbnailUrl?: string;
-  thumbnailCacheUrl?: string;
-  publishedText?: string;
-  publishedAt?: number;
-  viewCount?: number;
-  channelKey?: string;
-};
-
-type Profile = {
-  id: string;
-  name: string;
-};
-
-type ChannelResult = {
-  id: string;
-  name: string;
-  thumbnailUrl?: string;
-};
-
-type FeedResponse = {
-  profile: Profile;
-  videos: FeedVideo[];
-};
+import { ProfileModal } from "./components/ProfileModal";
+import { TopBar } from "./components/TopBar";
+import { VideoGrid } from "./components/VideoGrid";
+import { WatchView } from "./components/WatchView";
+import { normalize } from "./components/video-utils";
+import type { ChannelResult, FeedResponse, FeedVideo, Profile } from "./types";
 
 type DashPlayer = MediaPlayerClass & {
   getBitrateInfoListFor: (mediaType: "video") => Array<{ height?: number; bitrate: number }>;
@@ -108,10 +86,7 @@ export default function Home() {
       return;
     }
 
-    window.localStorage.setItem(
-      clientStateKey,
-      JSON.stringify({ profileId, tags, channels })
-    );
+    window.localStorage.setItem(clientStateKey, JSON.stringify({ profileId, tags, channels }));
   }, [booted, profileId, tags, channels]);
 
   useEffect(() => {
@@ -252,6 +227,7 @@ export default function Home() {
       setProfileId(data.profileId || "");
       setProfileName("");
       setFeed(null);
+      setActiveVideo(null);
       setManageProfiles(false);
 
       await requestFeed({
@@ -281,6 +257,7 @@ export default function Home() {
 
   async function buildFeed(event?: FormEvent) {
     event?.preventDefault();
+    setActiveVideo(null);
     await requestFeed({ forceRefresh: true });
   }
 
@@ -315,7 +292,7 @@ export default function Home() {
       }
 
       setFeed(data);
-      setActiveVideo((current) => current || data.videos[0] || null);
+      setActiveVideo(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not build this feed.");
     } finally {
@@ -350,252 +327,76 @@ export default function Home() {
 
   return (
     <main className="app-shell">
-      <header className="topbar">
-        <button type="button" className="brand-button" onClick={() => buildFeed()}>
-          Gretel
-        </button>
-        <div className="profile-menu">
-          <button type="button" className="profile-button" onClick={() => setShowProfileMenu(!showProfileMenu)}>
-            {activeProfile?.name || "Profile"}
-          </button>
-          {showProfileMenu && (
-            <div className="profile-popover">
-              {profiles.map((profile) => (
-                <button
-                  type="button"
-                  key={profile.id}
-                  onClick={() => {
-                    setProfileId(profile.id);
-                    setFeed(null);
-                    setActiveVideo(null);
-                    setShowProfileMenu(false);
-                  }}
-                >
-                  {profile.name}
-                </button>
-              ))}
-              <button
-                type="button"
-                onClick={() => {
-                  setManageProfiles(true);
-                  setShowProfileMenu(false);
-                }}
-              >
-                Manage profiles
-              </button>
-            </div>
-          )}
-        </div>
-      </header>
+      <TopBar
+        activeProfile={activeProfile}
+        profiles={profiles}
+        showProfileMenu={showProfileMenu}
+        onHome={buildFeed}
+        onToggleProfileMenu={() => setShowProfileMenu(!showProfileMenu)}
+        onSelectProfile={(nextProfileId) => {
+          setProfileId(nextProfileId);
+          setFeed(null);
+          setActiveVideo(null);
+          setShowProfileMenu(false);
+        }}
+        onManageProfiles={() => {
+          setManageProfiles(true);
+          setShowProfileMenu(false);
+        }}
+      />
 
-      {feed && (
-        <section className={activeVideo ? "watch-layout open" : "watch-layout"}>
-          {activeVideo && (
-            <div className="watch-player">
-              <video ref={videoRef} controls playsInline poster={thumbnailFor(activeVideo)} />
-              <div className="watch-meta">
-                <h1>{activeVideo.title}</h1>
-                <div className="channel-line">
-                  <span>{activeVideo.author}</span>
-                  <button
-                    type="button"
-                    className="subscribe-button"
-                    onClick={() =>
-                      subscriptions.has(normalize(activeVideo.author))
-                        ? removeChannel(activeVideo.author)
-                        : addChannel(activeVideo.author)
-                    }
-                  >
-                    {subscriptions.has(normalize(activeVideo.author)) ? "Unsubscribe" : "Subscribe"}
-                  </button>
-                  <span>{formatPublished(activeVideo)}</span>
-                </div>
-                <div className="player-settings">
-                  <label>
-                    Quality
-                    <select value={quality} onChange={(event) => setQuality(event.target.value)}>
-                      <option value="auto">Auto</option>
-                      {qualityOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
-              </div>
-            </div>
-          )}
-          <div className="side-list">
-            {sideVideos.map((video) => (
-              <button type="button" className="side-video" key={video.id} onClick={() => setActiveVideo(video)}>
-                <img src={thumbnailFor(video)} loading="lazy" alt="" />
-                <span>{video.title}</span>
-              </button>
-            ))}
-          </div>
-        </section>
+      {feed && activeVideo && (
+        <WatchView
+          activeVideo={activeVideo}
+          sideVideos={sideVideos}
+          subscriptions={subscriptions}
+          quality={quality}
+          qualityOptions={qualityOptions}
+          videoRef={videoRef}
+          onSelectVideo={setActiveVideo}
+          onAddChannel={addChannel}
+          onRemoveChannel={removeChannel}
+          onQualityChange={setQuality}
+        />
       )}
 
       {feed && (
-        <section className="video-grid" aria-live="polite">
-          {feed.videos.map((video) => (
-            <article className="video-card" key={video.id}>
-              <button type="button" className="thumbnail-button" onClick={() => setActiveVideo(video)}>
-                <img src={thumbnailFor(video)} loading="lazy" alt="" />
-              </button>
-              <div className="video-meta">
-                <h2>{video.title}</h2>
-                <div className="channel-line">
-                  <span>{video.author}</span>
-                  <button
-                    type="button"
-                    className="subscribe-button"
-                    onClick={() =>
-                      subscriptions.has(normalize(video.author))
-                        ? removeChannel(video.author)
-                        : addChannel(video.author)
-                    }
-                  >
-                    {subscriptions.has(normalize(video.author)) ? "Unsubscribe" : "Subscribe"}
-                  </button>
-                  <span>{formatPublished(video)}</span>
-                </div>
-              </div>
-            </article>
-          ))}
-        </section>
+        <VideoGrid
+          videos={feed.videos}
+          subscriptions={subscriptions}
+          onSelectVideo={setActiveVideo}
+          onAddChannel={addChannel}
+          onRemoveChannel={removeChannel}
+        />
       )}
 
       {(needsProfile || manageProfiles) && (
-        <div className="modal-backdrop">
-          <section className="profile-modal">
-            <div className="modal-head">
-              <h1>{manageProfiles ? "Manage profiles" : "Create a profile"}</h1>
-              {feed && (
-                <button type="button" className="icon-button" onClick={() => setManageProfiles(false)}>
-                  Close
-                </button>
-              )}
-            </div>
-
-            {manageProfiles && (
-              <div className="profile-list">
-                {profiles.map((profile) => (
-                  <div className="profile-row" key={profile.id}>
-                    <span>{profile.name}</span>
-                    <button type="button" className="danger-button" onClick={() => deleteProfile(profile.id)}>
-                      Delete
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <form onSubmit={createProfileAndBuild} className="setup-form">
-              <input
-                value={profileName}
-                onChange={(event) => setProfileName(event.target.value)}
-                placeholder="Profile name"
-              />
-
-              <TagEditor
-                label="Tags"
-                values={tags}
-                draft={tagDraft}
-                setDraft={setTagDraft}
-                addValue={addTag}
-                removeValue={(value) => setTags(tags.filter((tag) => tag !== value))}
-                placeholder="Add a topic"
-              />
-
-              <TagEditor
-                label="Subscriptions"
-                values={channels}
-                draft={channelDraft}
-                setDraft={setChannelDraft}
-                addValue={addChannel}
-                removeValue={removeChannel}
-                placeholder="Search channel"
-              />
-
-              {channelResults.length > 0 && (
-                <div className="channel-results">
-                  {channelResults.map((channel) => (
-                    <button type="button" key={channel.id} onClick={() => addChannel(channel.name)}>
-                      {channel.thumbnailUrl && <img src={channel.thumbnailUrl} alt="" />}
-                      <span>{channel.name}</span>
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              <button type="submit" disabled={loading}>
-                {loading ? "Building feed..." : "Add profile"}
-              </button>
-              {loading && <div className="progress-bar" />}
-              {error && <p className="error">{error}</p>}
-            </form>
-          </section>
-        </div>
+        <ProfileModal
+          manageProfiles={manageProfiles}
+          feedOpen={Boolean(feed)}
+          profiles={profiles}
+          profileName={profileName}
+          tags={tags}
+          channels={channels}
+          tagDraft={tagDraft}
+          channelDraft={channelDraft}
+          channelResults={channelResults}
+          loading={loading}
+          error={error}
+          onClose={() => setManageProfiles(false)}
+          onSubmit={createProfileAndBuild}
+          onProfileNameChange={setProfileName}
+          onTagDraftChange={setTagDraft}
+          onChannelDraftChange={setChannelDraft}
+          onAddTag={addTag}
+          onRemoveTag={(value) => setTags(tags.filter((tag) => tag !== value))}
+          onAddChannel={addChannel}
+          onRemoveChannel={removeChannel}
+          onDeleteProfile={deleteProfile}
+        />
       )}
     </main>
   );
-}
-
-function TagEditor(props: {
-  label: string;
-  values: string[];
-  draft: string;
-  setDraft: (value: string) => void;
-  addValue: (value: string) => void;
-  removeValue: (value: string) => void;
-  placeholder: string;
-}) {
-  return (
-    <label className="tag-editor">
-      <span>{props.label}</span>
-      <div className="tag-input">
-        {props.values.map((value) => (
-          <button type="button" key={value} onClick={() => props.removeValue(value)}>
-            {value}
-          </button>
-        ))}
-        <input
-          value={props.draft}
-          onChange={(event) => props.setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" || event.key === ",") {
-              event.preventDefault();
-              props.addValue(props.draft);
-            }
-          }}
-          onBlur={() => props.addValue(props.draft)}
-          placeholder={props.placeholder}
-        />
-      </div>
-    </label>
-  );
-}
-
-function thumbnailFor(video: FeedVideo) {
-  return video.thumbnailCacheUrl || video.thumbnailUrl || `https://i.ytimg.com/vi/${video.id}/hqdefault.jpg`;
-}
-
-function formatPublished(video: FeedVideo) {
-  if (video.publishedText) {
-    return video.duration ? `${video.publishedText} · ${video.duration}` : video.publishedText;
-  }
-
-  if (video.publishedAt) {
-    return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(video.publishedAt);
-  }
-
-  return video.duration || "";
-}
-
-function normalize(value: string) {
-  return value.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 function readSavedState() {

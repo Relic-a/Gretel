@@ -5,8 +5,12 @@ import { getGretelConfig } from "./config";
 
 const youtubeClients = new Map<string, Promise<Innertube>>();
 
-export function getYoutubeClient(profileId = "default") {
-  const profileKey = profileId || "default";
+export function getYoutubeClient(profileId: string) {
+  if (!profileId) {
+    throw new Error("A profile id is required for YouTube sessions.");
+  }
+
+  const profileKey = profileId;
   const { language } = getGretelConfig().youtube;
   const cacheKey = `${profileKey}:${language}`;
   const existingClient = youtubeClients.get(cacheKey);

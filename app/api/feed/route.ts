@@ -7,8 +7,7 @@ import {
   getLatestWatchedVideos,
   getNodeBoosts,
   getProfile,
-  getWatchedVideoIds,
-  listProfiles
+  getWatchedVideoIds
 } from "../../../lib/profile-store";
 
 export const runtime = "nodejs";
@@ -25,7 +24,7 @@ export async function POST(request: Request) {
     const forceRefresh = body.forceRefresh === true;
     const cacheOnly = body.cacheOnly === true;
     const requestedProfileId = typeof body.profileId === "string" ? body.profileId : "";
-    const profile = getProfile(requestedProfileId) || listProfiles()[0];
+    const profile = requestedProfileId ? getProfile(requestedProfileId) : null;
 
     if (!profile) {
       return Response.json({ error: "Create a profile before building a feed." }, { status: 400 });
