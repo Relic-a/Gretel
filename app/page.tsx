@@ -57,6 +57,16 @@ type FeedResponse = {
   videos: FeedVideo[];
 };
 
+type SavedClientState = {
+  profileId?: string;
+  tags?: string;
+  channels?: string;
+  channelSort?: "latest" | "popular";
+  prompt?: string;
+  weights?: Partial<FeedNodeWeights>;
+  feed?: FeedResponse | null;
+};
+
 const starterTags = "AI engineering, TypeScript, product design";
 const starterWeights: FeedNodeWeights = {
   tagSearch: 2,
@@ -74,6 +84,8 @@ const nodeControls: Array<{ id: FeedNodeId; label: string }> = [
   { id: "watchedVideos", label: "Watched neighbors" }
 ];
 
+const clientStateKey = "gretel.clientState.v1";
+
 export default function Home() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profileId, setProfileId] = useState("");
@@ -86,6 +98,7 @@ export default function Home() {
   const [feed, setFeed] = useState<FeedResponse | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [clientStateLoaded, setClientStateLoaded] = useState(false);
   const subscriptions = useMemo(() => parseSubscriptionList(channels), [channels]);
   const subscribedKeys = useMemo(
     () => new Set(subscriptions.map((subscription) => normalizeSubscription(subscription))),
@@ -159,6 +172,7 @@ export default function Home() {
 
     setProfiles(nextProfiles);
     setProfileId(selectedProfile?.id || "");
+    return selectedProfile?.id || "";
   }
 
   async function createProfile() {
@@ -172,6 +186,7 @@ export default function Home() {
     setProfileName("");
     setProfiles(data.profiles || []);
     setProfileId(data.profileId || "");
+    setFeed(null);
   }
 
   async function resetProfile() {
@@ -207,10 +222,66 @@ export default function Home() {
   }
 
   useEffect(() => {
-    loadProfiles().catch((caught) => {
-      setError(caught instanceof Error ? caught.message : "Could not load profiles.");
-    });
+    let disposed = false;
+
+    async function loadSavedState() {
+      const savedState = readSavedClientState();
+
+      if (savedState) {
+        setProfileId(savedState.profileId || "");
+        setTags(savedState.tags || starterTags);
+        setChannels(savedState.channels || "");
+        setChannelSort(savedState.channelSort || "latest");
+        setPrompt(savedState.prompt || "");
+        setWeights({ ...starterWeights, ...savedState.weights });
+        setFeed(savedState.feed || null);
+      }
+
+      try {
+        const selectedProfileId = await loadProfiles(savedState?.profileId);
+
+        if (!disposed && savedState?.feed && savedState.feed.profile.id !== selectedProfileId) {
+          setFeed(null);
+        }
+      } catch (caught) {
+        if (!disposed) {
+          setError(caught instanceof Error ? caught.message : "Could not load profiles.");
+        }
+      } finally {
+        if (!disposed) {
+          setClientStateLoaded(true);
+        }
+      }
+    }
+
+    loadSavedState();
+
+    return () => {
+      disposed = true;
+    };
   }, []);
+
+  useEffect(() => {
+    if (!clientStateLoaded) {
+      return;
+    }
+
+    const state: SavedClientState = {
+      profileId,
+      tags,
+      channels,
+      channelSort,
+      prompt,
+      weights,
+      feed
+    };
+
+    try {
+      window.localStorage.setItem(clientStateKey, JSON.stringify(state));
+    } catch {
+      setError("Could not save this browser state locally.");
+    }
+  }, [clientStateLoaded, profileId, tags, channels, channelSort, prompt, weights, feed]);
 
   useEffect(() => {
     if (!feed || !profileId) {
@@ -554,4 +625,30 @@ function parseSubscriptionList(value: string) {
 
 function normalizeSubscription(value: string) {
   return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function readSavedClientState() {
+  try {
+    const rawState = window.localStorage.getItem(clientStateKey);
+
+    if (!rawState) {
+      return null;
+    }
+
+    const state = JSON.parse(rawState) as SavedClientState;
+    return {
+      profileId: typeof state.profileId === "string" ? state.profileId : undefined,
+      tags: typeof state.tags === "string" ? state.tags : undefined,
+      channels: typeof state.channels === "string" ? state.channels : undefined,
+      channelSort:
+        state.channelSort === "latest" || state.channelSort === "popular"
+          ? state.channelSort
+          : undefined,
+      prompt: typeof state.prompt === "string" ? state.prompt : undefined,
+      weights: state.weights && typeof state.weights === "object" ? state.weights : undefined,
+      feed: state.feed || null
+    } satisfies SavedClientState;
+  } catch {
+    return null;
+  }
 }
