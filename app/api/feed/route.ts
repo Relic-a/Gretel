@@ -23,6 +23,7 @@ export async function POST(request: Request) {
     const channelSort = parseChannelSort(body.channelSort);
     const weights = parseFeedNodeWeights(body.weights);
     const forceRefresh = body.forceRefresh === true;
+    const cacheOnly = body.cacheOnly === true;
     const requestedProfileId = typeof body.profileId === "string" ? body.profileId : "";
     const profile = getProfile(requestedProfileId) || listProfiles()[0];
 
@@ -55,7 +56,7 @@ export async function POST(request: Request) {
         channelBoosts: getChannelBoosts(profile.id)
       },
       latestWatchedVideos,
-      { forceRefresh }
+      { forceRefresh, cacheOnly }
     );
 
     logFeedObservation(observation, {
@@ -77,7 +78,8 @@ export async function POST(request: Request) {
       refreshedSubscriptions: feed.cache.refreshedSubscriptions,
       cacheReadMultiplier: feed.cache.cacheReadMultiplier,
       configuredMaxVideos: feed.cache.maxVideos,
-      forcedRefresh: forceRefresh
+      forcedRefresh: forceRefresh,
+      cacheOnly
     });
 
     return Response.json({

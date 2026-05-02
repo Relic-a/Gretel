@@ -245,6 +245,13 @@ button:disabled {
   margin-bottom: 18px;
 }
 
+.feed-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .query-list {
   display: flex;
   flex-wrap: wrap;
@@ -423,6 +430,10 @@ button:disabled {
   }
 
   .query-list {
+    justify-content: flex-start;
+  }
+
+  .feed-actions {
     justify-content: flex-start;
   }
 

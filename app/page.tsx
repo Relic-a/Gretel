@@ -52,6 +52,7 @@ type FeedResponse = {
     subscriptionRefreshedAt: number;
     refreshHours: number;
     subscriptionRefreshMinutes: number;
+    status: "miss" | "stale" | "hit";
     forced: boolean;
   };
   videos: FeedVideo[];
@@ -142,14 +143,18 @@ export default function Home() {
 
   async function createFeed(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    await requestFeed(false);
+    await requestFeed(false, false);
   }
 
   async function refreshFeed() {
-    await requestFeed(true);
+    await requestFeed(false, true);
   }
 
-  async function requestFeed(forceRefresh: boolean) {
+  async function fetchNewVideos() {
+    await requestFeed(true, false);
+  }
+
+  async function requestFeed(forceRefresh: boolean, cacheOnly: boolean) {
     setError("");
     setLoading(true);
 
@@ -163,7 +168,8 @@ export default function Home() {
           channelSort,
           weights,
           profileId,
-          forceRefresh
+          forceRefresh,
+          cacheOnly
         })
       });
       const data = await response.json();
@@ -497,9 +503,14 @@ export default function Home() {
                 </p>
               )}
             </div>
-            <button type="button" className="secondary-button" onClick={refreshFeed} disabled={loading}>
-              {loading ? "Refreshing..." : "Refresh feed"}
-            </button>
+            <div className="feed-actions">
+              <button type="button" className="secondary-button" onClick={refreshFeed} disabled={loading}>
+                Refresh feed
+              </button>
+              <button type="button" className="secondary-button" onClick={fetchNewVideos} disabled={loading}>
+                Fetch new videos
+              </button>
+            </div>
             <div className="tag-list" aria-label="Tags used">
               {feed.tags.map((tag) => (
                 <span key={tag}>{tag}</span>

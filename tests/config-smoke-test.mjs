@@ -155,7 +155,7 @@ function writeRuntimeConfig(name, overrides = {}) {
       feed: {
         maxQueries: 1,
         maxVideos: 6,
-        cacheTargetVideos: 4,
+        cacheTargetVideos: 16,
         cacheRefreshHours: 24,
         subscriptionRefreshMinutes: 60,
         recommendationSeeds: 2,
@@ -435,21 +435,39 @@ test("runtime feed flow logs cache, subscription refresh, profile, and affinity 
       assert.equal(watched.status, 200);
       assert.equal(watched.body.saved, true);
 
+      const countsBeforeCacheRefresh = { ...fakeYoutubeClient.calls };
       const afterWatchFeed = await postJson(feedRoute, {
         profileId,
         tags: "alpha, beta",
         channels: "Creator One",
-        channelSort: "latest"
+        channelSort: "latest",
+        cacheOnly: true
       });
       assert.equal(afterWatchFeed.status, 200);
-      assert.equal(afterWatchFeed.body.cache.status, "miss");
-      assert.equal(afterWatchFeed.body.cache.refreshedBase, true);
+      assert.equal(afterWatchFeed.body.cache.status, "hit");
+      assert.equal(afterWatchFeed.body.cache.refreshedBase, false);
+      assert.equal(afterWatchFeed.body.cache.refreshedSubscriptions, false);
+      assert.deepEqual(fakeYoutubeClient.calls, countsBeforeCacheRefresh);
+      assert.equal(
+        afterWatchFeed.body.videos.some((video) => video.id === watchedVideo.id),
+        false
+      );
       assert.equal(
         afterWatchFeed.body.nodes.find((node) => node.id === "channelVideos").effectiveWeight,
         1.5
       );
+
+      const afterWatchFetch = await postJson(feedRoute, {
+        profileId,
+        tags: "alpha, beta",
+        channels: "Creator One",
+        channelSort: "latest",
+        forceRefresh: true
+      });
+      assert.equal(afterWatchFetch.status, 200);
+      assert.equal(afterWatchFetch.body.cache.refreshedBase, true);
       assert.equal(
-        afterWatchFeed.body.nodes.find((node) => node.id === "watchedVideos").inputVideos,
+        afterWatchFetch.body.nodes.find((node) => node.id === "watchedVideos").inputVideos,
         4
       );
 
@@ -457,7 +475,8 @@ test("runtime feed flow logs cache, subscription refresh, profile, and affinity 
         firstFeed: firstFeed.body,
         secondFeed: secondFeed.body,
         subscriptionRefreshFeed: subscriptionRefreshFeed.body,
-        afterWatchFeed: afterWatchFeed.body
+        afterWatchFeed: afterWatchFeed.body,
+        afterWatchFetch: afterWatchFetch.body
       };
     });
 
@@ -465,17 +484,18 @@ test("runtime feed flow logs cache, subscription refresh, profile, and affinity 
     const watchLogs = logs.filter((log) => log.line.event === "watch_event.saved");
     const profileLogs = logs.filter((log) => String(log.line.event).startsWith("profile."));
 
-    assert.equal(feedLogs.length, 4);
+    assert.equal(feedLogs.length, 5);
     assert.equal(watchLogs.length, 1);
     assert.equal(profileLogs.length, 0);
     assert.equal(feedLogs[0].line.summary.cacheStatus, "miss");
     assert.equal(feedLogs[1].line.summary.cacheStatus, "hit");
     assert.equal(feedLogs[2].line.summary.refreshedSubscriptions, true);
     assert.equal(feedLogs[3].line.summary.watchedSeeds, 1);
+    assert.equal(feedLogs[4].line.summary.forcedRefresh, true);
 
-    assert.ok(flow.firstFeed.cache.videos > flow.firstFeed.cache.targetVideos);
-    assert.ok(flow.subscriptionRefreshFeed.cache.videos > flow.firstFeed.cache.videos);
-    assert.equal("watchedVideos" in feedLogs[3].line.summary, false);
+    assert.ok(flow.firstFeed.cache.videos <= flow.firstFeed.cache.targetVideos);
+    assert.ok(flow.subscriptionRefreshFeed.cache.videos <= flow.subscriptionRefreshFeed.cache.targetVideos);
+    assert.ok(flow.afterWatchFetch.cache.videos <= flow.afterWatchFetch.cache.targetVideos);
   } finally {
     if (profileId) {
       profileStore.resetProfile(profileId);

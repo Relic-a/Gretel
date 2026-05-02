@@ -16,6 +16,7 @@ import { fetchChannelVideos, searchVideos } from "./youtube";
 
 export type CreateFeedOptions = {
   forceRefresh?: boolean;
+  cacheOnly?: boolean;
 };
 
 export async function createFeed(
@@ -34,20 +35,24 @@ export async function createFeed(
   const cacheKey = createFeedCacheKey({
     tags: queries,
     channels,
-    channelSort,
-    latestWatchedVideoIds: latestWatchedVideos.map((video) => video.id)
+    channelSort
   });
   const now = Date.now();
   const cachedState = getFeedCacheState(profileId, cacheKey);
   const baseRefreshMs = config.feed.cacheRefreshHours * 60 * 60 * 1000;
   const subscriptionRefreshMs = config.feed.subscriptionRefreshMinutes * 60 * 1000;
+  const useCachedVideosOnly = Boolean(
+    options.cacheOnly && !options.forceRefresh && cachedState && cachedState.cachedVideos > 0
+  );
   const shouldRefreshBase =
-    options.forceRefresh ||
-    !cachedState ||
-    cachedState.cachedVideos === 0 ||
-    now - cachedState.baseRefreshedAt >= baseRefreshMs;
+    !useCachedVideosOnly &&
+    (options.forceRefresh ||
+      !cachedState ||
+      cachedState.cachedVideos === 0 ||
+      now - cachedState.baseRefreshedAt >= baseRefreshMs);
   const shouldRefreshSubscriptions =
     channels.length > 0 &&
+    !useCachedVideosOnly &&
     (options.forceRefresh ||
       !cachedState ||
       now - cachedState.subscriptionRefreshedAt >= subscriptionRefreshMs);
@@ -67,7 +72,15 @@ export async function createFeed(
       observation,
       latestWatchedVideos
     );
-    saveFeedCacheVideos(profileId, cacheKey, freshNodes, now, true, channels.length > 0);
+    saveFeedCacheVideos(
+      profileId,
+      cacheKey,
+      freshNodes,
+      now,
+      true,
+      channels.length > 0,
+      config.feed.cacheTargetVideos
+    );
   } else if (shouldRefreshSubscriptions) {
     const channelVideos = await fetchChannelVideos(channels, channelSort, observation, profileId);
     saveFeedCacheVideos(
@@ -76,15 +89,41 @@ export async function createFeed(
       { channelVideos },
       now,
       false,
-      true
+      true,
+      config.feed.cacheTargetVideos
     );
   }
 
   const cacheReadLimit = Math.ceil(config.feed.maxVideos * config.feed.cacheReadMultiplier);
-  const tagSearchVideos = getCachedFeedVideos(profileId, cacheKey, "tagSearch", cacheReadLimit);
-  const channelVideos = getCachedFeedVideos(profileId, cacheKey, "channelVideos", cacheReadLimit);
-  const relatedVideos = getCachedFeedVideos(profileId, cacheKey, "relatedVideos", cacheReadLimit);
-  const watchedVideos = getCachedFeedVideos(profileId, cacheKey, "watchedVideos", cacheReadLimit);
+  const watchedVideoIds = networkOptions.watchedVideoIds || [];
+  const tagSearchVideos = getCachedFeedVideos(
+    profileId,
+    cacheKey,
+    "tagSearch",
+    cacheReadLimit,
+    watchedVideoIds
+  );
+  const channelVideos = getCachedFeedVideos(
+    profileId,
+    cacheKey,
+    "channelVideos",
+    cacheReadLimit,
+    watchedVideoIds
+  );
+  const relatedVideos = getCachedFeedVideos(
+    profileId,
+    cacheKey,
+    "relatedVideos",
+    cacheReadLimit,
+    watchedVideoIds
+  );
+  const watchedVideos = getCachedFeedVideos(
+    profileId,
+    cacheKey,
+    "watchedVideos",
+    cacheReadLimit,
+    watchedVideoIds
+  );
   const state = getFeedCacheState(profileId, cacheKey);
   const cache = {
     key: cacheKey,

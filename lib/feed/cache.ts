@@ -53,7 +53,8 @@ export function saveFeedCacheVideos(
   videosByNode: Partial<Record<FeedNodeId, FeedVideo[]>>,
   refreshedAt: number,
   refreshBase: boolean,
-  refreshSubscriptions: boolean
+  refreshSubscriptions: boolean,
+  maxCachedVideos: number
 ) {
   const database = getDatabase();
 
@@ -106,23 +107,32 @@ export function saveFeedCacheVideos(
       );
     }
   }
+
+  pruneFeedCacheVideos(profileId, cacheKey, maxCachedVideos);
 }
 
 export function getCachedFeedVideos(
   profileId: string,
   cacheKey: string,
   nodeId: FeedNodeId,
-  limit: number
+  limit: number,
+  watchedVideoIds: string[] = []
 ) {
+  const watchedFilter =
+    watchedVideoIds.length > 0
+      ? `AND video_id NOT IN (${watchedVideoIds.map(() => "?").join(", ")})`
+      : "";
+  const params = [profileId, cacheKey, nodeId, ...watchedVideoIds, limit];
   const rows = getDatabase()
     .prepare(
       `SELECT video_json, recommendation_count, last_recommended_at
        FROM feed_cache_videos
        WHERE profile_id = ? AND cache_key = ? AND node_id = ?
+       ${watchedFilter}
        ORDER BY recommendation_count ASC, COALESCE(last_recommended_at, 0) ASC, first_seen_at DESC
        LIMIT ?`
     )
-    .all(profileId, cacheKey, nodeId, limit) as FeedCacheRow[];
+    .all(...params) as FeedCacheRow[];
 
   return rows.flatMap((row) => {
     try {
@@ -164,16 +174,64 @@ export function createFeedCacheKey(input: {
   tags: string[];
   channels: string[];
   channelSort: string;
-  latestWatchedVideoIds: string[];
 }) {
   return JSON.stringify({
     tags: input.tags.map(normalizeCachePart).sort(),
     channels: input.channels.map(normalizeCachePart).sort(),
-    channelSort: input.channelSort,
-    latestWatchedVideoIds: input.latestWatchedVideoIds
+    channelSort: input.channelSort
   });
 }
 
 function normalizeCachePart(value: string) {
   return value.replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+function pruneFeedCacheVideos(profileId: string, cacheKey: string, maxCachedVideos: number) {
+  const database = getDatabase();
+  let row = database
+    .prepare(
+      `SELECT COUNT(*) AS count
+       FROM feed_cache_videos
+       WHERE profile_id = ? AND cache_key = ?`
+    )
+    .get(profileId, cacheKey) as { count: number };
+
+  if (row.count <= maxCachedVideos) {
+    return;
+  }
+
+  const largestNodeStatement = database.prepare(
+    `SELECT node_id
+     FROM feed_cache_videos
+     WHERE profile_id = ? AND cache_key = ?
+     GROUP BY node_id
+     ORDER BY COUNT(*) DESC
+     LIMIT 1`
+  );
+  const deleteStatement = database.prepare(
+    `DELETE FROM feed_cache_videos
+     WHERE rowid IN (
+       SELECT rowid
+       FROM feed_cache_videos
+       WHERE profile_id = ? AND cache_key = ? AND node_id = ?
+       ORDER BY recommendation_count DESC,
+                COALESCE(last_recommended_at, 0) DESC,
+                updated_at ASC,
+                first_seen_at ASC
+       LIMIT 1
+     )`
+  );
+
+  while (row.count > maxCachedVideos) {
+    const largestNode = largestNodeStatement.get(profileId, cacheKey) as
+      | { node_id: FeedNodeId }
+      | undefined;
+
+    if (!largestNode) {
+      return;
+    }
+
+    deleteStatement.run(profileId, cacheKey, largestNode.node_id);
+    row = { count: row.count - 1 };
+  }
 }
