@@ -1,16 +1,19 @@
 import type { RefObject } from "react";
 
 import type { FeedVideo } from "../types";
+import { VideoActions } from "./VideoActions";
 import { formatPublished, normalize, thumbnailFor } from "./video-utils";
 
 type WatchViewProps = {
   activeVideo: FeedVideo;
   sideVideos: FeedVideo[];
   subscriptions: Set<string>;
+  savedVideoIds: Set<string>;
   quality: string;
   qualityOptions: Array<{ value: string; label: string }>;
   videoRef: RefObject<HTMLVideoElement | null>;
   onSelectVideo: (video: FeedVideo) => void;
+  onSaveVideo: (video: FeedVideo) => void;
   onAddChannel: (channel: string) => void;
   onRemoveChannel: (channel: string) => void;
   onQualityChange: (quality: string) => void;
@@ -18,13 +21,22 @@ type WatchViewProps = {
 
 export function WatchView(props: WatchViewProps) {
   const subscribed = props.subscriptions.has(normalize(props.activeVideo.author));
+  const saved = props.savedVideoIds.has(props.activeVideo.id);
 
   return (
     <section className="watch-layout open">
       <div className="watch-player">
         <video ref={props.videoRef} controls playsInline poster={thumbnailFor(props.activeVideo)} />
         <div className="watch-meta">
-          <h1>{props.activeVideo.title}</h1>
+          <div className="watch-title-row">
+            <h1>{props.activeVideo.title}</h1>
+            <VideoActions
+              video={props.activeVideo}
+              saved={saved}
+              className="inline-actions"
+              onSaveVideo={props.onSaveVideo}
+            />
+          </div>
           <div className="channel-line">
             <span>{props.activeVideo.author}</span>
             <button

@@ -56,6 +56,15 @@ export function getDatabase() {
         FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS saved_videos (
+        profile_id TEXT NOT NULL,
+        video_id TEXT NOT NULL,
+        video_json TEXT NOT NULL,
+        saved_at INTEGER NOT NULL,
+        PRIMARY KEY (profile_id, video_id),
+        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+      );
+
       CREATE TABLE IF NOT EXISTS node_affinity (
         profile_id TEXT NOT NULL,
         node_id TEXT NOT NULL,
@@ -145,6 +154,7 @@ export function deleteProfile(profileId: string) {
 export function resetProfile(profileId: string) {
   const database = getDatabase();
   database.prepare("DELETE FROM watched_videos WHERE profile_id = ?").run(profileId);
+  database.prepare("DELETE FROM saved_videos WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM node_affinity WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM channel_affinity WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM feed_cache_state WHERE profile_id = ?").run(profileId);
@@ -241,6 +251,73 @@ export function getLatestWatchedVideos(profileId: string) {
   }));
 }
 
+export function listHistoryVideos(profileId: string) {
+  const rows = getDatabase()
+    .prepare(
+      `SELECT video_id, title, author, duration, query, source_node_id, source_node_label, channel_key
+       FROM watched_videos
+       WHERE profile_id = ?
+       ORDER BY watched_at DESC`
+    )
+    .all(profileId) as Array<Record<string, string | null>>;
+
+  return rows.map<FeedVideo>(watchedRowToVideo);
+}
+
+export function listSavedVideos(profileId: string) {
+  const rows = getDatabase()
+    .prepare(
+      `SELECT video_json
+       FROM saved_videos
+       WHERE profile_id = ?
+       ORDER BY saved_at DESC`
+    )
+    .all(profileId) as Array<{ video_json: string }>;
+
+  return rows.flatMap((row) => {
+    try {
+      return [JSON.parse(row.video_json) as FeedVideo];
+    } catch {
+      return [];
+    }
+  });
+}
+
+export function getSavedVideoIds(profileId: string) {
+  const rows = getDatabase()
+    .prepare("SELECT video_id FROM saved_videos WHERE profile_id = ?")
+    .all(profileId) as Array<{ video_id: string }>;
+
+  return rows.map((row) => row.video_id);
+}
+
+export function saveVideo(profileId: string, video: FeedVideo) {
+  if (!getProfile(profileId)) {
+    return false;
+  }
+
+  const savedAt = Date.now();
+  getDatabase()
+    .prepare(
+      `INSERT INTO saved_videos (profile_id, video_id, video_json, saved_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(profile_id, video_id) DO UPDATE SET
+         video_json = excluded.video_json,
+         saved_at = excluded.saved_at`
+    )
+    .run(profileId, video.id, JSON.stringify(video), savedAt);
+
+  getDatabase().prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(savedAt, profileId);
+  return true;
+}
+
+export function unsaveVideo(profileId: string, videoId: string) {
+  getDatabase()
+    .prepare("DELETE FROM saved_videos WHERE profile_id = ? AND video_id = ?")
+    .run(profileId, videoId);
+  getDatabase().prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(Date.now(), profileId);
+}
+
 export function getNodeBoosts(profileId: string) {
   const rows = getDatabase()
     .prepare("SELECT node_id, boost FROM node_affinity WHERE profile_id = ?")
@@ -308,6 +385,19 @@ function bumpChannelAffinity(profileId: string, channelKey: string, updatedAt: n
 function cleanProfileName(name: string) {
   const cleaned = name.replace(/\s+/g, " ").trim();
   return cleaned.length > 0 ? cleaned.slice(0, 60) : "New profile";
+}
+
+function watchedRowToVideo(row: Record<string, string | null>): FeedVideo {
+  return {
+    id: row.video_id || "",
+    title: row.title || "Watched video",
+    author: row.author || "Unknown channel",
+    duration: row.duration || "",
+    query: row.query || "Watched",
+    sourceNodeId: (row.source_node_id as FeedNodeId | null) || undefined,
+    sourceNodeLabel: row.source_node_label || undefined,
+    channelKey: row.channel_key || undefined
+  };
 }
 
 function resetYoutubeProfileCache(profileId: string) {

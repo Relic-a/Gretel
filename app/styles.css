@@ -61,6 +61,29 @@ button:disabled {
   backdrop-filter: blur(14px);
 }
 
+.section-tabs {
+  position: absolute;
+  left: 50%;
+  display: flex;
+  gap: 4px;
+  transform: translateX(-50%);
+}
+
+.section-tabs button {
+  min-height: 34px;
+  padding: 0 13px;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.section-tabs button:hover,
+.section-tabs button.active {
+  background: #ecefed;
+  color: var(--ink);
+}
+
 .brand-button,
 .profile-button {
   min-height: 38px;
@@ -111,6 +134,10 @@ button:disabled {
   min-width: 0;
 }
 
+.thumbnail-wrap {
+  position: relative;
+}
+
 .thumbnail-button {
   display: block;
   width: 100%;
@@ -119,6 +146,46 @@ button:disabled {
   border-radius: 8px;
   background: #111;
   aspect-ratio: 16 / 9;
+}
+
+.video-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 2;
+}
+
+.video-actions summary {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgb(17 17 17 / 0.78);
+  color: #fff;
+  font-weight: 900;
+  line-height: 1;
+  list-style: none;
+  cursor: pointer;
+}
+
+.video-actions summary::-webkit-details-marker {
+  display: none;
+}
+
+.video-actions button {
+  position: absolute;
+  top: 40px;
+  right: 0;
+  min-width: 126px;
+  min-height: 38px;
+  padding: 0 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+  font-weight: 800;
+  box-shadow: 0 12px 34px rgb(0 0 0 / 0.16);
 }
 
 .thumbnail-button img,
@@ -196,8 +263,24 @@ button:disabled {
   padding-top: 12px;
 }
 
+.watch-title-row {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
 .watch-meta h1 {
+  min-width: 0;
   font-size: 1.28rem;
+}
+
+.inline-actions {
+  position: relative;
+  top: auto;
+  right: auto;
+  flex: 0 0 auto;
 }
 
 .side-list {
@@ -399,6 +482,16 @@ select:focus {
   color: var(--error);
 }
 
+.page-error,
+.empty-state {
+  margin-bottom: 18px;
+}
+
+.empty-state {
+  color: var(--muted);
+  font-weight: 750;
+}
+
 @keyframes loading {
   0% {
     transform: translateX(-100%);
@@ -430,6 +523,15 @@ select:focus {
 
   .topbar {
     padding: 0 10px;
+  }
+
+  .section-tabs {
+    position: static;
+    transform: none;
+  }
+
+  .section-tabs button {
+    padding: 0 9px;
   }
 
   .video-grid,

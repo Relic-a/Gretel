@@ -17,6 +17,7 @@ type DashPlayer = MediaPlayerClass & {
 
 const clientStateKey = "gretel.clientState.v2";
 const starterTags = ["AI engineering", "TypeScript", "product design"];
+type Section = "home" | "saved" | "history";
 
 export default function Home() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -28,6 +29,10 @@ export default function Home() {
   const [channelDraft, setChannelDraft] = useState("");
   const [channelResults, setChannelResults] = useState<ChannelResult[]>([]);
   const [feed, setFeed] = useState<FeedResponse | null>(null);
+  const [section, setSection] = useState<Section>("home");
+  const [savedVideos, setSavedVideos] = useState<FeedVideo[]>([]);
+  const [historyVideos, setHistoryVideos] = useState<FeedVideo[]>([]);
+  const [savedVideoIds, setSavedVideoIds] = useState<Set<string>>(new Set());
   const [activeVideo, setActiveVideo] = useState<FeedVideo | null>(null);
   const [quality, setQuality] = useState("auto");
   const [qualityOptions, setQualityOptions] = useState<Array<{ value: string; label: string }>>([]);
@@ -44,7 +49,9 @@ export default function Home() {
   );
   const activeProfile = profiles.find((profile) => profile.id === profileId);
   const needsProfile = booted && profiles.length === 0 && !feed;
-  const sideVideos = feed?.videos.filter((video) => video.id !== activeVideo?.id).slice(0, 12) || [];
+  const visibleVideos =
+    section === "saved" ? savedVideos : section === "history" ? historyVideos : feed?.videos || [];
+  const sideVideos = visibleVideos.filter((video) => video.id !== activeVideo?.id).slice(0, 12);
 
   useEffect(() => {
     let disposed = false;
@@ -60,6 +67,10 @@ export default function Home() {
       setTags(saved?.tags?.length ? saved.tags : starterTags);
       setChannels(saved?.channels || []);
       setBooted(true);
+
+      if (selectedProfileId) {
+        await loadSavedVideos(selectedProfileId);
+      }
 
       if (selectedProfileId && (saved?.tags?.length || saved?.channels?.length)) {
         await requestFeed({
@@ -138,6 +149,59 @@ export default function Home() {
       playerRef.current = null;
     };
   }, [activeVideo, profileId]);
+
+  useEffect(() => {
+    if (!activeVideo || !profileId || !videoRef.current) {
+      return;
+    }
+
+    const element = videoRef.current;
+    let sent = false;
+
+    async function reportWatch() {
+      if (sent || !Number.isFinite(element.duration) || element.duration <= 0) {
+        return;
+      }
+
+      const watchedSeconds = Math.max(element.currentTime, 0);
+      const watchedRatio = watchedSeconds / element.duration;
+
+      if (watchedRatio < 0.5 && !element.ended) {
+        return;
+      }
+
+      sent = true;
+
+      try {
+        const response = await fetch("/api/watch-events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            profileId,
+            video: activeVideo,
+            watchedSeconds,
+            durationSeconds: element.duration
+          })
+        });
+        const data = await response.json();
+        sent = data.saved === true;
+
+        if (sent && section === "history") {
+          await loadHistoryVideos(profileId);
+        }
+      } catch {
+        sent = false;
+      }
+    }
+
+    element.addEventListener("timeupdate", reportWatch);
+    element.addEventListener("ended", reportWatch);
+
+    return () => {
+      element.removeEventListener("timeupdate", reportWatch);
+      element.removeEventListener("ended", reportWatch);
+    };
+  }, [activeVideo, profileId, section]);
 
   useEffect(() => {
     const player = playerRef.current;
@@ -229,6 +293,10 @@ export default function Home() {
       setFeed(null);
       setActiveVideo(null);
       setManageProfiles(false);
+      setSection("home");
+      setSavedVideos([]);
+      setHistoryVideos([]);
+      setSavedVideoIds(new Set());
 
       await requestFeed({
         nextProfileId: data.profileId || "",
@@ -253,12 +321,90 @@ export default function Home() {
     setProfileId(data.profileId || "");
     setFeed(null);
     setActiveVideo(null);
+    setSavedVideos([]);
+    setHistoryVideos([]);
+    setSavedVideoIds(new Set());
   }
 
   async function buildFeed(event?: FormEvent) {
     event?.preventDefault();
+    setSection("home");
     setActiveVideo(null);
     await requestFeed({ forceRefresh: true });
+  }
+
+  async function openSaved() {
+    setError("");
+    setSection("saved");
+    setActiveVideo(null);
+    try {
+      await loadSavedVideos(profileId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not load saved videos.");
+    }
+  }
+
+  async function openHistory() {
+    setError("");
+    setSection("history");
+    setActiveVideo(null);
+    try {
+      await loadHistoryVideos(profileId);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not load history.");
+    }
+  }
+
+  async function loadSavedVideos(nextProfileId = profileId) {
+    if (!nextProfileId) {
+      return;
+    }
+
+    const response = await fetch(`/api/saved-videos?profileId=${encodeURIComponent(nextProfileId)}`);
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Could not load saved videos.");
+    }
+
+    setSavedVideos(data.videos || []);
+    setSavedVideoIds(new Set(data.savedVideoIds || []));
+  }
+
+  async function loadHistoryVideos(nextProfileId = profileId) {
+    if (!nextProfileId) {
+      return;
+    }
+
+    const response = await fetch(`/api/history?profileId=${encodeURIComponent(nextProfileId)}`);
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Could not load history.");
+    }
+
+    setHistoryVideos(data.videos || []);
+  }
+
+  async function saveVideo(video: FeedVideo) {
+    if (!profileId || savedVideoIds.has(video.id)) {
+      return;
+    }
+
+    const response = await fetch("/api/saved-videos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ profileId, video })
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      setError(data.error || "Could not save this video.");
+      return;
+    }
+
+    setSavedVideos(data.videos || []);
+    setSavedVideoIds(new Set(data.savedVideoIds || []));
   }
 
   async function requestFeed(input: {
@@ -330,13 +476,23 @@ export default function Home() {
       <TopBar
         activeProfile={activeProfile}
         profiles={profiles}
+        activeSection={section}
         showProfileMenu={showProfileMenu}
         onHome={buildFeed}
+        onSaved={openSaved}
+        onHistory={openHistory}
         onToggleProfileMenu={() => setShowProfileMenu(!showProfileMenu)}
         onSelectProfile={(nextProfileId) => {
           setProfileId(nextProfileId);
           setFeed(null);
           setActiveVideo(null);
+          setSection("home");
+          setSavedVideos([]);
+          setHistoryVideos([]);
+          setSavedVideoIds(new Set());
+          void loadSavedVideos(nextProfileId).catch((caught) =>
+            setError(caught instanceof Error ? caught.message : "Could not load saved videos.")
+          );
           setShowProfileMenu(false);
         }}
         onManageProfiles={() => {
@@ -353,21 +509,31 @@ export default function Home() {
           quality={quality}
           qualityOptions={qualityOptions}
           videoRef={videoRef}
+          savedVideoIds={savedVideoIds}
           onSelectVideo={setActiveVideo}
+          onSaveVideo={saveVideo}
           onAddChannel={addChannel}
           onRemoveChannel={removeChannel}
           onQualityChange={setQuality}
         />
       )}
 
-      {feed && (
+      {error && !manageProfiles && !needsProfile && <p className="error page-error">{error}</p>}
+
+      {booted && visibleVideos.length > 0 && (
         <VideoGrid
-          videos={feed.videos}
+          videos={visibleVideos}
           subscriptions={subscriptions}
+          savedVideoIds={savedVideoIds}
           onSelectVideo={setActiveVideo}
+          onSaveVideo={saveVideo}
           onAddChannel={addChannel}
           onRemoveChannel={removeChannel}
         />
+      )}
+
+      {booted && section !== "home" && visibleVideos.length === 0 && !activeVideo && (
+        <p className="empty-state">{section === "saved" ? "No saved videos yet." : "No watched videos yet."}</p>
       )}
 
       {(needsProfile || manageProfiles) && (
