@@ -14,7 +14,6 @@ export type FeedVideo = {
 export type FeedNodeId =
   | "tagSearch"
   | "channelVideos"
-  | "naturalLanguage"
   | "relatedVideos"
   | "watchedVideos";
 

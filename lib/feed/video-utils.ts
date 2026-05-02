@@ -1,21 +1,8 @@
 import { getGretelConfig } from "./config";
 import type { FeedVideo } from "./types";
 
-export function shouldKeepVideo(
-  id: string,
-  duration: string,
-  seen: Set<string>,
-  avoidShorts: boolean
-) {
-  if (!id || seen.has(id)) {
-    return false;
-  }
-
-  return !avoidShorts || getDurationSeconds(duration) === 0 || getDurationSeconds(duration) >= 60;
-}
-
-export function promptAvoidsShorts(prompt: string) {
-  return /\b(no|avoid|exclude|without)\s+shorts?\b/i.test(prompt);
+export function shouldKeepVideo(id: string, seen: Set<string>) {
+  return Boolean(id) && !seen.has(id);
 }
 
 export function nextUniqueVideo(videos: FeedVideo[], seen: Set<string>, startIndex: number) {
@@ -273,19 +260,6 @@ function getDurationFromThumbnail(contentImage: unknown) {
   }
 
   return "";
-}
-
-function getDurationSeconds(duration: string) {
-  const parts = duration
-    .split(":")
-    .map((part) => Number(part))
-    .filter((part) => Number.isFinite(part));
-
-  if (parts.length === 0) {
-    return 0;
-  }
-
-  return parts.reduce((total, part) => total * 60 + part, 0);
 }
 
 export function getText(value: unknown): string {

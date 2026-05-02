@@ -23,7 +23,6 @@ export async function createFeed(
   tags: string[],
   channels: string[],
   channelSort: ChannelSort,
-  prompt: string,
   weights: FeedNodeWeights,
   observation: FeedObservation,
   networkOptions: FeedNetworkOptions,
@@ -36,7 +35,6 @@ export async function createFeed(
     tags: queries,
     channels,
     channelSort,
-    prompt,
     latestWatchedVideoIds: latestWatchedVideos.map((video) => video.id)
   });
   const now = Date.now();
@@ -60,14 +58,13 @@ export async function createFeed(
       queries,
       channels,
       channelSort,
-      prompt,
       weights,
       observation,
       latestWatchedVideos
     );
     saveFeedCacheVideos(profileId, cacheKey, freshNodes, now, true, channels.length > 0);
   } else if (shouldRefreshSubscriptions) {
-    const channelVideos = await fetchChannelVideos(channels, channelSort, prompt, observation, profileId);
+    const channelVideos = await fetchChannelVideos(channels, channelSort, observation, profileId);
     saveFeedCacheVideos(
       profileId,
       cacheKey,
@@ -81,12 +78,6 @@ export async function createFeed(
   const cacheReadLimit = Math.ceil(config.feed.maxVideos * config.feed.cacheReadMultiplier);
   const tagSearchVideos = getCachedFeedVideos(profileId, cacheKey, "tagSearch", cacheReadLimit);
   const channelVideos = getCachedFeedVideos(profileId, cacheKey, "channelVideos", cacheReadLimit);
-  const naturalLanguageVideos = getCachedFeedVideos(
-    profileId,
-    cacheKey,
-    "naturalLanguage",
-    cacheReadLimit
-  );
   const relatedVideos = getCachedFeedVideos(profileId, cacheKey, "relatedVideos", cacheReadLimit);
   const watchedVideos = getCachedFeedVideos(profileId, cacheKey, "watchedVideos", cacheReadLimit);
   const state = getFeedCacheState(profileId, cacheKey);
@@ -104,7 +95,6 @@ export async function createFeed(
     weights,
     tagSearchVideos,
     channelVideos,
-    naturalLanguageVideos,
     relatedVideos,
     watchedVideos
   );
@@ -115,7 +105,7 @@ export async function createFeed(
     queries,
     videos: feed.videos,
     nodes: feed.nodes,
-    searchVideos: tagSearchVideos.length + naturalLanguageVideos.length,
+    searchVideos: tagSearchVideos.length,
     channelVideos: channelVideos.length,
     watchedVideos: watchedVideos.length,
     cache
@@ -127,29 +117,25 @@ async function fetchFreshFeedNodes(
   queries: string[],
   channels: string[],
   channelSort: ChannelSort,
-  prompt: string,
   weights: FeedNodeWeights,
   observation: FeedObservation,
   latestWatchedVideos: FeedVideo[]
 ) {
   const tagSearchVideos =
-    queries.length > 0 ? await searchVideos(queries, prompt, observation, profileId) : [];
-  const naturalLanguageVideos =
-    prompt.length > 0 ? await searchVideos([prompt], prompt, observation, profileId) : [];
+    queries.length > 0 ? await searchVideos(queries, observation, profileId) : [];
   const channelVideos =
     channels.length > 0
-      ? await fetchChannelVideos(channels, channelSort, prompt, observation, profileId)
+      ? await fetchChannelVideos(channels, channelSort, observation, profileId)
       : [];
-  const seedVideos = [...tagSearchVideos, ...naturalLanguageVideos, ...channelVideos];
+  const seedVideos = [...tagSearchVideos, ...channelVideos];
   const relatedVideos =
     weights.relatedVideos > 0
-      ? await recommendVideosFromSeeds(seedVideos, prompt, observation, profileId)
+      ? await recommendVideosFromSeeds(seedVideos, observation, profileId)
       : [];
   const watchedVideos =
     weights.watchedVideos > 0 && latestWatchedVideos.length > 0
       ? await recommendVideosFromSeeds(
           latestWatchedVideos,
-          prompt,
           observation,
           profileId,
           "Watched-neighbor from"
@@ -159,7 +145,6 @@ async function fetchFreshFeedNodes(
   return {
     tagSearch: tagSearchVideos,
     channelVideos,
-    naturalLanguage: naturalLanguageVideos,
     relatedVideos,
     watchedVideos
   };
@@ -169,7 +154,6 @@ function createFeedNetworkNodes(
   weights: FeedNodeWeights,
   tagSearchVideos: FeedVideo[],
   channelVideos: FeedVideo[],
-  naturalLanguageVideos: FeedVideo[],
   relatedVideos: FeedVideo[],
   watchedVideos: FeedVideo[]
 ) {
@@ -185,12 +169,6 @@ function createFeedNetworkNodes(
       label: "Subscription videos",
       weight: weights.channelVideos,
       videos: channelVideos
-    },
-    {
-      id: "naturalLanguage",
-      label: "Natural language search",
-      weight: weights.naturalLanguage,
-      videos: naturalLanguageVideos
     },
     {
       id: "relatedVideos",

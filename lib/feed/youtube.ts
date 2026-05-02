@@ -11,14 +11,12 @@ import {
   getVideoId,
   getViewCount,
   mixVideoBuckets,
-  promptAvoidsShorts,
   shouldKeepVideo,
   getTitle
 } from "./video-utils";
 
 export async function searchVideos(
   queries: string[],
-  prompt: string,
   observation: FeedObservation,
   profileId: string
 ) {
@@ -30,7 +28,6 @@ export async function searchVideos(
       const youtube = await getYoutubeClient(profileId);
       const seen = new Set<string>();
       const videosByQuery: FeedVideo[][] = [];
-      const avoidShorts = promptAvoidsShorts(prompt);
       const config = getGretelConfig();
       const perQueryLimit = Math.max(
         config.feed.minVideosPerQuery,
@@ -45,7 +42,7 @@ export async function searchVideos(
           const id = getVideoId(video);
           const duration = getDuration(video);
 
-          if (!shouldKeepVideo(id, duration, seen, avoidShorts)) {
+          if (!shouldKeepVideo(id, seen)) {
             continue;
           }
 
@@ -84,7 +81,6 @@ export async function searchVideos(
 export async function fetchChannelVideos(
   channels: string[],
   sort: ChannelSort,
-  prompt: string,
   observation: FeedObservation,
   profileId: string
 ) {
@@ -96,7 +92,6 @@ export async function fetchChannelVideos(
       const youtube = await getYoutubeClient(profileId);
       const seen = new Set<string>();
       const videosByChannel: FeedVideo[][] = [];
-      const avoidShorts = promptAvoidsShorts(prompt);
       const config = getGretelConfig();
       const perChannelLimit = Math.max(
         config.feed.minVideosPerChannel,
@@ -130,7 +125,7 @@ export async function fetchChannelVideos(
             const id = getVideoId(video);
             const duration = getDuration(video);
 
-            if (!shouldKeepVideo(id, duration, seen, avoidShorts)) {
+            if (!shouldKeepVideo(id, seen)) {
               continue;
             }
 

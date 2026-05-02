@@ -8,14 +8,12 @@ import {
   getTitle,
   getVideoId,
   getVideoIdFromLink,
-  promptAvoidsShorts,
   shouldKeepVideo
 } from "./video-utils";
 import { getYoutubeClient } from "./youtube-client";
 
 export async function recommendVideosFromSeeds(
   sourceVideos: FeedVideo[],
-  prompt: string,
   observation: FeedObservation,
   profileId: string,
   sourceLabel = "Recommended from"
@@ -35,7 +33,6 @@ export async function recommendVideosFromSeeds(
 
       const recommendationVideos = await recommendVideosFromLinks(
         seedLinks,
-        prompt,
         observation,
         profileId,
         sourceLabel
@@ -50,7 +47,6 @@ export async function recommendVideosFromSeeds(
 
 async function recommendVideosFromLinks(
   videoLinks: string[],
-  prompt: string,
   observation: FeedObservation,
   profileId: string,
   sourceLabel: string
@@ -64,7 +60,6 @@ async function recommendVideosFromLinks(
       const maxVideos = getGretelConfig().feed.maxVideos;
       const seen = new Set<string>();
       const recommendations: FeedVideo[] = [];
-      const avoidShorts = promptAvoidsShorts(prompt);
 
       for (const link of videoLinks) {
         const seedId = getVideoIdFromLink(link);
@@ -80,7 +75,7 @@ async function recommendVideosFromLinks(
             const id = getVideoId(video);
             const duration = getDuration(video);
 
-            if (id === seedId || !shouldKeepVideo(id, duration, seen, avoidShorts)) {
+            if (id === seedId || !shouldKeepVideo(id, seen)) {
               continue;
             }
 

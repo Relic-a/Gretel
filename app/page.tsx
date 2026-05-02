@@ -18,7 +18,6 @@ type FeedVideo = {
 type FeedNodeId =
   | "tagSearch"
   | "channelVideos"
-  | "naturalLanguage"
   | "relatedVideos"
   | "watchedVideos";
 
@@ -39,7 +38,6 @@ type Profile = {
 };
 
 type FeedResponse = {
-  prompt?: string;
   tags: string[];
   channels: string[];
   channelSort: "latest" | "popular";
@@ -64,7 +62,6 @@ type SavedClientState = {
   tags?: string;
   channels?: string;
   channelSort?: "latest" | "popular";
-  prompt?: string;
   weights?: Partial<FeedNodeWeights>;
   feed?: FeedResponse | null;
 };
@@ -101,7 +98,6 @@ const starterWeights = DEFAULT_GRETEL_CONFIG.feed.defaultNodeWeights;
 const nodeControls: Array<{ id: FeedNodeId; label: string }> = [
   { id: "tagSearch", label: "Tag search" },
   { id: "channelVideos", label: "Subscriptions" },
-  { id: "naturalLanguage", label: "Natural language" },
   { id: "relatedVideos", label: "Related videos" },
   { id: "watchedVideos", label: "Watched neighbors" }
 ];
@@ -115,7 +111,6 @@ export default function Home() {
   const [tags, setTags] = useState(starterTags);
   const [channels, setChannels] = useState("");
   const [channelSort, setChannelSort] = useState<"latest" | "popular">("latest");
-  const [prompt, setPrompt] = useState("");
   const [weights, setWeights] = useState<FeedNodeWeights>(starterWeights);
   const [config, setConfig] = useState<PublicGretelConfig>(defaultPublicConfig);
   const [feed, setFeed] = useState<FeedResponse | null>(null);
@@ -166,7 +161,6 @@ export default function Home() {
           tags,
           channels,
           channelSort,
-          prompt,
           weights,
           profileId,
           forceRefresh
@@ -257,7 +251,6 @@ export default function Home() {
         setTags(savedState.tags || starterTags);
         setChannels(savedState.channels || "");
         setChannelSort(savedState.channelSort || "latest");
-        setPrompt(savedState.prompt || "");
         setWeights({ ...loadedConfig.feed.defaultNodeWeights, ...savedState.weights });
         setFeed(savedState.feed || null);
       } else {
@@ -298,7 +291,6 @@ export default function Home() {
       tags,
       channels,
       channelSort,
-      prompt,
       weights,
       feed
     };
@@ -308,7 +300,7 @@ export default function Home() {
     } catch {
       setError("Could not save this browser state locally.");
     }
-  }, [clientStateLoaded, profileId, tags, channels, channelSort, prompt, weights, feed]);
+  }, [clientStateLoaded, profileId, tags, channels, channelSort, weights, feed]);
 
   useEffect(() => {
     if (!feed || !profileId) {
@@ -465,20 +457,6 @@ export default function Home() {
             <option value="latest">Latest</option>
             <option value="popular">Popular</option>
           </select>
-
-          <label htmlFor="prompt">Natural-language tuning</label>
-          <textarea
-            id="prompt"
-            value={prompt}
-            onChange={(event) => setPrompt(event.target.value)}
-            minLength={8}
-            placeholder="Describe topics, tone, formats, creators, and what to avoid."
-            aria-describedby="prompt-status"
-          />
-          <p id="prompt-status" className="field-note">
-            Optional. This works as its own search line and as lightweight tuning,
-            like avoiding shorts.
-          </p>
 
           <fieldset className="network-settings">
             <legend>Network weights</legend>
@@ -685,7 +663,6 @@ function readSavedClientState() {
         state.channelSort === "latest" || state.channelSort === "popular"
           ? state.channelSort
           : undefined,
-      prompt: typeof state.prompt === "string" ? state.prompt : undefined,
       weights: state.weights && typeof state.weights === "object" ? state.weights : undefined,
       feed: state.feed || null
     } satisfies SavedClientState;

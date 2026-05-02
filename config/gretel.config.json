@@ -16,7 +16,6 @@
     "defaultNodeWeights": {
       "tagSearch": 2,
       "channelVideos": 2,
-      "naturalLanguage": 1,
       "relatedVideos": 3,
       "watchedVideos": 2
     }

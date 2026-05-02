@@ -17,7 +17,6 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
     const tags = parseTags(body.tags);
     const channels = parseTags(body.channels);
     const channelSort = parseChannelSort(body.channelSort);
@@ -26,9 +25,9 @@ export async function POST(request: Request) {
     const requestedProfileId = typeof body.profileId === "string" ? body.profileId : "";
     const profile = getProfile(requestedProfileId) || listProfiles()[0];
 
-    if (tags.length === 0 && channels.length === 0 && prompt.length === 0) {
+    if (tags.length === 0 && channels.length === 0) {
       return Response.json(
-        { error: "Enter at least one tag, subscription, or natural-language prompt to build a feed." },
+        { error: "Enter at least one tag or subscription to build a feed." },
         { status: 400 }
       );
     }
@@ -47,7 +46,6 @@ export async function POST(request: Request) {
       tags,
       channels,
       channelSort,
-      prompt,
       weights,
       observation,
       {
@@ -76,7 +74,6 @@ export async function POST(request: Request) {
     });
 
     return Response.json({
-      prompt: prompt || undefined,
       tags,
       channels,
       channelSort,

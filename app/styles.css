@@ -26,7 +26,6 @@ body {
 
 button,
 input,
-textarea,
 select {
   font: inherit;
 }
@@ -103,17 +102,6 @@ h2 {
   font-weight: 700;
 }
 
-textarea {
-  width: 100%;
-  min-height: 190px;
-  resize: vertical;
-  padding: 14px;
-  border: 1px solid var(--line);
-  border-radius: 6px;
-  color: var(--ink);
-  line-height: 1.5;
-}
-
 input,
 select {
   width: 100%;
@@ -126,16 +114,9 @@ select {
 }
 
 input:focus,
-textarea:focus,
 select:focus {
   outline: 3px solid rgb(24 106 94 / 0.18);
   border-color: var(--accent);
-}
-
-textarea:disabled {
-  cursor: not-allowed;
-  background: #f3f1eb;
-  color: var(--muted);
 }
 
 .field-note {

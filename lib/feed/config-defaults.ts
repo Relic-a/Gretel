@@ -46,7 +46,6 @@ export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
     defaultNodeWeights: {
       tagSearch: 2,
       channelVideos: 2,
-      naturalLanguage: 1,
       relatedVideos: 3,
       watchedVideos: 2
     }

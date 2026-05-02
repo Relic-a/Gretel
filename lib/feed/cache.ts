@@ -164,14 +164,12 @@ export function createFeedCacheKey(input: {
   tags: string[];
   channels: string[];
   channelSort: string;
-  prompt: string;
   latestWatchedVideoIds: string[];
 }) {
   return JSON.stringify({
     tags: input.tags.map(normalizeCachePart).sort(),
     channels: input.channels.map(normalizeCachePart).sort(),
     channelSort: input.channelSort,
-    prompt: normalizeCachePart(input.prompt),
     latestWatchedVideoIds: input.latestWatchedVideoIds
   });
 }
