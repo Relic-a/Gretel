@@ -331,6 +331,7 @@ function cleanProfileName(name: string) {
 function resetYoutubeProfileCache(profileId: string) {
   forgetYoutubeClient(profileId);
   rmSync(path.join(dataDir, "youtube-sessions", profileId), { recursive: true, force: true });
+  rmSync(path.join(dataDir, "thumbnails", profileId), { recursive: true, force: true });
 }
 
 function toProfile(row: Record<string, number | string>): GretelProfile {

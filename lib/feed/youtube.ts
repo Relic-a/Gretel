@@ -9,6 +9,9 @@ import {
   getAuthor,
   getChannelVideoAuthor,
   getDuration,
+  getPublishedAt,
+  getPublishedText,
+  getThumbnailUrl,
   getVideoId,
   getViewCount,
   mixVideoBuckets,
@@ -55,6 +58,11 @@ export async function searchVideos(
             author,
             duration,
             query,
+            thumbnailUrl: getThumbnailUrl(video) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+            thumbnailCacheUrl: `/api/thumbnails/${profileId}/${id}`,
+            publishedText: getPublishedText(video),
+            publishedAt: getPublishedAt(video),
+            viewCount: getViewCount(video),
             channelKey: normalizeChannelKey(author)
           });
 
@@ -111,14 +119,10 @@ export async function fetchChannelVideos(
         try {
           const channel = await youtube.getChannel(channelId);
           const latestChannelVideos = await channel.getVideos();
-          const fallbackVideos = getChannelVideoItems(latestChannelVideos);
-          const sortedChannelVideos = await applyChannelSort(latestChannelVideos, sort, youtube);
-          const sortedVideos = getChannelVideoItems(sortedChannelVideos);
-          const videosToRead = sortedVideos.length > 0 ? sortedVideos : fallbackVideos;
-          const sourceVideos =
-            sort === "popular"
-              ? [...videosToRead].sort((a, b) => getViewCount(b) - getViewCount(a))
-              : videosToRead;
+          const latestVideos = getChannelVideoItems(latestChannelVideos);
+          const popularPage = await applyChannelSort(latestChannelVideos, "popular", youtube);
+          const popularVideos = getChannelVideoItems(popularPage);
+          const sourceVideos = mixSubscriptionVideos(latestVideos, popularVideos);
 
           const channelVideos: FeedVideo[] = [];
 
@@ -137,7 +141,12 @@ export async function fetchChannelVideos(
               title: getTitle(video),
               author,
               duration,
-              query: `${channelName} · ${sort}`,
+              query: channelName,
+              thumbnailUrl: getThumbnailUrl(video) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+              thumbnailCacheUrl: `/api/thumbnails/${profileId}/${id}`,
+              publishedText: getPublishedText(video),
+              publishedAt: getPublishedAt(video),
+              viewCount: getViewCount(video),
               channelKey
             });
 
@@ -171,6 +180,26 @@ export async function fetchChannelVideos(
   );
 }
 
+export async function searchChannels(query: string, profileId: string) {
+  const youtube = await getYoutubeClient(profileId);
+  const results = await youtube.search(query, { type: "channel" });
+
+  return results.channels.slice(0, 8).flatMap((channel: unknown) => {
+    const id = getChannelId(channel);
+    const name = getChannelName(channel);
+
+    if (!id || !name) {
+      return [];
+    }
+
+    return [{
+      id,
+      name,
+      thumbnailUrl: getThumbnailUrl(channel)
+    }];
+  });
+}
+
 async function resolveChannelId(
   channelName: string,
   observation: FeedObservation,
@@ -201,4 +230,83 @@ async function resolveChannelId(
       };
     }
   );
+}
+
+function mixSubscriptionVideos(latestVideos: unknown[], popularVideos: unknown[]) {
+  const config = getGretelConfig().feed.subscriptionMix;
+  const latest = latestVideos;
+  const popular = [...popularVideos].sort((a, b) => getViewCount(b) - getViewCount(a));
+  const trending = latestVideos
+    .slice(0, config.trendingLookbackVideos)
+    .sort((a, b) => trendingScore(b) - trendingScore(a));
+
+  return weightedRoundRobin([
+    { videos: latest, weight: config.latest },
+    { videos: trending, weight: config.trending },
+    { videos: popular, weight: config.popular }
+  ]);
+}
+
+function weightedRoundRobin(buckets: Array<{ videos: unknown[]; weight: number }>) {
+  const output: unknown[] = [];
+  const indexes = buckets.map(() => 0);
+  const seen = new Set<string>();
+  const totalWeight = buckets.reduce((total, bucket) => total + bucket.weight, 0) || 1;
+  const quotas = buckets.map((bucket) => Math.max(1, Math.round((bucket.weight / totalWeight) * 10)));
+
+  while (output.length < getGretelConfig().feed.maxVideos) {
+    let added = false;
+
+    for (let bucketIndex = 0; bucketIndex < buckets.length; bucketIndex += 1) {
+      for (let count = 0; count < quotas[bucketIndex]; count += 1) {
+        const videos = buckets[bucketIndex].videos;
+
+        while (indexes[bucketIndex] < videos.length) {
+          const video = videos[indexes[bucketIndex]];
+          indexes[bucketIndex] += 1;
+          const id = getVideoId(video);
+
+          if (id && !seen.has(id)) {
+            seen.add(id);
+            output.push(video);
+            added = true;
+            break;
+          }
+        }
+      }
+    }
+
+    if (!added) {
+      break;
+    }
+  }
+
+  return output;
+}
+
+function trendingScore(video: unknown) {
+  const publishedAt = getPublishedAt(video);
+  const ageDays = publishedAt > 0 ? Math.max(1, (Date.now() - publishedAt) / (24 * 60 * 60 * 1000)) : 30;
+
+  return getViewCount(video) / ageDays;
+}
+
+function getChannelName(channel: unknown) {
+  if (!channel || typeof channel !== "object") {
+    return "";
+  }
+
+  if ("author" in channel && channel.author && typeof channel.author === "object" && "name" in channel.author) {
+    return getTitle({ title: channel.author.name });
+  }
+
+  if ("name" in channel) {
+    return getTitle({ title: channel.name });
+  }
+
+  if ("title" in channel) {
+    return getTitle(channel);
+  }
+
+  return "";
 }

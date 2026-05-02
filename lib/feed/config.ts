@@ -153,7 +153,8 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
         feed.defaultNodeWeights,
         defaults.feed.defaultNodeWeights,
         integer(feed.maxNodeWeight, defaults.feed.maxNodeWeight, 1, 20)
-      )
+      ),
+      subscriptionMix: subscriptionMix(feed.subscriptionMix, defaults.feed.subscriptionMix)
     },
     learning: {
       watchSaveThreshold: share(learning.watchSaveThreshold, defaults.learning.watchSaveThreshold),
@@ -182,6 +183,25 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
     youtube: {
       language: nonEmptyString(youtube.language, defaults.youtube.language)
     }
+  };
+}
+
+function subscriptionMix(
+  input: unknown,
+  fallback: GretelConfig["feed"]["subscriptionMix"]
+) {
+  const source = input && typeof input === "object" ? input as Partial<GretelConfig["feed"]["subscriptionMix"]> : {};
+
+  return {
+    latest: share(source.latest, fallback.latest),
+    trending: share(source.trending, fallback.trending),
+    popular: share(source.popular, fallback.popular),
+    trendingLookbackVideos: integer(
+      source.trendingLookbackVideos,
+      fallback.trendingLookbackVideos,
+      1,
+      200
+    )
   };
 }
 

@@ -1,4 +1,4 @@
-export type ChannelSort = "latest" | "popular";
+export type ChannelSort = "mixed";
 
 export type FeedVideo = {
   id: string;
@@ -6,6 +6,11 @@ export type FeedVideo = {
   author: string;
   duration: string;
   query: string;
+  thumbnailUrl?: string;
+  thumbnailCacheUrl?: string;
+  publishedText?: string;
+  publishedAt?: number;
+  viewCount?: number;
   sourceNodeId?: FeedNodeId;
   sourceNodeLabel?: string;
   channelKey?: string;

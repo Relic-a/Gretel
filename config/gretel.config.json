@@ -18,6 +18,12 @@
       "channelVideos": 2,
       "relatedVideos": 3,
       "watchedVideos": 2
+    },
+    "subscriptionMix": {
+      "latest": 0.4,
+      "trending": 0.35,
+      "popular": 0.25,
+      "trendingLookbackVideos": 24
     }
   },
   "learning": {

@@ -193,6 +193,53 @@ export function getViewCount(video: unknown) {
   return Number.isFinite(count) ? count : 0;
 }
 
+export function getPublishedText(video: unknown) {
+  const texts = getMetadataTexts(video);
+  return texts.find((text) => /\bago\b|premiered|streamed|published/i.test(text)) || "";
+}
+
+export function getPublishedAt(video: unknown) {
+  const text = getPublishedText(video);
+  const match = text.match(/(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago/i);
+
+  if (!match) {
+    return 0;
+  }
+
+  const amount = Number(match[1]);
+  const unit = match[2].toLowerCase();
+  const day = 24 * 60 * 60 * 1000;
+  const multipliers: Record<string, number> = {
+    second: 1000,
+    minute: 60 * 1000,
+    hour: 60 * 60 * 1000,
+    day,
+    week: 7 * day,
+    month: 30 * day,
+    year: 365 * day
+  };
+
+  return Date.now() - amount * multipliers[unit];
+}
+
+export function getThumbnailUrl(video: unknown) {
+  const direct = getThumbnailFromValue(video);
+
+  if (direct) {
+    return direct;
+  }
+
+  if (video && typeof video === "object" && "content_image" in video) {
+    return getThumbnailFromValue(video.content_image);
+  }
+
+  if (video && typeof video === "object" && "metadata" in video) {
+    return getThumbnailFromValue(video.metadata);
+  }
+
+  return "";
+}
+
 function getAuthorFromMetadataRows(metadata: unknown) {
   if (!metadata || typeof metadata !== "object" || !("metadata" in metadata)) {
     return "";
@@ -224,6 +271,66 @@ function getAuthorFromMetadataRows(metadata: unknown) {
       if (text && !/\bviews?\b|ago$|watching/i.test(text)) {
         return text;
       }
+    }
+  }
+
+  return "";
+}
+
+function getMetadataTexts(video: unknown) {
+  const metadata = video && typeof video === "object" && "metadata" in video ? video.metadata : video;
+
+  if (
+    !metadata ||
+    typeof metadata !== "object" ||
+    !("metadata" in metadata) ||
+    !metadata.metadata ||
+    typeof metadata.metadata !== "object" ||
+    !("metadata_rows" in metadata.metadata) ||
+    !Array.isArray(metadata.metadata.metadata_rows)
+  ) {
+    return [];
+  }
+
+  return metadata.metadata.metadata_rows.flatMap((row: unknown) => {
+    if (!row || typeof row !== "object" || !("metadata_parts" in row) || !Array.isArray(row.metadata_parts)) {
+      return [];
+    }
+
+    return row.metadata_parts.flatMap((part: unknown) => {
+      if (!part || typeof part !== "object" || !("text" in part)) {
+        return [];
+      }
+
+      const text = getText(part.text);
+      return text ? [text] : [];
+    });
+  });
+}
+
+function getThumbnailFromValue(value: unknown): string {
+  if (!value || typeof value !== "object") {
+    return "";
+  }
+
+  const source = value as Record<string, unknown>;
+
+  if ("url" in value) {
+    return getText(source.url);
+  }
+
+  for (const key of ["thumbnails", "thumbnail", "image"] as const) {
+    if (!(key in source)) {
+      continue;
+    }
+
+    const candidate = source[key];
+    const thumbnail = Array.isArray(candidate)
+      ? candidate.map(getThumbnailFromValue).filter(Boolean).at(-1) || ""
+      : getThumbnailFromValue(candidate);
+
+    if (thumbnail) {
+      return thumbnail;
     }
   }
 

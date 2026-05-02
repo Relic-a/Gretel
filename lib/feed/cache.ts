@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, rmSync, writeFile } from "node:fs";
+import path from "node:path";
+
 import { getDatabase } from "../profile-store";
 import type { FeedNodeId, FeedVideo } from "./types";
 
@@ -105,10 +108,18 @@ export function saveFeedCacheVideos(
         refreshedAt,
         refreshedAt
       );
+
+      if (video.thumbnailUrl) {
+        void cacheThumbnail(profileId, video);
+      }
     }
   }
 
   pruneFeedCacheVideos(profileId, cacheKey, maxCachedVideos);
+}
+
+export function getCachedThumbnailPath(profileId: string, videoId: string) {
+  return path.join(thumbnailDirectory(profileId), `${cleanFilePart(videoId)}.jpg`);
 }
 
 export function getCachedFeedVideos(
@@ -231,7 +242,71 @@ function pruneFeedCacheVideos(profileId: string, cacheKey: string, maxCachedVide
       return;
     }
 
+    const deleted = database
+      .prepare(
+        `SELECT video_id
+         FROM feed_cache_videos
+         WHERE profile_id = ? AND cache_key = ? AND node_id = ?
+         ORDER BY recommendation_count DESC,
+                  COALESCE(last_recommended_at, 0) DESC,
+                  updated_at ASC,
+                  first_seen_at ASC
+         LIMIT 1`
+      )
+      .get(profileId, cacheKey, largestNode.node_id) as { video_id: string } | undefined;
+
     deleteStatement.run(profileId, cacheKey, largestNode.node_id);
+
+    if (deleted) {
+      removeThumbnailIfUnused(profileId, deleted.video_id);
+    }
+
     row = { count: row.count - 1 };
   }
+}
+
+async function cacheThumbnail(profileId: string, video: FeedVideo) {
+  const videoId = cleanFilePart(video.id);
+  const thumbnailUrl = video.thumbnailUrl;
+
+  if (!videoId || !thumbnailUrl) {
+    return;
+  }
+
+  const filePath = getCachedThumbnailPath(profileId, videoId);
+
+  if (existsSync(filePath)) {
+    return;
+  }
+
+  try {
+    const response = await fetch(thumbnailUrl);
+
+    if (!response.ok) {
+      return;
+    }
+
+    mkdirSync(path.dirname(filePath), { recursive: true });
+    writeFile(filePath, Buffer.from(await response.arrayBuffer()), () => {});
+  } catch {
+    // Thumbnail caching is opportunistic; the UI can still use YouTube's URL.
+  }
+}
+
+function removeThumbnailIfUnused(profileId: string, videoId: string) {
+  const remaining = getDatabase()
+    .prepare("SELECT 1 FROM feed_cache_videos WHERE profile_id = ? AND video_id = ? LIMIT 1")
+    .get(profileId, videoId);
+
+  if (!remaining) {
+    rmSync(getCachedThumbnailPath(profileId, videoId), { force: true });
+  }
+}
+
+function thumbnailDirectory(profileId: string) {
+  return path.join(process.cwd(), "data", "thumbnails", cleanFilePart(profileId));
+}
+
+function cleanFilePart(value: string) {
+  return value.replace(/[^a-z0-9._-]/gi, "_");
 }

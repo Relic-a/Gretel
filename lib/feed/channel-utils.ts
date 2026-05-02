@@ -1,5 +1,4 @@
 import { Innertube } from "youtubei.js";
-import type { ChannelSort } from "./types";
 import { getText, getVideoId } from "./video-utils";
 
 export function getChannelIdFromInput(input: string) {
@@ -73,7 +72,7 @@ export function getChannelVideoItems(page: unknown): unknown[] {
 
 export async function applyChannelSort<T extends { sort_filters?: string[]; applySort?: (sort: string) => Promise<T> }>(
   channel: T,
-  sort: ChannelSort,
+  sort: "latest" | "popular",
   youtube: Innertube
 ) {
   const preferred = sort === "popular" ? ["Popular"] : ["Latest", "Recently uploaded", "Newest"];
@@ -194,4 +193,3 @@ function getBrowseId(endpoint: unknown): string {
 
   return "";
 }
-

@@ -13,7 +13,7 @@ export function parseTags(value: unknown) {
 }
 
 export function parseChannelSort(value: unknown): ChannelSort {
-  return value === "popular" ? "popular" : "latest";
+  return "mixed";
 }
 
 export function parseFeedNodeWeights(value: unknown): FeedNodeWeights {

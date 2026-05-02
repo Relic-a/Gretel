@@ -16,6 +16,12 @@ export type GretelConfig = {
     maxSharePerNode: number;
     maxSharePerChannel: number;
     defaultNodeWeights: FeedNodeWeights;
+    subscriptionMix: {
+      latest: number;
+      trending: number;
+      popular: number;
+      trendingLookbackVideos: number;
+    };
   };
   learning: {
     watchSaveThreshold: number;
@@ -51,6 +57,12 @@ export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
       channelVideos: 2,
       relatedVideos: 3,
       watchedVideos: 2
+    },
+    subscriptionMix: {
+      latest: 0.4,
+      trending: 0.35,
+      popular: 0.25,
+      trendingLookbackVideos: 24
     }
   },
   learning: {

@@ -1,35 +1,19 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
-
-import { DEFAULT_GRETEL_CONFIG } from "../lib/feed/config-defaults";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import type { MediaPlayerClass } from "dashjs";
 
 type FeedVideo = {
   id: string;
   title: string;
   author: string;
   duration: string;
-  query: string;
-  sourceNodeId?: FeedNodeId;
-  sourceNodeLabel?: string;
+  thumbnailUrl?: string;
+  thumbnailCacheUrl?: string;
+  publishedText?: string;
+  publishedAt?: number;
+  viewCount?: number;
   channelKey?: string;
-};
-
-type FeedNodeId =
-  | "tagSearch"
-  | "channelVideos"
-  | "relatedVideos"
-  | "watchedVideos";
-
-type FeedNodeWeights = Record<FeedNodeId, number>;
-
-type FeedNodeSummary = {
-  id: FeedNodeId;
-  label: string;
-  weight: number;
-  effectiveWeight: number;
-  inputVideos: number;
-  outputVideos: number;
 };
 
 type Profile = {
@@ -37,124 +21,251 @@ type Profile = {
   name: string;
 };
 
+type ChannelResult = {
+  id: string;
+  name: string;
+  thumbnailUrl?: string;
+};
+
 type FeedResponse = {
-  tags: string[];
-  channels: string[];
-  channelSort: "latest" | "popular";
   profile: Profile;
-  weights: FeedNodeWeights;
-  queries: string[];
-  nodes: FeedNodeSummary[];
-  cache?: {
-    videos: number;
-    targetVideos: number;
-    refreshedAt: number;
-    subscriptionRefreshedAt: number;
-    refreshHours: number;
-    subscriptionRefreshMinutes: number;
-    status: "miss" | "stale" | "hit";
-    forced: boolean;
-  };
   videos: FeedVideo[];
 };
 
-type SavedClientState = {
-  profileId?: string;
-  tags?: string;
-  channels?: string;
-  channelSort?: "latest" | "popular";
-  weights?: Partial<FeedNodeWeights>;
-  feed?: FeedResponse | null;
+type DashPlayer = MediaPlayerClass & {
+  getBitrateInfoListFor: (mediaType: "video") => Array<{ height?: number; bitrate: number }>;
+  setQualityFor: (mediaType: "video", quality: number, forceReplace?: boolean) => void;
 };
 
-type PublicGretelConfig = {
-  feed: {
-    maxNodeWeight: number;
-    defaultNodeWeights: FeedNodeWeights;
-  };
-  learning: {
-    watchSaveThreshold: number;
-  };
-  client: {
-    watchProgressPollMs: number;
-  };
-};
-
-const defaultPublicConfig: PublicGretelConfig = {
-  feed: {
-    maxNodeWeight: DEFAULT_GRETEL_CONFIG.feed.maxNodeWeight,
-    defaultNodeWeights: DEFAULT_GRETEL_CONFIG.feed.defaultNodeWeights
-  },
-  learning: {
-    watchSaveThreshold: DEFAULT_GRETEL_CONFIG.learning.watchSaveThreshold
-  },
-  client: {
-    watchProgressPollMs: DEFAULT_GRETEL_CONFIG.client.watchProgressPollMs
-  }
-};
-
-const starterTags = "AI engineering, TypeScript, product design";
-const starterWeights = DEFAULT_GRETEL_CONFIG.feed.defaultNodeWeights;
-
-const nodeControls: Array<{ id: FeedNodeId; label: string }> = [
-  { id: "tagSearch", label: "Tag search" },
-  { id: "channelVideos", label: "Subscriptions" },
-  { id: "relatedVideos", label: "Related videos" },
-  { id: "watchedVideos", label: "Watched neighbors" }
-];
-
-const clientStateKey = "gretel.clientState.v1";
+const clientStateKey = "gretel.clientState.v2";
+const starterTags = ["AI engineering", "TypeScript", "product design"];
 
 export default function Home() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profileId, setProfileId] = useState("");
   const [profileName, setProfileName] = useState("");
-  const [tags, setTags] = useState(starterTags);
-  const [channels, setChannels] = useState("");
-  const [channelSort, setChannelSort] = useState<"latest" | "popular">("latest");
-  const [weights, setWeights] = useState<FeedNodeWeights>(starterWeights);
-  const [config, setConfig] = useState<PublicGretelConfig>(defaultPublicConfig);
+  const [tags, setTags] = useState<string[]>(starterTags);
+  const [channels, setChannels] = useState<string[]>([]);
+  const [tagDraft, setTagDraft] = useState("");
+  const [channelDraft, setChannelDraft] = useState("");
+  const [channelResults, setChannelResults] = useState<ChannelResult[]>([]);
   const [feed, setFeed] = useState<FeedResponse | null>(null);
+  const [activeVideo, setActiveVideo] = useState<FeedVideo | null>(null);
+  const [quality, setQuality] = useState("auto");
+  const [qualityOptions, setQualityOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
-  const [clientStateLoaded, setClientStateLoaded] = useState(false);
-  const subscriptions = useMemo(() => parseSubscriptionList(channels), [channels]);
-  const subscribedKeys = useMemo(
-    () => new Set(subscriptions.map((subscription) => normalizeSubscription(subscription))),
-    [subscriptions]
+  const [booted, setBooted] = useState(false);
+  const [showProfileMenu, setShowProfileMenu] = useState(false);
+  const [manageProfiles, setManageProfiles] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const playerRef = useRef<DashPlayer | null>(null);
+  const subscriptions = useMemo(
+    () => new Set(channels.map((channel) => normalize(channel))),
+    [channels]
   );
+  const activeProfile = profiles.find((profile) => profile.id === profileId);
+  const needsProfile = booted && profiles.length <= 1 && channels.length === 0 && !feed;
+  const sideVideos = feed?.videos.filter((video) => video.id !== activeVideo?.id).slice(0, 12) || [];
 
-  function updateWeight(id: FeedNodeId, value: string) {
-    setWeights((current) => ({
-      ...current,
-      [id]: Number(value)
-    }));
-  }
+  useEffect(() => {
+    let disposed = false;
 
-  function addSubscription(channel: string) {
-    const cleaned = channel.replace(/\s+/g, " ").trim();
+    async function boot() {
+      const saved = readSavedState();
+      const selectedProfileId = await loadProfiles(saved?.profileId);
 
-    if (!cleaned || subscribedKeys.has(normalizeSubscription(cleaned))) {
+      if (disposed) {
+        return;
+      }
+
+      setTags(saved?.tags?.length ? saved.tags : starterTags);
+      setChannels(saved?.channels || []);
+      setBooted(true);
+
+      if ((saved?.tags?.length || saved?.channels?.length) && selectedProfileId) {
+        await requestFeed({
+          nextProfileId: selectedProfileId,
+          nextTags: saved?.tags?.length ? saved.tags : starterTags,
+          nextChannels: saved?.channels || [],
+          forceRefresh: true
+        });
+      }
+    }
+
+    boot().catch((caught) => {
+      setError(caught instanceof Error ? caught.message : "Could not start Gretel.");
+      setBooted(true);
+    });
+
+    return () => {
+      disposed = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!booted) {
       return;
     }
 
-    setChannels([...subscriptions, cleaned].join(", "));
+    window.localStorage.setItem(
+      clientStateKey,
+      JSON.stringify({ profileId, tags, channels })
+    );
+  }, [booted, profileId, tags, channels]);
+
+  useEffect(() => {
+    if (!activeVideo || !videoRef.current) {
+      return;
+    }
+
+    let disposed = false;
+    const video = activeVideo;
+    setQuality("auto");
+    setQualityOptions([]);
+
+    async function loadPlayer() {
+      const dashjs = await import("dashjs");
+
+      if (disposed || !videoRef.current) {
+        return;
+      }
+
+      playerRef.current?.destroy();
+      const player = dashjs.MediaPlayer().create() as DashPlayer;
+      player.updateSettings({
+        streaming: {
+          abr: { autoSwitchBitrate: { video: true, audio: true } }
+        }
+      });
+      player.initialize(
+        videoRef.current,
+        `/api/videos/${video.id}/stream?profileId=${encodeURIComponent(profileId)}`,
+        true
+      );
+      player.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED, () => {
+        const bitrates = player.getBitrateInfoListFor("video");
+        setQualityOptions(
+          bitrates.map((bitrate, index) => ({
+            value: String(index),
+            label: bitrate.height ? `${bitrate.height}p` : `${Math.round(bitrate.bitrate / 1000)} kbps`
+          }))
+        );
+      });
+      playerRef.current = player;
+    }
+
+    loadPlayer().catch(() => setError("Could not open this video stream."));
+
+    return () => {
+      disposed = true;
+      playerRef.current?.destroy();
+      playerRef.current = null;
+    };
+  }, [activeVideo, profileId]);
+
+  useEffect(() => {
+    const player = playerRef.current;
+
+    if (!player) {
+      return;
+    }
+
+    if (quality === "auto") {
+      player.updateSettings({
+        streaming: { abr: { autoSwitchBitrate: { video: true } } }
+      });
+      return;
+    }
+
+    player.updateSettings({
+      streaming: { abr: { autoSwitchBitrate: { video: false } } }
+    });
+    player.setQualityFor("video", Number(quality), true);
+  }, [quality]);
+
+  useEffect(() => {
+    if (channelDraft.trim().length < 2) {
+      setChannelResults([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      const response = await fetch(
+        `/api/channels/search?q=${encodeURIComponent(channelDraft)}&profileId=${encodeURIComponent(profileId)}`,
+        { signal: controller.signal }
+      );
+      const data = await response.json();
+      setChannelResults(data.channels || []);
+    }, 300);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
+  }, [channelDraft, profileId]);
+
+  async function loadProfiles(nextProfileId?: string) {
+    const response = await fetch("/api/profiles");
+    const data = await response.json();
+    const nextProfiles = data.profiles || [];
+    const selected =
+      nextProfiles.find((profile: Profile) => profile.id === nextProfileId) || nextProfiles[0];
+
+    setProfiles(nextProfiles);
+    setProfileId(selected?.id || "");
+    return selected?.id || "";
   }
 
-  async function createFeed(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    await requestFeed(false, false);
+  async function createProfile() {
+    if (!profileName.trim()) {
+      return;
+    }
+
+    const response = await fetch("/api/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: profileName })
+    });
+    const data = await response.json();
+    setProfiles(data.profiles || []);
+    setProfileId(data.profileId || "");
+    setProfileName("");
+    setTags(starterTags);
+    setChannels([]);
+    setFeed(null);
+    setManageProfiles(false);
   }
 
-  async function refreshFeed() {
-    await requestFeed(false, true);
+  async function deleteProfile(id: string) {
+    const response = await fetch("/api/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete", profileId: id })
+    });
+    const data = await response.json();
+    setProfiles(data.profiles || []);
+    setProfileId(data.profileId || "");
+    setFeed(null);
+    setActiveVideo(null);
   }
 
-  async function fetchNewVideos() {
-    await requestFeed(true, false);
+  async function buildFeed(event?: FormEvent) {
+    event?.preventDefault();
+    await requestFeed({ forceRefresh: true });
   }
 
-  async function requestFeed(forceRefresh: boolean, cacheOnly: boolean) {
+  async function requestFeed(input: {
+    nextProfileId?: string;
+    nextTags?: string[];
+    nextChannels?: string[];
+    forceRefresh?: boolean;
+  } = {}) {
+    const nextTags = input.nextTags || tags;
+    const nextChannels = input.nextChannels || channels;
+    const nextProfileId = input.nextProfileId || profileId;
+
     setError("");
     setLoading(true);
 
@@ -163,520 +274,322 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          tags,
-          channels,
-          channelSort,
-          weights,
-          profileId,
-          forceRefresh,
-          cacheOnly
+          tags: nextTags,
+          channels: nextChannels,
+          profileId: nextProfileId,
+          forceRefresh: input.forceRefresh === true
         })
       });
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Could not create feed.");
+        throw new Error(data.error || "Could not build this feed.");
       }
 
       setFeed(data);
+      setActiveVideo((current) => current || data.videos[0] || null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not create feed.");
+      setError(caught instanceof Error ? caught.message : "Could not build this feed.");
     } finally {
       setLoading(false);
     }
   }
 
-  async function loadProfiles(nextProfileId?: string) {
-    const response = await fetch("/api/profiles");
-    const data = await response.json();
-    const nextProfiles = data.profiles || [];
-    const selectedProfile =
-      nextProfiles.find((profile: Profile) => profile.id === nextProfileId) || nextProfiles[0];
+  function addTag(value: string) {
+    const cleaned = value.replace(/\s+/g, " ").trim();
 
-    setProfiles(nextProfiles);
-    setProfileId(selectedProfile?.id || "");
-    return selectedProfile?.id || "";
+    if (cleaned.length > 1 && !tags.some((tag) => normalize(tag) === normalize(cleaned))) {
+      setTags([...tags, cleaned]);
+    }
+
+    setTagDraft("");
   }
 
-  async function createProfile() {
-    setError("");
-    const response = await fetch("/api/profiles", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name: profileName })
-    });
-    const data = await response.json();
-    setProfileName("");
-    setProfiles(data.profiles || []);
-    setProfileId(data.profileId || "");
-    setFeed(null);
+  function addChannel(value: string) {
+    const cleaned = value.replace(/\s+/g, " ").trim();
+
+    if (cleaned.length > 1 && !subscriptions.has(normalize(cleaned))) {
+      setChannels([...channels, cleaned]);
+    }
+
+    setChannelDraft("");
+    setChannelResults([]);
   }
 
-  async function resetProfile() {
-    if (!profileId) {
-      return;
-    }
-
-    setError("");
-    await fetch("/api/profiles", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "reset", profileId })
-    });
-    await loadProfiles(profileId);
-    setFeed(null);
+  function removeChannel(value: string) {
+    setChannels(channels.filter((channel) => normalize(channel) !== normalize(value)));
   }
-
-  async function deleteProfile() {
-    if (!profileId) {
-      return;
-    }
-
-    setError("");
-    const response = await fetch("/api/profiles", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "delete", profileId })
-    });
-    const data = await response.json();
-    setProfiles(data.profiles || []);
-    setProfileId(data.profileId || "");
-    setFeed(null);
-  }
-
-  useEffect(() => {
-    let disposed = false;
-
-    async function loadSavedState() {
-      const loadedConfig = await loadPublicConfig();
-      const savedState = readSavedClientState();
-      setConfig(loadedConfig);
-
-      if (savedState) {
-        setProfileId(savedState.profileId || "");
-        setTags(savedState.tags || starterTags);
-        setChannels(savedState.channels || "");
-        setChannelSort(savedState.channelSort || "latest");
-        setWeights({ ...loadedConfig.feed.defaultNodeWeights, ...savedState.weights });
-        setFeed(savedState.feed || null);
-      } else {
-        setWeights(loadedConfig.feed.defaultNodeWeights);
-      }
-
-      try {
-        const selectedProfileId = await loadProfiles(savedState?.profileId);
-
-        if (!disposed && savedState?.feed && savedState.feed.profile.id !== selectedProfileId) {
-          setFeed(null);
-        }
-      } catch (caught) {
-        if (!disposed) {
-          setError(caught instanceof Error ? caught.message : "Could not load profiles.");
-        }
-      } finally {
-        if (!disposed) {
-          setClientStateLoaded(true);
-        }
-      }
-    }
-
-    loadSavedState();
-
-    return () => {
-      disposed = true;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!clientStateLoaded) {
-      return;
-    }
-
-    const state: SavedClientState = {
-      profileId,
-      tags,
-      channels,
-      channelSort,
-      weights,
-      feed
-    };
-
-    try {
-      window.localStorage.setItem(clientStateKey, JSON.stringify(state));
-    } catch {
-      setError("Could not save this browser state locally.");
-    }
-  }, [clientStateLoaded, profileId, tags, channels, channelSort, weights, feed]);
-
-  useEffect(() => {
-    if (!feed || !profileId) {
-      return;
-    }
-
-    let disposed = false;
-    const players: Array<{
-      video: FeedVideo;
-      player: {
-        getCurrentTime: () => number;
-        getDuration: () => number;
-        destroy: () => void;
-      };
-    }> = [];
-    const reported = new Set<string>();
-
-    loadYoutubeApi().then((YT) => {
-      if (disposed) {
-        return;
-      }
-
-      for (const video of feed.videos) {
-        const element = document.getElementById(`youtube-${video.id}`);
-
-        if (!element) {
-          continue;
-        }
-
-        const player = new YT.Player(element, {
-          events: {
-            onReady: () => {
-              players.push({ video, player });
-            }
-          }
-        });
-      }
-    });
-
-    const interval = window.setInterval(() => {
-      for (const entry of players) {
-        const { video, player } = entry;
-        const durationSeconds = player.getDuration();
-
-        if (!video || reported.has(video.id) || durationSeconds <= 0) {
-          continue;
-        }
-
-        const watchedSeconds = player.getCurrentTime();
-
-        if (watchedSeconds / durationSeconds <= config.learning.watchSaveThreshold) {
-          continue;
-        }
-
-        reported.add(video.id);
-        fetch("/api/watch-events", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            profileId,
-            video,
-            watchedSeconds,
-            durationSeconds
-          })
-        }).catch(() => {});
-      }
-    }, config.client.watchProgressPollMs);
-
-    return () => {
-      disposed = true;
-      window.clearInterval(interval);
-
-      for (const player of players) {
-        player.player.destroy();
-      }
-    };
-  }, [feed, profileId, config]);
 
   return (
-    <main className="shell">
-      <section className="composer">
-        <div>
-          <p className="eyebrow">Gretel MVP</p>
-          <h1>Tell the algorithm what you want to watch.</h1>
-          <p className="intro">
-            Gretel runs each input through weighted nodes, sends seed videos
-            into related-video discovery, and mixes every line into one feed.
-          </p>
-        </div>
-
-        <form onSubmit={createFeed} className="feed-form">
-          <fieldset className="profile-settings">
-            <legend>Profiles</legend>
-            <label htmlFor="profile">Active profile</label>
-            <select
-              id="profile"
-              value={profileId}
-              onChange={(event) => {
-                setProfileId(event.target.value);
-                setFeed(null);
-              }}
-            >
+    <main className="app-shell">
+      <header className="topbar">
+        <button type="button" className="brand-button" onClick={() => buildFeed()}>
+          Gretel
+        </button>
+        <div className="profile-menu">
+          <button type="button" className="profile-button" onClick={() => setShowProfileMenu(!showProfileMenu)}>
+            {activeProfile?.name || "Profile"}
+          </button>
+          {showProfileMenu && (
+            <div className="profile-popover">
               {profiles.map((profile) => (
-                <option key={profile.id} value={profile.id}>
+                <button
+                  type="button"
+                  key={profile.id}
+                  onClick={() => {
+                    setProfileId(profile.id);
+                    setFeed(null);
+                    setActiveVideo(null);
+                    setShowProfileMenu(false);
+                  }}
+                >
                   {profile.name}
-                </option>
+                </button>
               ))}
-            </select>
-            <div className="profile-actions">
-              <input
-                aria-label="New profile name"
-                value={profileName}
-                onChange={(event) => setProfileName(event.target.value)}
-                placeholder="New profile"
-              />
-              <button type="button" className="secondary-button" onClick={createProfile}>
-                Create
-              </button>
-              <button type="button" className="secondary-button" onClick={resetProfile}>
-                Reset
-              </button>
-              <button type="button" className="danger-button" onClick={deleteProfile}>
-                Delete
+              <button
+                type="button"
+                onClick={() => {
+                  setManageProfiles(true);
+                  setShowProfileMenu(false);
+                }}
+              >
+                Manage profiles
               </button>
             </div>
-          </fieldset>
-
-          <label htmlFor="tags">Tags</label>
-          <input
-            id="tags"
-            value={tags}
-            onChange={(event) => setTags(event.target.value)}
-            minLength={2}
-            placeholder="AI engineering, TypeScript, product design"
-          />
-
-          <label htmlFor="subscriptions">Subscriptions</label>
-          <input
-            id="subscriptions"
-            value={channels}
-            onChange={(event) => setChannels(event.target.value)}
-            placeholder="Fireship, ThePrimeTime, @veritasium"
-          />
-          <p className="field-note">
-            Add subscriptions manually, or subscribe from a recommended channel below.
-          </p>
-
-          <label htmlFor="channel-sort">Subscription sort</label>
-          <select
-            id="channel-sort"
-            value={channelSort}
-            onChange={(event) => setChannelSort(event.target.value as "latest" | "popular")}
-          >
-            <option value="latest">Latest</option>
-            <option value="popular">Popular</option>
-          </select>
-
-          <fieldset className="network-settings">
-            <legend>Network weights</legend>
-            {nodeControls.map((node) => (
-              <label className="weight-control" key={node.id}>
-                <span>{node.label}</span>
-                <input
-                  type="range"
-                  min="0"
-                  max={config.feed.maxNodeWeight}
-                  step="1"
-                  value={weights[node.id]}
-                  onChange={(event) => updateWeight(node.id, event.target.value)}
-                />
-                <strong>{weights[node.id]}</strong>
-              </label>
-            ))}
-          </fieldset>
-
-          <button type="submit" disabled={loading}>
-            {loading ? "Curating..." : "Build feed"}
-          </button>
-        </form>
-
-        {error && <p className="error">{error}</p>}
-      </section>
+          )}
+        </div>
+      </header>
 
       {feed && (
-        <section className="results" aria-live="polite">
-          <div className="results-head">
-            <div>
-              <p className="eyebrow">Weighted network</p>
-              <h2>{feed.videos.length} videos</h2>
-              {feed.cache && (
-                <p className="cache-status">
-                  {feed.cache.videos}/{feed.cache.targetVideos} cached · refreshes every {feed.cache.refreshHours}h ·
-                  subscriptions every {feed.cache.subscriptionRefreshMinutes}m
-                </p>
-              )}
+        <section className={activeVideo ? "watch-layout open" : "watch-layout"}>
+          {activeVideo && (
+            <div className="watch-player">
+              <video ref={videoRef} controls playsInline poster={thumbnailFor(activeVideo)} />
+              <div className="watch-meta">
+                <h1>{activeVideo.title}</h1>
+                <div className="channel-line">
+                  <span>{activeVideo.author}</span>
+                  <button
+                    type="button"
+                    className="subscribe-button"
+                    onClick={() =>
+                      subscriptions.has(normalize(activeVideo.author))
+                        ? removeChannel(activeVideo.author)
+                        : addChannel(activeVideo.author)
+                    }
+                  >
+                    {subscriptions.has(normalize(activeVideo.author)) ? "Unsubscribe" : "Subscribe"}
+                  </button>
+                  <span>{formatPublished(activeVideo)}</span>
+                </div>
+                <div className="player-settings">
+                  <label>
+                    Quality
+                    <select value={quality} onChange={(event) => setQuality(event.target.value)}>
+                      <option value="auto">Auto</option>
+                      {qualityOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
             </div>
-            <div className="feed-actions">
-              <button type="button" className="secondary-button" onClick={refreshFeed} disabled={loading}>
-                Refresh feed
+          )}
+          <div className="side-list">
+            {sideVideos.map((video) => (
+              <button type="button" className="side-video" key={video.id} onClick={() => setActiveVideo(video)}>
+                <img src={thumbnailFor(video)} loading="lazy" alt="" />
+                <span>{video.title}</span>
               </button>
-              <button type="button" className="secondary-button" onClick={fetchNewVideos} disabled={loading}>
-                Fetch new videos
-              </button>
-            </div>
-            <div className="tag-list" aria-label="Tags used">
-              {feed.tags.map((tag) => (
-                <span key={tag}>{tag}</span>
-              ))}
-              {feed.channels.map((channel) => (
-                <span className="subscription-chip" key={channel}>
-                  Subscribed: {channel}
-                </span>
-              ))}
-            </div>
-            <div className="query-list">
-              {feed.queries.map((query) => (
-                <span key={query}>{query}</span>
-              ))}
-            </div>
-          </div>
-
-          <div className="node-grid" aria-label="Feed node results">
-            {feed.nodes.map((node) => (
-              <article className="node-card" key={node.id}>
-                <p>{node.label}</p>
-                <strong>{node.effectiveWeight}</strong>
-                <span>
-                  Base {node.weight} · {node.outputVideos} of {node.inputVideos} used
-                </span>
-              </article>
             ))}
           </div>
-
-          <div className="video-grid">
-            {feed.videos.map((video) => {
-              const subscribed = subscribedKeys.has(normalizeSubscription(video.author));
-
-              return (
-                <article className={subscribed ? "video-card subscribed" : "video-card"} key={video.id}>
-                  <iframe
-                    id={`youtube-${video.id}`}
-                    src={`https://www.youtube.com/embed/${video.id}?enablejsapi=1${
-                      typeof window === "undefined"
-                        ? ""
-                        : `&origin=${encodeURIComponent(window.location.origin)}`
-                    }`}
-                    title={video.title}
-                    allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                    allowFullScreen
-                  />
-                  <div className="video-meta">
-                    <div className="video-source-row">
-                      <p className="source-query">{video.query}</p>
-                      {subscribed && <span className="subscribed-mark">Subscribed</span>}
-                    </div>
-                    <h3>{video.title}</h3>
-                    <div className="channel-row">
-                      <p>
-                        {video.author}
-                        {video.duration ? ` · ${video.duration}` : ""}
-                      </p>
-                      <button
-                        type="button"
-                        className="subscribe-button"
-                        onClick={() => addSubscription(video.author)}
-                        disabled={subscribed}
-                      >
-                        {subscribed ? "Subscribed" : "Subscribe"}
-                      </button>
-                    </div>
-                  </div>
-                </article>
-              );
-            })}
-          </div>
         </section>
+      )}
+
+      {feed && (
+        <section className="video-grid" aria-live="polite">
+          {feed.videos.map((video) => (
+            <article className="video-card" key={video.id}>
+              <button type="button" className="thumbnail-button" onClick={() => setActiveVideo(video)}>
+                <img src={thumbnailFor(video)} loading="lazy" alt="" />
+              </button>
+              <div className="video-meta">
+                <h2>{video.title}</h2>
+                <div className="channel-line">
+                  <span>{video.author}</span>
+                  <button
+                    type="button"
+                    className="subscribe-button"
+                    onClick={() =>
+                      subscriptions.has(normalize(video.author))
+                        ? removeChannel(video.author)
+                        : addChannel(video.author)
+                    }
+                  >
+                    {subscriptions.has(normalize(video.author)) ? "Unsubscribe" : "Subscribe"}
+                  </button>
+                  <span>{formatPublished(video)}</span>
+                </div>
+              </div>
+            </article>
+          ))}
+        </section>
+      )}
+
+      {(needsProfile || manageProfiles || !feed) && (
+        <div className="modal-backdrop">
+          <section className="profile-modal">
+            <div className="modal-head">
+              <h1>{manageProfiles ? "Manage profiles" : "Create a profile"}</h1>
+              {feed && (
+                <button type="button" className="icon-button" onClick={() => setManageProfiles(false)}>
+                  Close
+                </button>
+              )}
+            </div>
+
+            {manageProfiles && (
+              <div className="profile-list">
+                {profiles.map((profile) => (
+                  <div className="profile-row" key={profile.id}>
+                    <span>{profile.name}</span>
+                    <button type="button" className="danger-button" onClick={() => deleteProfile(profile.id)}>
+                      Delete
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <form onSubmit={buildFeed} className="setup-form">
+              <input
+                value={profileName}
+                onChange={(event) => setProfileName(event.target.value)}
+                placeholder="Profile name"
+              />
+              <button type="button" className="secondary-button" onClick={createProfile}>
+                Add profile
+              </button>
+
+              <TagEditor
+                label="Tags"
+                values={tags}
+                draft={tagDraft}
+                setDraft={setTagDraft}
+                addValue={addTag}
+                removeValue={(value) => setTags(tags.filter((tag) => tag !== value))}
+                placeholder="Add a topic"
+              />
+
+              <TagEditor
+                label="Subscriptions"
+                values={channels}
+                draft={channelDraft}
+                setDraft={setChannelDraft}
+                addValue={addChannel}
+                removeValue={removeChannel}
+                placeholder="Search channel"
+              />
+
+              {channelResults.length > 0 && (
+                <div className="channel-results">
+                  {channelResults.map((channel) => (
+                    <button type="button" key={channel.id} onClick={() => addChannel(channel.name)}>
+                      {channel.thumbnailUrl && <img src={channel.thumbnailUrl} alt="" />}
+                      <span>{channel.name}</span>
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              <button type="submit" disabled={loading}>
+                {loading ? "Building feed..." : "Build feed"}
+              </button>
+              {loading && <div className="progress-bar" />}
+              {error && <p className="error">{error}</p>}
+            </form>
+          </section>
+        </div>
       )}
     </main>
   );
 }
 
-declare global {
-  interface Window {
-    YT?: {
-      Player: new (
-        element: HTMLElement,
-        options: {
-          events: {
-            onReady: () => void;
-          };
-        }
-      ) => {
-        getCurrentTime: () => number;
-        getDuration: () => number;
-        destroy: () => void;
-      };
-    };
-    onYouTubeIframeAPIReady?: () => void;
-  }
+function TagEditor(props: {
+  label: string;
+  values: string[];
+  draft: string;
+  setDraft: (value: string) => void;
+  addValue: (value: string) => void;
+  removeValue: (value: string) => void;
+  placeholder: string;
+}) {
+  return (
+    <label className="tag-editor">
+      <span>{props.label}</span>
+      <div className="tag-input">
+        {props.values.map((value) => (
+          <button type="button" key={value} onClick={() => props.removeValue(value)}>
+            {value}
+          </button>
+        ))}
+        <input
+          value={props.draft}
+          onChange={(event) => props.setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" || event.key === ",") {
+              event.preventDefault();
+              props.addValue(props.draft);
+            }
+          }}
+          onBlur={() => props.addValue(props.draft)}
+          placeholder={props.placeholder}
+        />
+      </div>
+    </label>
+  );
 }
 
-let youtubeApiPromise: Promise<NonNullable<Window["YT"]>> | null = null;
-
-function loadYoutubeApi() {
-  if (window.YT?.Player) {
-    return Promise.resolve(window.YT);
-  }
-
-  if (!youtubeApiPromise) {
-    youtubeApiPromise = new Promise((resolve) => {
-      window.onYouTubeIframeAPIReady = () => {
-        if (window.YT) {
-          resolve(window.YT);
-        }
-      };
-
-      const script = document.createElement("script");
-      script.src = "https://www.youtube.com/iframe_api";
-      document.body.appendChild(script);
-    });
-  }
-
-  return youtubeApiPromise;
+function thumbnailFor(video: FeedVideo) {
+  return video.thumbnailCacheUrl || video.thumbnailUrl || `https://i.ytimg.com/vi/${video.id}/hqdefault.jpg`;
 }
 
-function parseSubscriptionList(value: string) {
-  return value
-    .split(",")
-    .map((item) => item.replace(/\s+/g, " ").trim())
-    .filter(Boolean);
+function formatPublished(video: FeedVideo) {
+  if (video.publishedText) {
+    return video.duration ? `${video.publishedText} · ${video.duration}` : video.publishedText;
+  }
+
+  if (video.publishedAt) {
+    return new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(video.publishedAt);
+  }
+
+  return video.duration || "";
 }
 
-function normalizeSubscription(value: string) {
+function normalize(value: string) {
   return value.replace(/\s+/g, " ").trim().toLowerCase();
 }
 
-async function loadPublicConfig() {
+function readSavedState() {
   try {
-    const response = await fetch("/api/config");
+    const raw = window.localStorage.getItem(clientStateKey);
 
-    if (!response.ok) {
-      return defaultPublicConfig;
-    }
-
-    return { ...defaultPublicConfig, ...(await response.json()) } as PublicGretelConfig;
-  } catch {
-    return defaultPublicConfig;
-  }
-}
-
-function readSavedClientState() {
-  try {
-    const rawState = window.localStorage.getItem(clientStateKey);
-
-    if (!rawState) {
+    if (!raw) {
       return null;
     }
 
-    const state = JSON.parse(rawState) as SavedClientState;
+    const parsed = JSON.parse(raw);
+
     return {
-      profileId: typeof state.profileId === "string" ? state.profileId : undefined,
-      tags: typeof state.tags === "string" ? state.tags : undefined,
-      channels: typeof state.channels === "string" ? state.channels : undefined,
-      channelSort:
-        state.channelSort === "latest" || state.channelSort === "popular"
-          ? state.channelSort
-          : undefined,
-      weights: state.weights && typeof state.weights === "object" ? state.weights : undefined,
-      feed: state.feed || null
-    } satisfies SavedClientState;
+      profileId: typeof parsed.profileId === "string" ? parsed.profileId : "",
+      tags: Array.isArray(parsed.tags) ? parsed.tags.filter((tag: unknown) => typeof tag === "string") : [],
+      channels: Array.isArray(parsed.channels)
+        ? parsed.channels.filter((channel: unknown) => typeof channel === "string")
+        : []
+    };
   } catch {
     return null;
   }
