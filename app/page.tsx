@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 
 type FeedVideo = {
   id: string;
@@ -8,9 +8,17 @@ type FeedVideo = {
   author: string;
   duration: string;
   query: string;
+  sourceNodeId?: FeedNodeId;
+  sourceNodeLabel?: string;
+  channelKey?: string;
 };
 
-type FeedNodeId = "tagSearch" | "channelVideos" | "naturalLanguage" | "relatedVideos";
+type FeedNodeId =
+  | "tagSearch"
+  | "channelVideos"
+  | "naturalLanguage"
+  | "relatedVideos"
+  | "watchedVideos";
 
 type FeedNodeWeights = Record<FeedNodeId, number>;
 
@@ -18,8 +26,14 @@ type FeedNodeSummary = {
   id: FeedNodeId;
   label: string;
   weight: number;
+  effectiveWeight: number;
   inputVideos: number;
   outputVideos: number;
+};
+
+type Profile = {
+  id: string;
+  name: string;
 };
 
 type FeedResponse = {
@@ -27,6 +41,7 @@ type FeedResponse = {
   tags: string[];
   channels: string[];
   channelSort: "latest" | "popular";
+  profile: Profile;
   weights: FeedNodeWeights;
   queries: string[];
   nodes: FeedNodeSummary[];
@@ -38,17 +53,22 @@ const starterWeights: FeedNodeWeights = {
   tagSearch: 2,
   channelVideos: 2,
   naturalLanguage: 1,
-  relatedVideos: 3
+  relatedVideos: 3,
+  watchedVideos: 2
 };
 
 const nodeControls: Array<{ id: FeedNodeId; label: string }> = [
   { id: "tagSearch", label: "Tag search" },
   { id: "channelVideos", label: "Channel videos" },
   { id: "naturalLanguage", label: "Natural language" },
-  { id: "relatedVideos", label: "Related videos" }
+  { id: "relatedVideos", label: "Related videos" },
+  { id: "watchedVideos", label: "Watched neighbors" }
 ];
 
 export default function Home() {
+  const [profiles, setProfiles] = useState<Profile[]>([]);
+  const [profileId, setProfileId] = useState("");
+  const [profileName, setProfileName] = useState("");
   const [tags, setTags] = useState(starterTags);
   const [channels, setChannels] = useState("");
   const [channelSort, setChannelSort] = useState<"latest" | "popular">("latest");
@@ -79,7 +99,8 @@ export default function Home() {
           channels,
           channelSort,
           prompt,
-          weights
+          weights,
+          profileId
         })
       });
       const data = await response.json();
@@ -96,6 +117,145 @@ export default function Home() {
     }
   }
 
+  async function loadProfiles(nextProfileId?: string) {
+    const response = await fetch("/api/profiles");
+    const data = await response.json();
+    const nextProfiles = data.profiles || [];
+    const selectedProfile =
+      nextProfiles.find((profile: Profile) => profile.id === nextProfileId) || nextProfiles[0];
+
+    setProfiles(nextProfiles);
+    setProfileId(selectedProfile?.id || "");
+  }
+
+  async function createProfile() {
+    setError("");
+    const response = await fetch("/api/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: profileName })
+    });
+    const data = await response.json();
+    setProfileName("");
+    setProfiles(data.profiles || []);
+    setProfileId(data.profileId || "");
+  }
+
+  async function resetProfile() {
+    if (!profileId) {
+      return;
+    }
+
+    setError("");
+    await fetch("/api/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "reset", profileId })
+    });
+    await loadProfiles(profileId);
+    setFeed(null);
+  }
+
+  async function deleteProfile() {
+    if (!profileId) {
+      return;
+    }
+
+    setError("");
+    const response = await fetch("/api/profiles", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "delete", profileId })
+    });
+    const data = await response.json();
+    setProfiles(data.profiles || []);
+    setProfileId(data.profileId || "");
+    setFeed(null);
+  }
+
+  useEffect(() => {
+    loadProfiles().catch((caught) => {
+      setError(caught instanceof Error ? caught.message : "Could not load profiles.");
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!feed || !profileId) {
+      return;
+    }
+
+    let disposed = false;
+    const players: Array<{
+      video: FeedVideo;
+      player: {
+        getCurrentTime: () => number;
+        getDuration: () => number;
+        destroy: () => void;
+      };
+    }> = [];
+    const reported = new Set<string>();
+
+    loadYoutubeApi().then((YT) => {
+      if (disposed) {
+        return;
+      }
+
+      for (const video of feed.videos) {
+        const element = document.getElementById(`youtube-${video.id}`);
+
+        if (!element) {
+          continue;
+        }
+
+        const player = new YT.Player(element, {
+          events: {
+            onReady: () => {
+              players.push({ video, player });
+            }
+          }
+        });
+      }
+    });
+
+    const interval = window.setInterval(() => {
+      for (const entry of players) {
+        const { video, player } = entry;
+        const durationSeconds = player.getDuration();
+
+        if (!video || reported.has(video.id) || durationSeconds <= 0) {
+          continue;
+        }
+
+        const watchedSeconds = player.getCurrentTime();
+
+        if (watchedSeconds / durationSeconds <= 0.5) {
+          continue;
+        }
+
+        reported.add(video.id);
+        fetch("/api/watch-events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            profileId,
+            video,
+            watchedSeconds,
+            durationSeconds
+          })
+        }).catch(() => {});
+      }
+    }, 2000);
+
+    return () => {
+      disposed = true;
+      window.clearInterval(interval);
+
+      for (const player of players) {
+        player.player.destroy();
+      }
+    };
+  }, [feed, profileId]);
+
   return (
     <main className="shell">
       <section className="composer">
@@ -109,6 +269,42 @@ export default function Home() {
         </div>
 
         <form onSubmit={createFeed} className="feed-form">
+          <fieldset className="profile-settings">
+            <legend>Profiles</legend>
+            <label htmlFor="profile">Active profile</label>
+            <select
+              id="profile"
+              value={profileId}
+              onChange={(event) => {
+                setProfileId(event.target.value);
+                setFeed(null);
+              }}
+            >
+              {profiles.map((profile) => (
+                <option key={profile.id} value={profile.id}>
+                  {profile.name}
+                </option>
+              ))}
+            </select>
+            <div className="profile-actions">
+              <input
+                aria-label="New profile name"
+                value={profileName}
+                onChange={(event) => setProfileName(event.target.value)}
+                placeholder="New profile"
+              />
+              <button type="button" className="secondary-button" onClick={createProfile}>
+                Create
+              </button>
+              <button type="button" className="secondary-button" onClick={resetProfile}>
+                Reset
+              </button>
+              <button type="button" className="danger-button" onClick={deleteProfile}>
+                Delete
+              </button>
+            </div>
+          </fieldset>
+
           <label htmlFor="tags">Tags</label>
           <input
             id="tags"
@@ -202,9 +398,9 @@ export default function Home() {
             {feed.nodes.map((node) => (
               <article className="node-card" key={node.id}>
                 <p>{node.label}</p>
-                <strong>{node.weight}</strong>
+                <strong>{node.effectiveWeight}</strong>
                 <span>
-                  {node.outputVideos} of {node.inputVideos} used
+                  Base {node.weight} · {node.outputVideos} of {node.inputVideos} used
                 </span>
               </article>
             ))}
@@ -214,7 +410,12 @@ export default function Home() {
             {feed.videos.map((video) => (
               <article className="video-card" key={video.id}>
                 <iframe
-                  src={`https://www.youtube.com/embed/${video.id}`}
+                  id={`youtube-${video.id}`}
+                  src={`https://www.youtube.com/embed/${video.id}?enablejsapi=1${
+                    typeof window === "undefined"
+                      ? ""
+                      : `&origin=${encodeURIComponent(window.location.origin)}`
+                  }`}
                   title={video.title}
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
                   allowFullScreen
@@ -234,4 +435,48 @@ export default function Home() {
       )}
     </main>
   );
+}
+
+declare global {
+  interface Window {
+    YT?: {
+      Player: new (
+        element: HTMLElement,
+        options: {
+          events: {
+            onReady: () => void;
+          };
+        }
+      ) => {
+        getCurrentTime: () => number;
+        getDuration: () => number;
+        destroy: () => void;
+      };
+    };
+    onYouTubeIframeAPIReady?: () => void;
+  }
+}
+
+let youtubeApiPromise: Promise<NonNullable<Window["YT"]>> | null = null;
+
+function loadYoutubeApi() {
+  if (window.YT?.Player) {
+    return Promise.resolve(window.YT);
+  }
+
+  if (!youtubeApiPromise) {
+    youtubeApiPromise = new Promise((resolve) => {
+      window.onYouTubeIframeAPIReady = () => {
+        if (window.YT) {
+          resolve(window.YT);
+        }
+      };
+
+      const script = document.createElement("script");
+      script.src = "https://www.youtube.com/iframe_api";
+      document.body.appendChild(script);
+    });
+  }
+
+  return youtubeApiPromise;
 }

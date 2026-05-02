@@ -3,6 +3,7 @@ import { applyChannelSort, getChannelId, getChannelIdFromInput, getChannelVideoI
 import { observeOperation } from "./observation";
 import type { ChannelSort, FeedObservation, FeedVideo } from "./types";
 import { getYoutubeClient } from "./youtube-client";
+import { normalizeChannelKey } from "../profile-store";
 import {
   getAuthor,
   getChannelVideoAuthor,
@@ -18,14 +19,15 @@ import {
 export async function searchVideos(
   queries: string[],
   prompt: string,
-  observation: FeedObservation
+  observation: FeedObservation,
+  profileId: string
 ) {
   return observeOperation(
     observation,
     "youtube.search",
     { queries: queries.length },
     async () => {
-      const youtube = await getYoutubeClient();
+      const youtube = await getYoutubeClient(profileId);
       const seen = new Set<string>();
       const videosByQuery: FeedVideo[][] = [];
       const avoidShorts = promptAvoidsShorts(prompt);
@@ -44,12 +46,14 @@ export async function searchVideos(
           }
 
           seen.add(id);
+          const author = getAuthor(video);
           queryVideos.push({
             id,
             title: getTitle(video),
-            author: getAuthor(video),
+            author,
             duration,
-            query
+            query,
+            channelKey: normalizeChannelKey(author)
           });
 
           if (queryVideos.length >= perQueryLimit) {
@@ -77,21 +81,23 @@ export async function fetchChannelVideos(
   channels: string[],
   sort: ChannelSort,
   prompt: string,
-  observation: FeedObservation
+  observation: FeedObservation,
+  profileId: string
 ) {
   return observeOperation(
     observation,
     "youtube.channel_videos",
     { channels: channels.length, sort },
     async () => {
-      const youtube = await getYoutubeClient();
+      const youtube = await getYoutubeClient(profileId);
       const seen = new Set<string>();
       const videosByChannel: FeedVideo[][] = [];
       const avoidShorts = promptAvoidsShorts(prompt);
       const perChannelLimit = Math.max(3, Math.ceil(MAX_VIDEOS / channels.length));
 
       for (const channelName of channels) {
-        const channelId = await resolveChannelId(channelName, observation);
+        const channelId = await resolveChannelId(channelName, observation, profileId);
+        const channelKey = normalizeChannelKey(channelName);
 
         if (!channelId) {
           videosByChannel.push([]);
@@ -121,12 +127,14 @@ export async function fetchChannelVideos(
             }
 
             seen.add(id);
+            const author = getChannelVideoAuthor(video, channelName);
             channelVideos.push({
               id,
               title: getTitle(video),
-              author: getChannelVideoAuthor(video, channelName),
+              author,
               duration,
-              query: `${channelName} · ${sort}`
+              query: `${channelName} · ${sort}`,
+              channelKey
             });
 
             if (channelVideos.length >= perChannelLimit) {
@@ -154,7 +162,11 @@ export async function fetchChannelVideos(
   );
 }
 
-async function resolveChannelId(channelName: string, observation: FeedObservation) {
+async function resolveChannelId(
+  channelName: string,
+  observation: FeedObservation,
+  profileId: string
+) {
   return observeOperation(
     observation,
     "youtube.resolve_channel",
@@ -169,7 +181,7 @@ async function resolveChannelId(channelName: string, observation: FeedObservatio
         };
       }
 
-      const youtube = await getYoutubeClient();
+      const youtube = await getYoutubeClient(profileId);
       const results = await youtube.search(channelName, { type: "channel" });
       const channel = results.channels[0];
       const channelId = getChannelId(channel);

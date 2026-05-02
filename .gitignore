@@ -8,6 +8,7 @@ out/
 # production
 dist/
 build/
+data/
 
 # typescript
 *.tsbuildinfo

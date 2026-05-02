@@ -6,16 +6,25 @@ export type FeedVideo = {
   author: string;
   duration: string;
   query: string;
+  sourceNodeId?: FeedNodeId;
+  sourceNodeLabel?: string;
+  channelKey?: string;
 };
 
-export type FeedNodeId = "tagSearch" | "channelVideos" | "naturalLanguage" | "relatedVideos";
+export type FeedNodeId =
+  | "tagSearch"
+  | "channelVideos"
+  | "naturalLanguage"
+  | "relatedVideos"
+  | "watchedVideos";
 
 export type FeedNodeWeights = Record<FeedNodeId, number>;
 
 export type FeedNodeSummary = {
-  id: string;
+  id: FeedNodeId;
   label: string;
   weight: number;
+  effectiveWeight: number;
   inputVideos: number;
   outputVideos: number;
 };

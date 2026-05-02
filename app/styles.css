@@ -153,6 +153,27 @@ textarea:disabled {
   font-weight: 800;
 }
 
+.profile-settings {
+  display: grid;
+  gap: 10px;
+  margin: 0 0 6px;
+  padding: 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.profile-settings legend {
+  padding: 0 6px;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.profile-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, auto);
+  gap: 8px;
+}
+
 .weight-control {
   display: grid;
   grid-template-columns: minmax(122px, 1fr) minmax(120px, 1.2fr) 28px;
@@ -188,6 +209,26 @@ button {
 
 button:hover {
   background: var(--accent-dark);
+}
+
+.secondary-button {
+  padding: 0 14px;
+  background: #e7efe9;
+  color: var(--accent-dark);
+}
+
+.secondary-button:hover {
+  background: #d5e4dc;
+}
+
+.danger-button {
+  padding: 0 14px;
+  background: #f3dfd8;
+  color: var(--error);
+}
+
+.danger-button:hover {
+  background: #ead0c6;
 }
 
 button:disabled {
@@ -375,6 +416,10 @@ button:disabled {
 
   .weight-control {
     grid-template-columns: 1fr 72px 24px;
+  }
+
+  .profile-actions {
+    grid-template-columns: 1fr;
   }
 
   .node-grid {

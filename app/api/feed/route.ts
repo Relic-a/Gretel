@@ -1,6 +1,14 @@
 import { parseChannelSort, parseFeedNodeWeights, parseTags } from "../../../lib/feed/input";
 import { createFeedObservation, logFeedObservation } from "../../../lib/feed/observation";
 import { createFeed } from "../../../lib/feed/service";
+import {
+  getChannelBoosts,
+  getLatestWatchedVideos,
+  getNodeBoosts,
+  getProfile,
+  getWatchedVideoIds,
+  listProfiles
+} from "../../../lib/profile-store";
 
 export const runtime = "nodejs";
 
@@ -14,6 +22,8 @@ export async function POST(request: Request) {
     const channels = parseTags(body.channels);
     const channelSort = parseChannelSort(body.channelSort);
     const weights = parseFeedNodeWeights(body.weights);
+    const requestedProfileId = typeof body.profileId === "string" ? body.profileId : "";
+    const profile = getProfile(requestedProfileId) || listProfiles()[0];
 
     if (tags.length === 0 && channels.length === 0 && prompt.length === 0) {
       return Response.json(
@@ -29,7 +39,23 @@ export async function POST(request: Request) {
       );
     }
 
-    const feed = await createFeed(tags, channels, channelSort, prompt, weights, observation);
+    const watchedVideoIds = getWatchedVideoIds(profile.id);
+    const latestWatchedVideos = getLatestWatchedVideos(profile.id);
+    const feed = await createFeed(
+      profile.id,
+      tags,
+      channels,
+      channelSort,
+      prompt,
+      weights,
+      observation,
+      {
+        watchedVideoIds,
+        nodeBoosts: getNodeBoosts(profile.id),
+        channelBoosts: getChannelBoosts(profile.id)
+      },
+      latestWatchedVideos
+    );
 
     logFeedObservation(observation, {
       tags: tags.length,
@@ -40,7 +66,9 @@ export async function POST(request: Request) {
       channelVideos: feed.channelVideos,
       finalVideos: feed.videos.length,
       activeNodes: feed.nodes.filter((node) => node.weight > 0).length,
-      usedRecommendations: weights.relatedVideos > 0
+      usedRecommendations: weights.relatedVideos > 0,
+      watchedSeeds: latestWatchedVideos.length,
+      watchedExcluded: watchedVideoIds.length
     });
 
     return Response.json({
@@ -48,6 +76,7 @@ export async function POST(request: Request) {
       tags,
       channels,
       channelSort,
+      profile,
       weights,
       queries: feed.queries,
       nodes: feed.nodes,

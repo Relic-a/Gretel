@@ -1,6 +1,7 @@
 import { MAX_VIDEOS, RECOMMENDATION_SEEDS } from "./config";
 import { observeOperation } from "./observation";
 import type { FeedObservation, FeedVideo } from "./types";
+import { normalizeChannelKey } from "../profile-store";
 import {
   getAuthor,
   getDuration,
@@ -15,7 +16,9 @@ import { getYoutubeClient } from "./youtube-client";
 export async function recommendVideosFromSeeds(
   sourceVideos: FeedVideo[],
   prompt: string,
-  observation: FeedObservation
+  observation: FeedObservation,
+  profileId: string,
+  sourceLabel = "Recommended from"
 ) {
   return observeOperation(
     observation,
@@ -30,7 +33,13 @@ export async function recommendVideosFromSeeds(
         return { value: [], output: { recommendationVideos: 0 } };
       }
 
-      const recommendationVideos = await recommendVideosFromLinks(seedLinks, prompt, observation);
+      const recommendationVideos = await recommendVideosFromLinks(
+        seedLinks,
+        prompt,
+        observation,
+        profileId,
+        sourceLabel
+      );
       return {
         value: recommendationVideos,
         output: { recommendationVideos: recommendationVideos.length }
@@ -42,14 +51,16 @@ export async function recommendVideosFromSeeds(
 async function recommendVideosFromLinks(
   videoLinks: string[],
   prompt: string,
-  observation: FeedObservation
+  observation: FeedObservation,
+  profileId: string,
+  sourceLabel: string
 ) {
   return observeOperation(
     observation,
     "youtube.getInfo.recommendations",
     { seedLinks: videoLinks.length },
     async () => {
-      const youtube = await getYoutubeClient();
+      const youtube = await getYoutubeClient(profileId);
       const seen = new Set<string>();
       const recommendations: FeedVideo[] = [];
       const avoidShorts = promptAvoidsShorts(prompt);
@@ -73,12 +84,14 @@ async function recommendVideosFromLinks(
             }
 
             seen.add(id);
+            const author = getAuthor(video);
             recommendations.push({
               id,
               title: getTitle(video),
-              author: getAuthor(video),
+              author,
               duration,
-              query: `Recommended from ${seedId}`
+              query: `${sourceLabel} ${seedId}`,
+              channelKey: normalizeChannelKey(author)
             });
 
             if (recommendations.length >= MAX_VIDEOS) {
