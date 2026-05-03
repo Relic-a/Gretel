@@ -75,26 +75,6 @@ export function getDatabase() {
         FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
       );
 
-      CREATE TABLE IF NOT EXISTS feed_centroids (
-        profile_id TEXT NOT NULL,
-        cache_key TEXT NOT NULL,
-        original_json TEXT NOT NULL,
-        current_json TEXT NOT NULL,
-        updated_at INTEGER NOT NULL,
-        PRIMARY KEY (profile_id, cache_key),
-        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS feed_video_embeddings (
-        profile_id TEXT NOT NULL,
-        video_id TEXT NOT NULL,
-        embedding_json TEXT NOT NULL,
-        retained INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        PRIMARY KEY (profile_id, video_id),
-        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
-      );
-
       CREATE TABLE IF NOT EXISTS feed_pool_state (
         profile_id TEXT NOT NULL,
         pool_key TEXT NOT NULL,
@@ -159,6 +139,7 @@ export function createProfile(name: string) {
 }
 
 export function deleteProfile(profileId: string) {
+  deleteFeedAlgorithmRows(profileId);
   getDatabase().prepare("DELETE FROM profiles WHERE id = ?").run(profileId);
   resetYoutubeProfileCache(profileId);
   return listProfiles()[0] || null;
@@ -170,12 +151,32 @@ export function resetProfile(profileId: string) {
   database.prepare("DELETE FROM watched_videos WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM saved_videos WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM liked_videos WHERE profile_id = ?").run(profileId);
-  database.prepare("DELETE FROM feed_centroids WHERE profile_id = ?").run(profileId);
-  database.prepare("DELETE FROM feed_video_embeddings WHERE profile_id = ?").run(profileId);
+  deleteFeedAlgorithmRows(profileId);
   database.prepare("DELETE FROM feed_pool_state WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM feed_pool_nodes WHERE profile_id = ?").run(profileId);
   database.prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(Date.now(), profileId);
   resetYoutubeProfileCache(profileId);
+}
+
+function deleteFeedAlgorithmRows(profileId: string) {
+  const database = getDatabase();
+  const rows = database
+    .prepare(
+      `SELECT name
+       FROM sqlite_master
+       WHERE type = 'table'
+         AND (name = 'feed_centroids'
+           OR name = 'feed_video_embeddings'
+           OR name LIKE 'feed_centroids_%'
+           OR name LIKE 'feed_video_embeddings_%')`
+    )
+    .all() as Array<{ name: string }>;
+
+  for (const row of rows) {
+    database
+      .prepare(`DELETE FROM "${row.name.replaceAll("\"", "\"\"")}" WHERE profile_id = ?`)
+      .run(profileId);
+  }
 }
 
 export function saveWatchedVideo(input: WatchEventInput) {

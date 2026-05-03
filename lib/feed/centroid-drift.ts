@@ -1,9 +1,14 @@
 import { getGretelConfig } from "./config";
 import { createEmbeddingInput, getEmbeddingProvider } from "./embeddings";
-import { getDatabase, getVideoInteractions } from "../profile-store";
+import { getVideoInteractions } from "../profile-store";
 import type { FeedVideo } from "./types";
 import { cosineSimilarity, driftCentroid } from "./vector-math";
-import { getRetainedEmbedding, retainEmbedding } from "./algorithm-store";
+import {
+  getRetainedEmbedding,
+  listCentroids,
+  retainEmbedding,
+  updateCentroid
+} from "./algorithm-store";
 import { listPoolNodes, updatePoolSimilarities } from "./pool-store";
 
 export async function updateCentroidsForPositiveEngagement(profileId: string, video: FeedVideo) {
@@ -32,38 +37,20 @@ export async function updateCentroidsForPositiveEngagement(profileId: string, vi
     return;
   }
 
-  const rows = getDatabase()
-    .prepare(
-      `SELECT cache_key, original_json, current_json
-       FROM feed_centroids
-       WHERE profile_id = ?`
-    )
-    .all(profileId) as Array<{
-      cache_key: string;
-      original_json: string;
-      current_json: string;
-    }>;
+  const rows = listCentroids(profileId);
   const updatedAt = Date.now();
-  const statement = getDatabase().prepare(
-    `UPDATE feed_centroids
-     SET current_json = ?, updated_at = ?
-     WHERE profile_id = ? AND cache_key = ?`
-  );
 
   for (const row of rows) {
-    const original = JSON.parse(row.original_json) as number[];
-    const current = JSON.parse(row.current_json) as number[];
-
-    if (original.length === 0 || current.length === 0) {
+    if (row.original.length === 0 || row.current.length === 0) {
       continue;
     }
 
-    const proposed = driftCentroid(current, embedding, config.learning.centroidLearningRate);
-    const driftDistance = 1 - cosineSimilarity(original, proposed);
+    const proposed = driftCentroid(row.current, embedding, config.learning.centroidLearningRate);
+    const driftDistance = 1 - cosineSimilarity(row.original, proposed);
 
     if (driftDistance <= config.learning.maxCentroidDrift) {
-      statement.run(JSON.stringify(proposed), updatedAt, profileId, row.cache_key);
-      recomputePoolSimilarities(profileId, row.cache_key, proposed);
+      updateCentroid(profileId, row.cacheKey, proposed, updatedAt);
+      recomputePoolSimilarities(profileId, row.cacheKey, proposed);
     }
   }
 }

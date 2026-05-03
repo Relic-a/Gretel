@@ -332,6 +332,61 @@ test("centroid drift is bounded and pool similarities can be recomputed after a 
   }
 });
 
+test("embedding tables are isolated by provider, model, and dimensions", () => {
+  const modules = loadRuntimeModules({ youtubeClient: createFakeYoutubeClient() });
+  const profile = modules.profileStore.createProfile("Embedding Stores");
+  profileStoreForCleanup = modules.profileStore;
+  const qwenConfigPath = writeConfig("embedding-store-qwen.json", {
+    embeddings: {
+      provider: "openrouter",
+      model: "qwen/qwen3-embedding-8b",
+      dimensions: 4096
+    }
+  });
+  const smallConfigPath = writeConfig("embedding-store-small.json", {
+    embeddings: {
+      provider: "openrouter",
+      model: "qwen/qwen3-embedding-8b",
+      dimensions: 1024
+    }
+  });
+
+  try {
+    process.env.GRETEL_CONFIG = qwenConfigPath;
+    assert.equal(
+      modules.algorithmStore.createEmbeddingStoreName(),
+      "openrouter_qwen_qwen3_embedding_8b_4096"
+    );
+    modules.algorithmStore.saveCentroid(profile.id, "pool", [1, 0], [1, 0]);
+    modules.algorithmStore.retainEmbedding(profile.id, "video", [1, 0]);
+
+    assert.deepEqual(modules.algorithmStore.getCentroid(profile.id, "pool").current, [1, 0]);
+    assert.deepEqual(modules.algorithmStore.getRetainedEmbedding(profile.id, "video"), [1, 0]);
+
+    process.env.GRETEL_CONFIG = smallConfigPath;
+    assert.equal(modules.algorithmStore.getCentroid(profile.id, "pool"), null);
+    assert.equal(modules.algorithmStore.getRetainedEmbedding(profile.id, "video"), null);
+
+    modules.algorithmStore.saveCentroid(profile.id, "pool", [0, 1], [0, 1]);
+    modules.algorithmStore.retainEmbedding(profile.id, "video", [0, 1]);
+
+    assert.deepEqual(modules.algorithmStore.getCentroid(profile.id, "pool").current, [0, 1]);
+    assert.deepEqual(modules.algorithmStore.getRetainedEmbedding(profile.id, "video"), [0, 1]);
+    assert.ok(
+      modules.algorithmStore
+        .listFeedAlgorithmTableNames()
+        .includes("feed_video_embeddings_openrouter_qwen_qwen3_embedding_8b_4096")
+    );
+    assert.ok(
+      modules.algorithmStore
+        .listFeedAlgorithmTableNames()
+        .includes("feed_video_embeddings_openrouter_qwen_qwen3_embedding_8b_1024")
+    );
+  } finally {
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});
+
 test("serving excludes completed watched nodes and orders unserved nodes by parent score", () => {
   const { createCandidatePoolFeed } = require(path.join(buildDir, "lib", "feed", "pool.js"));
   const config = testConfig({
