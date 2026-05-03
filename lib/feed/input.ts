@@ -1,5 +1,5 @@
 import { getGretelConfig } from "./config";
-import type { ChannelSort, FeedNodeId, FeedNodeWeights } from "./types";
+import type { ChannelSort } from "./types";
 
 export function createQueries(tags: string[]) {
   return tags.slice(0, getGretelConfig().feed.maxQueries);
@@ -14,22 +14,6 @@ export function parseTags(value: unknown) {
 
 export function parseChannelSort(value: unknown): ChannelSort {
   return "mixed";
-}
-
-export function parseFeedNodeWeights(value: unknown): FeedNodeWeights {
-  const config = getGretelConfig();
-  const source = value && typeof value === "object" ? value : {};
-  const weights = { ...config.feed.defaultNodeWeights };
-
-  for (const id of Object.keys(weights) as FeedNodeId[]) {
-    if (!(id in source)) {
-      continue;
-    }
-
-    weights[id] = clampWeight((source as Record<string, unknown>)[id], config.feed.maxNodeWeight);
-  }
-
-  return weights;
 }
 
 function cleanQueries(values: unknown[]) {
@@ -56,14 +40,4 @@ function cleanQueries(values: unknown[]) {
   }
 
   return queries;
-}
-
-function clampWeight(value: unknown, maxNodeWeight: number) {
-  const weight = Number(value);
-
-  if (!Number.isFinite(weight)) {
-    return 0;
-  }
-
-  return Math.min(maxNodeWeight, Math.max(0, Math.round(weight)));
 }

@@ -14,9 +14,8 @@ import { getGretelConfig } from "./config";
 import { createEmbeddingInput, getEmbeddingProvider } from "./embeddings";
 import { applyEngagement } from "./engagement";
 import { createCandidatePoolFeed, relatedBudgetForSeed, selectExpansionSeeds } from "./pool";
-import type { FeedNetworkOptions } from "./network";
 import { recommendVideosFromSeeds } from "./recommendations";
-import type { ChannelSort, FeedNodeWeights, FeedObservation, FeedVideo } from "./types";
+import type { ChannelSort, FeedObservation, FeedVideo } from "./types";
 import { fetchChannelVideos, searchVideos } from "./youtube";
 import { getVideoInteractions } from "../profile-store";
 import {
@@ -30,6 +29,7 @@ import { averageNormalizedVectors, cosineSimilarity } from "./vector-math";
 export type CreateFeedOptions = {
   forceExpansion?: boolean;
   servingOnly?: boolean;
+  watchedVideoIds?: string[];
 };
 
 export async function createFeed(
@@ -37,16 +37,13 @@ export async function createFeed(
   tags: string[],
   channels: string[],
   channelSort: ChannelSort,
-  weights: FeedNodeWeights,
   observation: FeedObservation,
-  networkOptions: FeedNetworkOptions,
-  latestWatchedVideos: FeedVideo[] = [],
   options: CreateFeedOptions = {}
 ) {
   const queries = createQueries(tags);
   const config = getGretelConfig();
   const poolKey = createFeedPoolKey({ tags: queries, channels, channelSort });
-  const watchedVideoIds = new Set(networkOptions.watchedVideoIds || []);
+  const watchedVideoIds = new Set(options.watchedVideoIds || []);
   const initializedRoot = await initializePoolOnce(
     profileId,
     poolKey,
@@ -61,7 +58,6 @@ export async function createFeed(
     rootVideos: poolVideos.filter((video) => video.sourceNodeId === "tagSearch"),
     channelVideos: poolVideos.filter((video) => video.sourceNodeId === "channelVideos"),
     relatedVideos: poolVideos.filter((video) => video.sourceNodeId === "relatedVideos"),
-    watchedVideos: poolVideos.filter((video) => video.sourceNodeId === "watchedVideos"),
     watchedVideoIds,
     interactions: getVideoInteractions(profileId),
     config
@@ -77,7 +73,6 @@ export async function createFeed(
       rootVideos: poolVideos.filter((video) => video.sourceNodeId === "tagSearch"),
       channelVideos: poolVideos.filter((video) => video.sourceNodeId === "channelVideos"),
       relatedVideos: poolVideos.filter((video) => video.sourceNodeId === "relatedVideos"),
-      watchedVideos: poolVideos.filter((video) => video.sourceNodeId === "watchedVideos"),
       watchedVideoIds,
       interactions: getVideoInteractions(profileId),
       config
@@ -118,7 +113,6 @@ export async function createFeed(
     searchVideos: poolVideos.filter((video) => video.sourceNodeId === "tagSearch").length,
     channelVideos: fastLaneVideos.length,
     relatedVideos: poolVideos.filter((video) => video.sourceNodeId === "relatedVideos").length,
-    watchedVideos: latestWatchedVideos.length,
     pool
   };
 }

@@ -1,4 +1,3 @@
-import { Innertube } from "youtubei.js";
 import { getText, getVideoId } from "./video-utils";
 
 export function getChannelIdFromInput(input: string) {
@@ -70,35 +69,6 @@ export function getChannelVideoItems(page: unknown): unknown[] {
   return [];
 }
 
-export async function applyChannelSort<T extends { sort_filters?: string[]; applySort?: (sort: string) => Promise<T> }>(
-  channel: T,
-  sort: "latest" | "popular",
-  youtube: Innertube
-) {
-  const preferred = sort === "popular" ? ["Popular"] : ["Latest", "Recently uploaded", "Newest"];
-  const selectedSort = preferred.find((option) => channel.sort_filters?.includes(option));
-
-  if (selectedSort && channel.applySort) {
-    try {
-      return channel.applySort(selectedSort);
-    } catch {
-      // Recent youtubei.js channel pages expose sort chips without wiring sort_filters.
-    }
-  }
-
-  const selectedChip = getChannelSortChip(channel, preferred);
-
-  if (!selectedChip) {
-    return channel;
-  }
-
-  try {
-    return selectedChip.endpoint.call(youtube.actions, { parse: true });
-  } catch {
-    return channel;
-  }
-}
-
 function getRichGridVideos(page: unknown): unknown[] {
   if (!page || typeof page !== "object" || !("current_tab" in page)) {
     return [];
@@ -131,51 +101,6 @@ function getContentItem(item: unknown): unknown[] {
   }
 
   return [];
-}
-
-function getChannelSortChip(page: unknown, labels: string[]) {
-  if (!page || typeof page !== "object" || !("current_tab" in page)) {
-    return null;
-  }
-
-  const tab = page.current_tab;
-
-  if (!tab || typeof tab !== "object" || !("content" in tab)) {
-    return null;
-  }
-
-  const content = tab.content;
-
-  if (!content || typeof content !== "object" || !("header" in content)) {
-    return null;
-  }
-
-  const header = content.header;
-
-  if (!header || typeof header !== "object" || !("chips" in header) || !Array.isArray(header.chips)) {
-    return null;
-  }
-
-  for (const chip of header.chips) {
-    if (!chip || typeof chip !== "object" || !("text" in chip) || !("endpoint" in chip)) {
-      continue;
-    }
-
-    const endpoint = chip.endpoint;
-    const text = getText(chip.text);
-
-    if (
-      labels.includes(text) &&
-      endpoint &&
-      typeof endpoint === "object" &&
-      "call" in endpoint &&
-      typeof endpoint.call === "function"
-    ) {
-      return { endpoint };
-    }
-  }
-
-  return null;
 }
 
 function getBrowseId(endpoint: unknown): string {

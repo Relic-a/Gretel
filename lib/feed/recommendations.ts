@@ -17,7 +17,7 @@ export async function recommendVideosFromSeeds(
   observation: FeedObservation,
   profileId: string,
   sourceLabel = "Recommended from",
-  budgetForSeed?: (seed: FeedVideo, seeds: FeedVideo[]) => number
+  budgetForSeed: (seed: FeedVideo, seeds: FeedVideo[]) => number
 ) {
   return observeOperation(
     observation,
@@ -50,7 +50,7 @@ async function recommendVideosFromLinks(
   observation: FeedObservation,
   profileId: string,
   sourceLabel: string,
-  budgetForSeed?: (seed: FeedVideo, seeds: FeedVideo[]) => number
+  budgetForSeed: (seed: FeedVideo, seeds: FeedVideo[]) => number
 ) {
   return observeOperation(
     observation,
@@ -72,9 +72,7 @@ async function recommendVideosFromLinks(
         try {
           const info = await youtube.getInfo(seedId);
           let seedRecommendations = 0;
-          const maxVideosPerSeed = budgetForSeed
-            ? budgetForSeed(seedVideo, seedVideos)
-            : getGretelConfig().feed.relatedVideosPerSeed;
+          const maxVideosPerSeed = budgetForSeed(seedVideo, seedVideos);
 
           for (const video of info.watch_next_feed || []) {
             const id = getVideoId(video);

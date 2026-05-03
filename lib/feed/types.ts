@@ -30,10 +30,7 @@ export type FeedVideo = {
 export type FeedNodeId =
   | "tagSearch"
   | "channelVideos"
-  | "relatedVideos"
-  | "watchedVideos";
-
-export type FeedNodeWeights = Record<FeedNodeId, number>;
+  | "relatedVideos";
 
 export type FeedNodeSummary = {
   id: FeedNodeId;

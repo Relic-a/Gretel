@@ -1,22 +1,12 @@
-import type { FeedNodeWeights } from "./types";
-
 export type GretelConfig = {
   feed: {
     maxQueries: number;
     maxVideos: number;
     poolSizeCap: number;
-    cacheTargetVideos: number;
-    cacheRefreshHours: number;
     subscriptionRefreshMinutes: number;
     recommendationSeeds: number;
-    relatedVideosPerSeed: number;
-    watchedRecommendationSeeds: number;
-    maxNodeWeight: number;
-    cacheReadMultiplier: number;
     minVideosPerQuery: number;
     minVideosPerChannel: number;
-    maxSharePerNode: number;
-    maxSharePerChannel: number;
     similarityThreshold: number;
     coldStartInteractionThreshold: number;
     expansionSeedCount: number;
@@ -26,13 +16,6 @@ export type GretelConfig = {
     readyQueueLowWaterMark: number;
     subscriptionFastLanePerSession: number;
     coldStartParentEngagementWeight: number;
-    defaultNodeWeights: FeedNodeWeights;
-    subscriptionMix: {
-      latest: number;
-      trending: number;
-      popular: number;
-      trendingLookbackVideos: number;
-    };
   };
   learning: {
     watchSaveThreshold: number;
@@ -69,18 +52,10 @@ export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
     maxQueries: 5,
     maxVideos: 48,
     poolSizeCap: 120,
-    cacheTargetVideos: 120,
-    cacheRefreshHours: 6,
     subscriptionRefreshMinutes: 45,
     recommendationSeeds: 4,
-    relatedVideosPerSeed: 5,
-    watchedRecommendationSeeds: 6,
-    maxNodeWeight: 5,
-    cacheReadMultiplier: 3,
     minVideosPerQuery: 3,
     minVideosPerChannel: 3,
-    maxSharePerNode: 1,
-    maxSharePerChannel: 1,
     similarityThreshold: 0.32,
     coldStartInteractionThreshold: 12,
     expansionSeedCount: 4,
@@ -89,19 +64,7 @@ export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
     readyQueueTargetSize: 48,
     readyQueueLowWaterMark: 16,
     subscriptionFastLanePerSession: 6,
-    coldStartParentEngagementWeight: 0.15,
-    defaultNodeWeights: {
-      tagSearch: 2,
-      channelVideos: 2,
-      relatedVideos: 3,
-      watchedVideos: 2
-    },
-    subscriptionMix: {
-      latest: 0.4,
-      trending: 0.35,
-      popular: 0.25,
-      trendingLookbackVideos: 24
-    }
+    coldStartParentEngagementWeight: 0.15
   },
   learning: {
     watchSaveThreshold: 0.5,

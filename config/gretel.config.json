@@ -3,18 +3,10 @@
     "maxQueries": 5,
     "maxVideos": 48,
     "poolSizeCap": 120,
-    "cacheTargetVideos": 120,
-    "cacheRefreshHours": 6,
     "subscriptionRefreshMinutes": 45,
     "recommendationSeeds": 4,
-    "relatedVideosPerSeed": 5,
-    "watchedRecommendationSeeds": 6,
-    "maxNodeWeight": 5,
-    "cacheReadMultiplier": 3,
     "minVideosPerQuery": 3,
     "minVideosPerChannel": 3,
-    "maxSharePerNode": 1,
-    "maxSharePerChannel": 1,
     "similarityThreshold": 0.32,
     "coldStartInteractionThreshold": 12,
     "expansionSeedCount": 4,
@@ -23,19 +15,7 @@
     "readyQueueTargetSize": 48,
     "readyQueueLowWaterMark": 16,
     "subscriptionFastLanePerSession": 6,
-    "coldStartParentEngagementWeight": 0.15,
-    "defaultNodeWeights": {
-      "tagSearch": 2,
-      "channelVideos": 2,
-      "relatedVideos": 3,
-      "watchedVideos": 2
-    },
-    "subscriptionMix": {
-      "latest": 0.4,
-      "trending": 0.35,
-      "popular": 0.25,
-      "trendingLookbackVideos": 24
-    }
+    "coldStartParentEngagementWeight": 0.15
   },
   "learning": {
     "watchSaveThreshold": 0.5,

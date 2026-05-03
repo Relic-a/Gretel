@@ -11,7 +11,6 @@ export function createCandidatePoolFeed(input: {
   rootVideos: FeedVideo[];
   channelVideos: FeedVideo[];
   relatedVideos: FeedVideo[];
-  watchedVideos?: FeedVideo[];
   watchedVideoIds: Set<string>;
   interactions: Map<string, VideoInteraction>;
   config: GretelConfig;
@@ -45,8 +44,7 @@ export function createCandidatePoolFeed(input: {
     nodes: [
       summarizeNode("tagSearch", "Tag search", input.rootVideos, poolVideos),
       summarizeNode("channelVideos", "Subscription videos", input.channelVideos, poolVideos),
-      summarizeNode("relatedVideos", "Related videos", input.relatedVideos, poolVideos),
-      summarizeNode("watchedVideos", "Watched video neighbors", input.watchedVideos || [], poolVideos)
+      summarizeNode("relatedVideos", "Related videos", input.relatedVideos, poolVideos)
     ]
   } satisfies CandidatePoolResult;
 }

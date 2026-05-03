@@ -169,31 +169,15 @@ function writeRuntimeConfig(name, overrides = {}) {
       feed: {
         maxQueries: 1,
         maxVideos: 6,
-        cacheTargetVideos: 16,
-        cacheRefreshHours: 24,
         subscriptionRefreshMinutes: 60,
         recommendationSeeds: 2,
-        watchedRecommendationSeeds: 1,
-        maxNodeWeight: 5,
-        cacheReadMultiplier: 2,
         minVideosPerQuery: 4,
         minVideosPerChannel: 4,
-        maxSharePerNode: 0.5,
-        maxSharePerChannel: 1,
         readyQueueLowWaterMark: 2,
-        defaultNodeWeights: {
-          tagSearch: 1,
-          channelVideos: 1,
-          relatedVideos: 0,
-          watchedVideos: 1
-        },
         ...overrides.feed
       },
       learning: {
         watchSaveThreshold: 0.25,
-        nodeAffinityStep: 0.5,
-        channelAffinityStep: 0.5,
-        maxAffinityBoost: 2,
         ...overrides.learning
       },
       client: {
@@ -350,13 +334,8 @@ test("clamps and rounds out-of-range config values before logging applied config
       feed: {
         maxQueries: "2.4",
         maxVideos: 9999,
-        maxNodeWeight: 2,
-        maxSharePerNode: -1,
-        maxSharePerChannel: 2,
-        defaultNodeWeights: {
-          tagSearch: 99,
-          channelVideos: -3
-        }
+        poolSizeCap: -1,
+        readyQueueLowWaterMark: 9999
       },
       learning: {
         watchSaveThreshold: "0.75"
@@ -377,10 +356,8 @@ test("clamps and rounds out-of-range config values before logging applied config
 
     assert.equal(config.feed.maxQueries, 2);
     assert.equal(config.feed.maxVideos, 200);
-    assert.equal(config.feed.maxSharePerNode, 0);
-    assert.equal(config.feed.maxSharePerChannel, 1);
-    assert.equal(config.feed.defaultNodeWeights.tagSearch, 2);
-    assert.equal(config.feed.defaultNodeWeights.channelVideos, 0);
+    assert.equal(config.feed.poolSizeCap, 1);
+    assert.equal(config.feed.readyQueueLowWaterMark, 1000);
     assert.equal(config.learning.watchSaveThreshold, 0.75);
     assert.equal(config.client.watchProgressPollMs, 250);
     assert.equal(config.youtube.language, "fr");
@@ -460,7 +437,7 @@ test("runtime feed flow initializes roots once, expands pool, serves fast lane, 
         tags: "alpha, beta",
         channels: "Creator One",
         channelSort: "latest",
-        cacheOnly: true
+        servingOnly: true
       });
       assert.equal(afterWatchFeed.status, 200);
       assert.equal(afterWatchFeed.body.pool.status, "served");
@@ -481,7 +458,7 @@ test("runtime feed flow initializes roots once, expands pool, serves fast lane, 
         tags: "alpha, beta",
         channels: "Creator One",
         channelSort: "latest",
-        forceRefresh: true
+        forceExpansion: true
       });
       assert.equal(afterWatchFetch.status, 200);
       assert.equal(afterWatchFetch.body.pool.initializedRoot, false);
@@ -506,7 +483,6 @@ test("runtime feed flow initializes roots once, expands pool, serves fast lane, 
     assert.equal(profileLogs.length, 0);
     assert.equal(feedLogs[0].line.summary.poolStatus, "initialized");
     assert.equal(feedLogs[1].line.summary.poolStatus, "served");
-    assert.equal(feedLogs[2].line.summary.watchedSeeds, 1);
     assert.equal(feedLogs[3].line.summary.expandedPool, true);
 
     assert.ok(flow.firstFeed.pool.videos <= flow.firstFeed.pool.targetVideos);
@@ -520,15 +496,9 @@ test("runtime feed flow initializes roots once, expands pool, serves fast lane, 
 });
 
 test("runtime feed builds one combined root pool across all tags", async () => {
-  const tagConfig = writeRuntimeConfig("runtime-tag-tabs.json", {
+  const tagConfig = writeRuntimeConfig("runtime-combined-root.json", {
     feed: {
-      maxQueries: 2,
-      defaultNodeWeights: {
-        tagSearch: 1,
-        channelVideos: 0,
-        relatedVideos: 0,
-        watchedVideos: 0
-      }
+      maxQueries: 2
     }
   });
   const fakeYoutubeClient = createFakeYoutubeClient();
@@ -547,7 +517,6 @@ test("runtime feed builds one combined root pool across all tags", async () => {
         tags: "alpha, beta"
       });
       assert.equal(response.status, 200);
-      assert.equal(response.body.feedTabs, undefined);
       assert.equal(response.body.videos.length > 0, true);
       assert.equal(
         response.body.videos

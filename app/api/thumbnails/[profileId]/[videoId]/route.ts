@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 
-import { getCachedThumbnailPath } from "../../../../../lib/feed/cache";
+import { getCachedThumbnailPath } from "../../../../../lib/feed/thumbnails";
 
 export const runtime = "nodejs";
 

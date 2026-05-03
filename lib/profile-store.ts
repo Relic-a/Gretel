@@ -66,49 +66,6 @@ export function getDatabase() {
         FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
       );
 
-      CREATE TABLE IF NOT EXISTS node_affinity (
-        profile_id TEXT NOT NULL,
-        node_id TEXT NOT NULL,
-        boost REAL NOT NULL,
-        updated_at INTEGER NOT NULL,
-        PRIMARY KEY (profile_id, node_id),
-        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS channel_affinity (
-        profile_id TEXT NOT NULL,
-        channel_key TEXT NOT NULL,
-        boost REAL NOT NULL,
-        updated_at INTEGER NOT NULL,
-        PRIMARY KEY (profile_id, channel_key),
-        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS feed_cache_state (
-        profile_id TEXT NOT NULL,
-        cache_key TEXT NOT NULL,
-        base_refreshed_at INTEGER NOT NULL,
-        subscription_refreshed_at INTEGER NOT NULL,
-        created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        PRIMARY KEY (profile_id, cache_key),
-        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
-      );
-
-      CREATE TABLE IF NOT EXISTS feed_cache_videos (
-        profile_id TEXT NOT NULL,
-        cache_key TEXT NOT NULL,
-        node_id TEXT NOT NULL,
-        video_id TEXT NOT NULL,
-        video_json TEXT NOT NULL,
-        first_seen_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        recommendation_count INTEGER NOT NULL DEFAULT 0,
-        last_recommended_at INTEGER,
-        PRIMARY KEY (profile_id, cache_key, node_id, video_id),
-        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
-      );
-
       CREATE TABLE IF NOT EXISTS feed_centroids (
         profile_id TEXT NOT NULL,
         cache_key TEXT NOT NULL,
@@ -202,10 +159,6 @@ export function resetProfile(profileId: string) {
   const database = getDatabase();
   database.prepare("DELETE FROM watched_videos WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM saved_videos WHERE profile_id = ?").run(profileId);
-  database.prepare("DELETE FROM node_affinity WHERE profile_id = ?").run(profileId);
-  database.prepare("DELETE FROM channel_affinity WHERE profile_id = ?").run(profileId);
-  database.prepare("DELETE FROM feed_cache_state WHERE profile_id = ?").run(profileId);
-  database.prepare("DELETE FROM feed_cache_videos WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM feed_centroids WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM feed_video_embeddings WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM feed_pool_state WHERE profile_id = ?").run(profileId);
@@ -267,31 +220,6 @@ export function getWatchedVideoIds(profileId: string) {
     .all(profileId) as Array<{ video_id: string }>;
 
   return rows.map((row) => row.video_id);
-}
-
-export function getLatestWatchedVideos(profileId: string) {
-  const rows = getDatabase()
-    .prepare(
-      `SELECT video_id, title, author, duration, query, source_node_id, source_node_label, channel_key
-       FROM watched_videos
-       WHERE profile_id = ?
-       ORDER BY watched_at DESC
-       LIMIT ?`
-    )
-    .all(profileId, getGretelConfig().feed.watchedRecommendationSeeds) as Array<
-      Record<string, string | null>
-    >;
-
-  return rows.map<FeedVideo>((row) => ({
-    id: row.video_id || "",
-    title: row.title || "Watched video",
-    author: row.author || "Unknown channel",
-    duration: row.duration || "",
-    query: row.query || "Watched",
-    sourceNodeId: (row.source_node_id as FeedNodeId | null) || undefined,
-    sourceNodeLabel: row.source_node_label || undefined,
-    channelKey: row.channel_key || undefined
-  }));
 }
 
 export function getVideoInteractions(profileId: string) {
@@ -382,14 +310,6 @@ export function unsaveVideo(profileId: string, videoId: string) {
     .prepare("DELETE FROM saved_videos WHERE profile_id = ? AND video_id = ?")
     .run(profileId, videoId);
   getDatabase().prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(Date.now(), profileId);
-}
-
-export function getNodeBoosts(profileId: string) {
-  return {} as Partial<Record<FeedNodeId, number>>;
-}
-
-export function getChannelBoosts(profileId: string) {
-  return {};
 }
 
 export function normalizeChannelKey(value: string) {

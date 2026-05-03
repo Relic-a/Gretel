@@ -2,15 +2,10 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 
 import { DEFAULT_GRETEL_CONFIG, type GretelConfig } from "./config-defaults";
-import type { FeedNodeId, FeedNodeWeights } from "./types";
 import { errorFields, logInfo, logWarn } from "../logger";
 
 type ConfigInput = Partial<{
-  feed: Partial<
-    Omit<GretelConfig["feed"], "defaultNodeWeights"> & {
-      defaultNodeWeights: Partial<FeedNodeWeights>;
-    }
-  >;
+  feed: Partial<GretelConfig["feed"]>;
   learning: Partial<GretelConfig["learning"]>;
   embeddings: Partial<GretelConfig["embeddings"]>;
   client: Partial<GretelConfig["client"]>;
@@ -41,8 +36,8 @@ export function getPublicGretelConfig() {
 
   return {
     feed: {
-      maxNodeWeight: config.feed.maxNodeWeight,
-      defaultNodeWeights: config.feed.defaultNodeWeights
+      maxVideos: config.feed.maxVideos,
+      readyQueueTargetSize: config.feed.readyQueueTargetSize
     },
     learning: {
       watchSaveThreshold: config.learning.watchSaveThreshold
@@ -129,13 +124,6 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
       maxQueries: integer(feed.maxQueries, defaults.feed.maxQueries, 1, 50),
       maxVideos: integer(feed.maxVideos, defaults.feed.maxVideos, 1, 200),
       poolSizeCap: integer(feed.poolSizeCap, defaults.feed.poolSizeCap, 1, 10000),
-      cacheTargetVideos: integer(feed.cacheTargetVideos, defaults.feed.cacheTargetVideos, 1, 1000),
-      cacheRefreshHours: numberInRange(
-        feed.cacheRefreshHours,
-        defaults.feed.cacheRefreshHours,
-        0,
-        24 * 30
-      ),
       subscriptionRefreshMinutes: numberInRange(
         feed.subscriptionRefreshMinutes,
         defaults.feed.subscriptionRefreshMinutes,
@@ -143,25 +131,6 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
         24 * 60 * 30
       ),
       recommendationSeeds: integer(feed.recommendationSeeds, defaults.feed.recommendationSeeds, 0, 50),
-      relatedVideosPerSeed: integer(
-        feed.relatedVideosPerSeed,
-        defaults.feed.relatedVideosPerSeed,
-        1,
-        50
-      ),
-      watchedRecommendationSeeds: integer(
-        feed.watchedRecommendationSeeds,
-        defaults.feed.watchedRecommendationSeeds,
-        0,
-        50
-      ),
-      maxNodeWeight: integer(feed.maxNodeWeight, defaults.feed.maxNodeWeight, 1, 20),
-      cacheReadMultiplier: numberInRange(
-        feed.cacheReadMultiplier,
-        defaults.feed.cacheReadMultiplier,
-        1,
-        20
-      ),
       minVideosPerQuery: integer(feed.minVideosPerQuery, defaults.feed.minVideosPerQuery, 1, 100),
       minVideosPerChannel: integer(
         feed.minVideosPerChannel,
@@ -169,8 +138,6 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
         1,
         100
       ),
-      maxSharePerNode: share(feed.maxSharePerNode, defaults.feed.maxSharePerNode),
-      maxSharePerChannel: share(feed.maxSharePerChannel, defaults.feed.maxSharePerChannel),
       similarityThreshold: share(feed.similarityThreshold, defaults.feed.similarityThreshold),
       coldStartInteractionThreshold: integer(
         feed.coldStartInteractionThreshold,
@@ -212,13 +179,7 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
       coldStartParentEngagementWeight: share(
         feed.coldStartParentEngagementWeight,
         defaults.feed.coldStartParentEngagementWeight
-      ),
-      defaultNodeWeights: nodeWeights(
-        feed.defaultNodeWeights,
-        defaults.feed.defaultNodeWeights,
-        integer(feed.maxNodeWeight, defaults.feed.maxNodeWeight, 1, 20)
-      ),
-      subscriptionMix: subscriptionMix(feed.subscriptionMix, defaults.feed.subscriptionMix)
+      )
     },
     learning: {
       watchSaveThreshold: share(learning.watchSaveThreshold, defaults.learning.watchSaveThreshold),
@@ -280,42 +241,6 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
       language: nonEmptyString(youtube.language, defaults.youtube.language)
     }
   };
-}
-
-function subscriptionMix(
-  input: unknown,
-  fallback: GretelConfig["feed"]["subscriptionMix"]
-) {
-  const source = input && typeof input === "object" ? input as Partial<GretelConfig["feed"]["subscriptionMix"]> : {};
-
-  return {
-    latest: share(source.latest, fallback.latest),
-    trending: share(source.trending, fallback.trending),
-    popular: share(source.popular, fallback.popular),
-    trendingLookbackVideos: integer(
-      source.trendingLookbackVideos,
-      fallback.trendingLookbackVideos,
-      1,
-      200
-    )
-  };
-}
-
-function nodeWeights(
-  input: Partial<FeedNodeWeights> | undefined,
-  defaults: FeedNodeWeights,
-  maxNodeWeight: number
-) {
-  const source = input && typeof input === "object" ? input : {};
-  const weights = { ...defaults };
-
-  for (const id of Object.keys(weights) as FeedNodeId[]) {
-    if (id in source) {
-      weights[id] = integer(source[id], weights[id], 0, maxNodeWeight);
-    }
-  }
-
-  return weights;
 }
 
 function share(value: unknown, fallback: number) {

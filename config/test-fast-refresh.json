@@ -1,9 +1,0 @@
-{
-  "feed": {
-    "cacheRefreshHours": 0,
-    "subscriptionRefreshMinutes": 0
-  },
-  "client": {
-    "watchProgressPollMs": 1000
-  }
-}

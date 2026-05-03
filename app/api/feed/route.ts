@@ -1,11 +1,8 @@
-import { parseChannelSort, parseFeedNodeWeights, parseTags } from "../../../lib/feed/input";
+import { parseChannelSort, parseTags } from "../../../lib/feed/input";
 import { createFeedObservation, logFeedObservation } from "../../../lib/feed/observation";
 import { createFeed } from "../../../lib/feed/service";
 import { errorFields } from "../../../lib/logger";
 import {
-  getChannelBoosts,
-  getLatestWatchedVideos,
-  getNodeBoosts,
   getProfile,
   getWatchedVideoIds
 } from "../../../lib/profile-store";
@@ -20,9 +17,8 @@ export async function POST(request: Request) {
     const tags = parseTags(body.tags);
     const channels = parseTags(body.channels);
     const channelSort = parseChannelSort(body.channelSort);
-    const weights = parseFeedNodeWeights(body.weights);
-    const forceExpansion = body.forceExpansion === true || body.forceRefresh === true;
-    const servingOnly = body.servingOnly === true || body.cacheOnly === true;
+    const forceExpansion = body.forceExpansion === true;
+    const servingOnly = body.servingOnly === true;
     const requestedProfileId = typeof body.profileId === "string" ? body.profileId : "";
     const profile = requestedProfileId ? getProfile(requestedProfileId) : null;
 
@@ -38,22 +34,13 @@ export async function POST(request: Request) {
     }
 
     const watchedVideoIds = getWatchedVideoIds(profile.id);
-    const latestWatchedVideos = getLatestWatchedVideos(profile.id);
-    const networkOptions = {
-      watchedVideoIds,
-      nodeBoosts: getNodeBoosts(profile.id),
-      channelBoosts: getChannelBoosts(profile.id)
-    };
     const feed = await createFeed(
       profile.id,
       tags,
       channels,
       channelSort,
-      weights,
       observation,
-      networkOptions,
-      latestWatchedVideos,
-      { forceExpansion, servingOnly }
+      { forceExpansion, servingOnly, watchedVideoIds }
     );
 
     logFeedObservation(observation, {
@@ -66,8 +53,6 @@ export async function POST(request: Request) {
       relatedVideos: feed.relatedVideos,
       finalVideos: feed.videos.length,
       activeNodes: feed.nodes.filter((node) => node.weight > 0).length,
-      usedRecommendations: weights.relatedVideos > 0,
-      watchedSeeds: latestWatchedVideos.length,
       watchedExcluded: watchedVideoIds.length,
       poolVideos: feed.pool.videos,
       poolStatus: feed.pool.status,
@@ -83,7 +68,6 @@ export async function POST(request: Request) {
       channels,
       channelSort,
       profile,
-      weights,
       queries: feed.queries,
       nodes: feed.nodes,
       pool: feed.pool,
