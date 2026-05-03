@@ -4,6 +4,7 @@ export type GretelConfig = {
   feed: {
     maxQueries: number;
     maxVideos: number;
+    poolSizeCap: number;
     cacheTargetVideos: number;
     cacheRefreshHours: number;
     subscriptionRefreshMinutes: number;
@@ -24,6 +25,7 @@ export type GretelConfig = {
     readyQueueTargetSize: number;
     readyQueueLowWaterMark: number;
     subscriptionFastLanePerSession: number;
+    coldStartParentEngagementWeight: number;
     defaultNodeWeights: FeedNodeWeights;
     subscriptionMix: {
       latest: number;
@@ -66,6 +68,7 @@ export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
   feed: {
     maxQueries: 5,
     maxVideos: 48,
+    poolSizeCap: 120,
     cacheTargetVideos: 120,
     cacheRefreshHours: 6,
     subscriptionRefreshMinutes: 45,
@@ -86,6 +89,7 @@ export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
     readyQueueTargetSize: 48,
     readyQueueLowWaterMark: 16,
     subscriptionFastLanePerSession: 6,
+    coldStartParentEngagementWeight: 0.15,
     defaultNodeWeights: {
       tagSearch: 2,
       channelVideos: 2,

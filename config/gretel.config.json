@@ -2,6 +2,7 @@
   "feed": {
     "maxQueries": 5,
     "maxVideos": 48,
+    "poolSizeCap": 120,
     "cacheTargetVideos": 120,
     "cacheRefreshHours": 6,
     "subscriptionRefreshMinutes": 45,
@@ -22,6 +23,7 @@
     "readyQueueTargetSize": 48,
     "readyQueueLowWaterMark": 16,
     "subscriptionFastLanePerSession": 6,
+    "coldStartParentEngagementWeight": 0.15,
     "defaultNodeWeights": {
       "tagSearch": 2,
       "channelVideos": 2,

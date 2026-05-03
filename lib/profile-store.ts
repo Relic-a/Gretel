@@ -128,6 +128,32 @@ export function getDatabase() {
         PRIMARY KEY (profile_id, video_id),
         FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS feed_pool_state (
+        profile_id TEXT NOT NULL,
+        pool_key TEXT NOT NULL,
+        root_discovered_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (profile_id, pool_key),
+        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS feed_pool_nodes (
+        profile_id TEXT NOT NULL,
+        pool_key TEXT NOT NULL,
+        video_id TEXT NOT NULL,
+        node_id TEXT NOT NULL,
+        video_json TEXT NOT NULL,
+        parent_video_id TEXT,
+        similarity_score REAL NOT NULL,
+        parent_engagement_score REAL NOT NULL DEFAULT 0,
+        first_seen_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        served_count INTEGER NOT NULL DEFAULT 0,
+        last_served_at INTEGER,
+        PRIMARY KEY (profile_id, pool_key, video_id),
+        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+      );
     `);
   }
 
@@ -182,6 +208,8 @@ export function resetProfile(profileId: string) {
   database.prepare("DELETE FROM feed_cache_videos WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM feed_centroids WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM feed_video_embeddings WHERE profile_id = ?").run(profileId);
+  database.prepare("DELETE FROM feed_pool_state WHERE profile_id = ?").run(profileId);
+  database.prepare("DELETE FROM feed_pool_nodes WHERE profile_id = ?").run(profileId);
   database.prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(Date.now(), profileId);
   resetYoutubeProfileCache(profileId);
 }

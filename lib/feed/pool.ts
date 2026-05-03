@@ -28,7 +28,8 @@ export function createCandidatePoolFeed(input: {
     .filter((video) => !input.interactions.has(video.id) && !input.watchedVideoIds.has(video.id))
     .sort((left, right) => {
       if (isColdStart) {
-        return (right.similarityScore || 0) - (left.similarityScore || 0);
+        return coldStartExpansionScore(right, input.config) -
+          coldStartExpansionScore(left, input.config);
       }
 
       return (right.parentEngagementScore || 0) - (left.parentEngagementScore || 0) ||
@@ -68,8 +69,13 @@ export function selectExpansionSeeds(input: {
     .slice(0, input.config.feed.expansionSeedCount);
 }
 
-export function relatedBudgetForSeed(seed: FeedVideo, seeds: FeedVideo[], config: GretelConfig) {
-  const scores = seeds.map((video) => Math.max(0, video.engagementScore || video.similarityScore || 0));
+export function relatedBudgetForSeed(
+  seed: FeedVideo,
+  seeds: FeedVideo[],
+  config: GretelConfig,
+  warmStart = true
+) {
+  const scores = seeds.map((video) => Math.max(0, expansionScore(video, config, warmStart)));
   const maxScore = Math.max(...scores, 0);
   const minBudget = config.feed.minRelatedVideosPerSeed;
   const maxBudget = config.feed.maxRelatedVideosPerSeed;
@@ -80,8 +86,17 @@ export function relatedBudgetForSeed(seed: FeedVideo, seeds: FeedVideo[], config
 
   return Math.max(
     minBudget,
-    Math.min(maxBudget, Math.ceil((Math.max(0, seed.engagementScore || seed.similarityScore || 0) / maxScore) * maxBudget))
+    Math.min(maxBudget, Math.ceil((Math.max(0, expansionScore(seed, config, warmStart)) / maxScore) * maxBudget))
   );
+}
+
+function expansionScore(video: FeedVideo, config: GretelConfig, warmStart: boolean) {
+  return warmStart ? video.engagementScore || 0 : coldStartExpansionScore(video, config);
+}
+
+function coldStartExpansionScore(video: FeedVideo, config: GretelConfig) {
+  return (video.similarityScore || 0) +
+    (video.parentEngagementScore || 0) * config.feed.coldStartParentEngagementWeight;
 }
 
 function summarizeNode(

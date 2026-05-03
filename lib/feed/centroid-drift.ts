@@ -1,12 +1,17 @@
 import { getGretelConfig } from "./config";
 import { createEmbeddingInput, getEmbeddingProvider } from "./embeddings";
-import { getDatabase } from "../profile-store";
+import { getDatabase, getVideoInteractions } from "../profile-store";
 import type { FeedVideo } from "./types";
 import { cosineSimilarity, driftCentroid } from "./vector-math";
 import { getRetainedEmbedding, retainEmbedding } from "./algorithm-store";
 
 export async function updateCentroidsForPositiveEngagement(profileId: string, video: FeedVideo) {
   const config = getGretelConfig();
+
+  if (getVideoInteractions(profileId).size < config.feed.coldStartInteractionThreshold) {
+    return;
+  }
+
   let embedding = getRetainedEmbedding(profileId, video.id);
 
   if (!embedding) {

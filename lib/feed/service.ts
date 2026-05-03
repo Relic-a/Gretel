@@ -1,16 +1,18 @@
 import { createQueries } from "./input";
 import {
-  createFeedCacheKey,
-  getCachedFeedVideos,
-  getFeedCacheState,
-  markFeedVideosRecommended,
-  saveFeedCacheVideos
-} from "./cache";
-import {
-  getGretelConfig
-} from "./config";
-import { getEmbeddingProvider, createEmbeddingInput } from "./embeddings";
-import { computeEngagementScore } from "./engagement";
+  addPoolNodes,
+  createFeedPoolKey,
+  getFeedPoolState,
+  getPoolVideoIds,
+  listPoolNodes,
+  markPoolNodesServed,
+  markRootDiscovered,
+  prunePool,
+  updatePoolSimilarities
+} from "./pool-store";
+import { getGretelConfig } from "./config";
+import { createEmbeddingInput, getEmbeddingProvider } from "./embeddings";
+import { applyEngagement } from "./engagement";
 import { createCandidatePoolFeed, relatedBudgetForSeed, selectExpansionSeeds } from "./pool";
 import type { FeedNetworkOptions } from "./network";
 import { recommendVideosFromSeeds } from "./recommendations";
@@ -26,8 +28,8 @@ import {
 import { averageNormalizedVectors, cosineSimilarity } from "./vector-math";
 
 export type CreateFeedOptions = {
-  forceRefresh?: boolean;
-  cacheOnly?: boolean;
+  forceExpansion?: boolean;
+  servingOnly?: boolean;
 };
 
 export async function createFeed(
@@ -43,258 +45,210 @@ export async function createFeed(
 ) {
   const queries = createQueries(tags);
   const config = getGretelConfig();
-  const cacheKey = createFeedCacheKey({
-    tags: queries,
+  const poolKey = createFeedPoolKey({ tags: queries, channels, channelSort });
+  const watchedVideoIds = new Set(networkOptions.watchedVideoIds || []);
+  const initializedRoot = await initializePoolOnce(
+    profileId,
+    poolKey,
+    queries,
     channels,
-    channelSort
-  });
-  const now = Date.now();
-  const cachedState = getFeedCacheState(profileId, cacheKey);
-  const baseRefreshMs = config.feed.cacheRefreshHours * 60 * 60 * 1000;
-  const subscriptionRefreshMs = config.feed.subscriptionRefreshMinutes * 60 * 1000;
-  const useCachedVideosOnly = Boolean(
-    options.cacheOnly && !options.forceRefresh && cachedState && cachedState.cachedVideos > 0
+    channelSort,
+    observation
   );
-  const shouldRefreshBase =
-    !useCachedVideosOnly &&
-    (options.forceRefresh ||
-      !cachedState ||
-      cachedState.cachedVideos === 0 ||
-      cachedState.cachedVideos <= config.feed.readyQueueLowWaterMark ||
-      now - cachedState.baseRefreshedAt >= baseRefreshMs);
-  const shouldRefreshSubscriptions =
-    channels.length > 0 &&
-    !useCachedVideosOnly &&
-    (options.forceRefresh ||
-      !cachedState ||
-      now - cachedState.subscriptionRefreshedAt >= subscriptionRefreshMs);
-  const cacheStatus = !cachedState
-    ? "miss"
-    : shouldRefreshBase || shouldRefreshSubscriptions
-      ? "stale"
-      : "hit";
 
-  if (shouldRefreshBase) {
-    const freshNodes = await fetchFreshFeedNodes(
-      profileId,
-      queries,
-      channels,
-      channelSort,
-      weights,
-      observation,
-      latestWatchedVideos
-    );
-    saveFeedCacheVideos(
-      profileId,
-      cacheKey,
-      freshNodes,
-      now,
-      true,
-      channels.length > 0,
-      config.feed.cacheTargetVideos
-    );
-  } else if (shouldRefreshSubscriptions) {
-    const channelVideos = await fetchChannelVideos(channels, channelSort, observation, profileId);
-    saveFeedCacheVideos(
-      profileId,
-      cacheKey,
-      { channelVideos },
-      now,
-      false,
-      true,
-      config.feed.cacheTargetVideos
-    );
-  }
-
-  const cacheReadLimit = Math.ceil(config.feed.maxVideos * config.feed.cacheReadMultiplier);
-  const watchedVideoIds = networkOptions.watchedVideoIds || [];
-  const tagSearchVideos = getCachedFeedVideos(
-    profileId,
-    cacheKey,
-    "tagSearch",
-    cacheReadLimit,
-    watchedVideoIds
-  );
-  const channelVideos = getCachedFeedVideos(
-    profileId,
-    cacheKey,
-    "channelVideos",
-    cacheReadLimit,
-    watchedVideoIds
-  );
-  const relatedVideos = getCachedFeedVideos(
-    profileId,
-    cacheKey,
-    "relatedVideos",
-    cacheReadLimit,
-    watchedVideoIds
-  );
-  const watchedVideos = getCachedFeedVideos(
-    profileId,
-    cacheKey,
-    "watchedVideos",
-    cacheReadLimit,
-    watchedVideoIds
-  );
-  const state = getFeedCacheState(profileId, cacheKey);
-  const cache = {
-    key: cacheKey,
-    videos: state?.cachedVideos || 0,
-    targetVideos: config.feed.cacheTargetVideos,
-    refreshedAt: state?.baseRefreshedAt || now,
-    subscriptionRefreshedAt: state?.subscriptionRefreshedAt || 0,
-    refreshHours: config.feed.cacheRefreshHours,
-    subscriptionRefreshMinutes: config.feed.subscriptionRefreshMinutes,
-    cacheReadMultiplier: config.feed.cacheReadMultiplier,
-    maxVideos: config.feed.maxVideos,
-    forced: Boolean(options.forceRefresh),
-    status: cacheStatus,
-    refreshedBase: shouldRefreshBase,
-    refreshedSubscriptions: shouldRefreshSubscriptions
-  };
-  const activeCentroid = getCentroid(profileId, cacheKey)?.current || [];
-  const networkNodes = createFeedNetworkNodes(
-    rescoreCachedVideos(profileId, tagSearchVideos, activeCentroid),
-    channelVideos,
-    rescoreCachedVideos(profileId, relatedVideos, activeCentroid),
-    watchedVideos
-  );
-  const interactions = getVideoInteractions(profileId);
-  const feed = createCandidatePoolFeed({
-    rootVideos: networkNodes.tagSearch,
-    channelVideos: networkNodes.channelVideos.slice(0, config.feed.subscriptionFastLanePerSession),
-    relatedVideos: networkNodes.relatedVideos,
-    watchedVideos: networkNodes.watchedVideos,
-    watchedVideoIds: new Set(watchedVideoIds),
-    interactions,
+  let poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
+  let readyPreview = createCandidatePoolFeed({
+    rootVideos: poolVideos.filter((video) => video.sourceNodeId === "tagSearch"),
+    channelVideos: poolVideos.filter((video) => video.sourceNodeId === "channelVideos"),
+    relatedVideos: poolVideos.filter((video) => video.sourceNodeId === "relatedVideos"),
+    watchedVideos: poolVideos.filter((video) => video.sourceNodeId === "watchedVideos"),
+    watchedVideoIds,
+    interactions: getVideoInteractions(profileId),
     config
   });
-  markFeedVideosRecommended(profileId, cacheKey, feed.videos);
+  const expandedPool =
+    !options.servingOnly &&
+    (options.forceExpansion || readyPreview.videos.length <= config.feed.readyQueueLowWaterMark);
+
+  if (expandedPool) {
+    await expandPool(profileId, poolKey, poolVideos, observation);
+    poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
+    readyPreview = createCandidatePoolFeed({
+      rootVideos: poolVideos.filter((video) => video.sourceNodeId === "tagSearch"),
+      channelVideos: poolVideos.filter((video) => video.sourceNodeId === "channelVideos"),
+      relatedVideos: poolVideos.filter((video) => video.sourceNodeId === "relatedVideos"),
+      watchedVideos: poolVideos.filter((video) => video.sourceNodeId === "watchedVideos"),
+      watchedVideoIds,
+      interactions: getVideoInteractions(profileId),
+      config
+    });
+  }
+
+  prunePool(profileId, poolKey, poolVideos, config.feed.poolSizeCap);
+
+  const fastLaneVideos = await getSubscriptionFastLaneVideos(
+    channels,
+    channelSort,
+    observation,
+    profileId,
+    watchedVideoIds
+  );
+  const poolRecommendations = readyPreview.videos.slice(0, config.feed.maxVideos);
+  const videos = [...fastLaneVideos, ...poolRecommendations].slice(0, config.feed.maxVideos);
+
+  await retainReadyQueueEmbeddings(profileId, poolRecommendations);
+  markPoolNodesServed(profileId, poolKey, poolRecommendations);
+
+  const poolState = getFeedPoolState(profileId, poolKey);
+  const pool = {
+    key: poolKey,
+    videos: poolState?.poolVideos || poolVideos.length,
+    targetVideos: config.feed.poolSizeCap,
+    rootDiscoveredAt: poolState?.rootDiscoveredAt || Date.now(),
+    maxVideos: config.feed.maxVideos,
+    initializedRoot,
+    expandedPool,
+    status: initializedRoot ? "initialized" : expandedPool ? "expanded" : "served"
+  };
 
   return {
     queries,
-    videos: feed.videos,
-    nodes: feed.nodes,
-    searchVideos: tagSearchVideos.length,
-    channelVideos: channelVideos.length,
-    relatedVideos: relatedVideos.length,
-    watchedVideos: watchedVideos.length,
-    cache
+    videos,
+    nodes: readyPreview.nodes,
+    searchVideos: poolVideos.filter((video) => video.sourceNodeId === "tagSearch").length,
+    channelVideos: fastLaneVideos.length,
+    relatedVideos: poolVideos.filter((video) => video.sourceNodeId === "relatedVideos").length,
+    watchedVideos: latestWatchedVideos.length,
+    pool
   };
 }
 
-async function fetchFreshFeedNodes(
+async function initializePoolOnce(
   profileId: string,
+  poolKey: string,
   queries: string[],
   channels: string[],
   channelSort: ChannelSort,
-  weights: FeedNodeWeights,
-  observation: FeedObservation,
-  latestWatchedVideos: FeedVideo[]
+  observation: FeedObservation
 ) {
-  const tagSearchVideos =
-    queries.length > 0 ? await searchVideos(queries, observation, profileId) : [];
-  const embeddings = await embedVideos(tagSearchVideos);
-  const rootEmbeddings = tagSearchVideos.flatMap((video) => {
-    const embedding = embeddings.get(video.id);
-    return embedding ? [embedding] : [];
-  });
-  const originalCentroid = averageNormalizedVectors(rootEmbeddings);
-  const storedCentroid = getCentroid(
-    profileId,
-    createFeedCacheKey({ tags: queries, channels, channelSort })
-  );
-  const currentCentroid = storedCentroid?.current.length ? storedCentroid.current : originalCentroid;
-  const scoredRoots = scoreByCentroid(tagSearchVideos, embeddings, currentCentroid, "tagSearch");
-  saveCentroid(
-    profileId,
-    createFeedCacheKey({ tags: queries, channels, channelSort }),
-    originalCentroid,
-    currentCentroid
-  );
-  retainVideoEmbeddings(profileId, scoredRoots, embeddings);
+  const existingState = getFeedPoolState(profileId, poolKey);
+  const existingCentroid = getCentroid(profileId, poolKey);
 
-  const rawChannelVideos =
-    channels.length > 0
-      ? await fetchChannelVideos(channels, channelSort, observation, profileId)
-      : [];
-  const channelEmbeddings = await embedVideos(rawChannelVideos);
-  const scoredChannelVideos = scoreByCentroid(
-    rawChannelVideos,
+  if (existingState && existingCentroid) {
+    return false;
+  }
+
+  const timestamp = Date.now();
+  const rootVideos = queries.length > 0 ? await searchVideos(queries, observation, profileId) : [];
+  const rootEmbeddings = await embedVideos(rootVideos);
+  const originalCentroid = averageNormalizedVectors(
+    rootVideos.flatMap((video) => {
+      const embedding = rootEmbeddings.get(video.id);
+      return embedding ? [embedding] : [];
+    })
+  );
+  const scoredRoots = scoreByCentroid(rootVideos, rootEmbeddings, originalCentroid, "tagSearch");
+
+  markRootDiscovered(profileId, poolKey, timestamp);
+  saveCentroid(profileId, poolKey, originalCentroid, originalCentroid);
+  retainVideoEmbeddings(profileId, scoredRoots, rootEmbeddings);
+  addPoolNodes(profileId, poolKey, "tagSearch", scoredRoots, timestamp);
+
+  const channelCandidates = channels.length > 0
+    ? await fetchChannelVideos(channels, channelSort, observation, profileId)
+    : [];
+  const channelEmbeddings = await embedVideos(channelCandidates);
+  const channelPoolVideos = scoreByCentroid(
+    channelCandidates,
     channelEmbeddings,
-    currentCentroid,
+    originalCentroid,
     "channelVideos"
   ).filter((video) => (video.similarityScore || 0) >= getGretelConfig().feed.similarityThreshold);
-  const interactions = getVideoInteractions(profileId);
-  const seedPool = [...scoredRoots, ...scoredChannelVideos].map((video) => {
-    const interaction = interactions.get(video.id);
 
-    return {
-      ...video,
-      engagementScore: interaction
-        ? computeEngagementScore(interaction, getGretelConfig().learning)
-        : video.similarityScore || 0
-    };
-  });
-  const seedVideos = selectExpansionSeeds({
-    videos: seedPool,
-    interactions,
-    config: getGretelConfig()
-  });
-  const rawRelatedVideos =
-    weights.relatedVideos > 0
-      ? await recommendVideosFromSeeds(
-          seedVideos,
-          observation,
-          profileId,
-          "Recommended from",
-          (seed, seeds) => relatedBudgetForSeed(seed, seeds, getGretelConfig())
-        )
-      : [];
-  const relatedEmbeddings = await embedVideos(rawRelatedVideos);
-  const relatedVideos = scoreByCentroid(
-    rawRelatedVideos,
-    relatedEmbeddings,
-    currentCentroid,
-    "relatedVideos"
-  )
-    .map((video) => ({
-      ...video,
-      parentEngagementScore: seedPool.find((seed) => seed.id === video.parent_video_id)?.engagementScore || 0
-    }))
-    .filter((video) => (video.similarityScore || 0) >= getGretelConfig().feed.similarityThreshold);
-  retainVideoEmbeddings(profileId, relatedVideos, relatedEmbeddings);
+  addPoolNodes(profileId, poolKey, "channelVideos", channelPoolVideos, timestamp);
 
-  const watchedVideos =
-    weights.watchedVideos > 0 && latestWatchedVideos.length > 0
-      ? await recommendVideosFromSeeds(
-          latestWatchedVideos,
-          observation,
-          profileId,
-          "Watched-neighbor from"
-        )
-      : [];
-
-  return {
-    tagSearch: scoredRoots,
-    channelVideos: rawChannelVideos.map((video) => ({ ...video, sourceNodeId: "channelVideos" as const })),
-    relatedVideos,
-    watchedVideos
-  };
+  return true;
 }
 
-function createFeedNetworkNodes(
-  tagSearchVideos: FeedVideo[],
-  channelVideos: FeedVideo[],
-  relatedVideos: FeedVideo[],
-  watchedVideos: FeedVideo[]
+async function expandPool(
+  profileId: string,
+  poolKey: string,
+  poolVideos: FeedVideo[],
+  observation: FeedObservation
 ) {
-  return {
-    tagSearch: tagSearchVideos,
-    channelVideos,
-    relatedVideos,
-    watchedVideos
-  };
+  const config = getGretelConfig();
+  const interactions = getVideoInteractions(profileId);
+  const centroid = getCentroid(profileId, poolKey)?.current || [];
+  const scoredPool = poolVideos.map((video) => applyEngagement(video, interactions, config));
+  const seeds = selectExpansionSeeds({ videos: scoredPool, interactions, config });
+
+  if (seeds.length === 0) {
+    return;
+  }
+
+  const rawRelatedVideos = await recommendVideosFromSeeds(
+    seeds,
+    observation,
+    profileId,
+    "Recommended from",
+    (seed, seedVideos) =>
+      relatedBudgetForSeed(
+        seed,
+        seedVideos,
+        config,
+        interactions.size >= config.feed.coldStartInteractionThreshold
+      )
+  );
+  const visitedVideoIds = getPoolVideoIds(profileId, poolKey);
+  const newCandidates = rawRelatedVideos.filter((video) => !visitedVideoIds.has(video.id));
+  const embeddings = await embedVideos(newCandidates);
+  const parentScores = new Map(seeds.map((seed) => [seed.id, seed.engagementScore || 0]));
+  const relatedVideos = scoreByCentroid(newCandidates, embeddings, centroid, "relatedVideos")
+    .map((video) => ({
+      ...video,
+      parentEngagementScore: parentScores.get(video.parent_video_id || "") || 0
+    }))
+    .filter((video) => (video.similarityScore || 0) >= config.feed.similarityThreshold);
+
+  addPoolNodes(profileId, poolKey, "relatedVideos", relatedVideos, Date.now());
+}
+
+async function getSubscriptionFastLaneVideos(
+  channels: string[],
+  channelSort: ChannelSort,
+  observation: FeedObservation,
+  profileId: string,
+  watchedVideoIds: Set<string>
+) {
+  const config = getGretelConfig();
+
+  if (channels.length === 0 || config.feed.subscriptionFastLanePerSession === 0) {
+    return [];
+  }
+
+  const videos = await fetchChannelVideos(channels, channelSort, observation, profileId);
+
+  return videos
+    .filter((video) => !watchedVideoIds.has(video.id))
+    .slice(0, config.feed.subscriptionFastLanePerSession)
+    .map((video) => ({
+      ...video,
+      sourceNodeId: "channelVideos" as const,
+      sourceNodeLabel: "Subscription fast lane"
+    }));
+}
+
+function scorePoolVideos(profileId: string, poolKey: string, videos: FeedVideo[]) {
+  const config = getGretelConfig();
+  const centroid = getCentroid(profileId, poolKey)?.current || [];
+  const interactions = getVideoInteractions(profileId);
+  const rescored = rescoreCachedVideos(profileId, videos, centroid).map((video) =>
+    applyEngagement(video, interactions, config)
+  );
+
+  updatePoolSimilarities(profileId, poolKey, rescored);
+
+  return rescored;
 }
 
 async function embedVideos(videos: FeedVideo[]) {
@@ -353,4 +307,15 @@ function rescoreCachedVideos(profileId: string, videos: FeedVideo[], centroid: n
       similarityScore: cosineSimilarity(embedding, centroid)
     };
   });
+}
+
+async function retainReadyQueueEmbeddings(profileId: string, videos: FeedVideo[]) {
+  const missingVideos = videos.filter((video) => !getRetainedEmbedding(profileId, video.id));
+
+  if (missingVideos.length === 0) {
+    return;
+  }
+
+  const embeddings = await embedVideos(missingVideos);
+  retainVideoEmbeddings(profileId, missingVideos, embeddings);
 }

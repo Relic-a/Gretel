@@ -128,6 +128,7 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
     feed: {
       maxQueries: integer(feed.maxQueries, defaults.feed.maxQueries, 1, 50),
       maxVideos: integer(feed.maxVideos, defaults.feed.maxVideos, 1, 200),
+      poolSizeCap: integer(feed.poolSizeCap, defaults.feed.poolSizeCap, 1, 10000),
       cacheTargetVideos: integer(feed.cacheTargetVideos, defaults.feed.cacheTargetVideos, 1, 1000),
       cacheRefreshHours: numberInRange(
         feed.cacheRefreshHours,
@@ -207,6 +208,10 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
         defaults.feed.subscriptionFastLanePerSession,
         0,
         100
+      ),
+      coldStartParentEngagementWeight: share(
+        feed.coldStartParentEngagementWeight,
+        defaults.feed.coldStartParentEngagementWeight
       ),
       defaultNodeWeights: nodeWeights(
         feed.defaultNodeWeights,

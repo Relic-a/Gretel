@@ -118,6 +118,19 @@ function loadConfigModule() {
 function loadRuntimeModules(fakeYoutubeClient) {
   const require = createRequire(import.meta.url);
   const youtubeClientPath = path.join(buildDir, "lib", "feed", "youtube-client.js");
+  const routePaths = [
+    path.join(buildDir, "app", "api", "feed", "route.js"),
+    path.join(buildDir, "app", "api", "profiles", "route.js"),
+    path.join(buildDir, "app", "api", "watch-events", "route.js"),
+    path.join(buildDir, "lib", "profile-store.js")
+  ];
+
+  for (const modulePath of Object.keys(require.cache)) {
+    if (modulePath.startsWith(buildDir)) {
+      delete require.cache[modulePath];
+    }
+  }
+
   const fakeModule = new Module(youtubeClientPath);
   fakeModule.filename = youtubeClientPath;
   fakeModule.loaded = true;
@@ -128,10 +141,10 @@ function loadRuntimeModules(fakeYoutubeClient) {
   require.cache[youtubeClientPath] = fakeModule;
 
   return {
-    feedRoute: require(path.join(buildDir, "app", "api", "feed", "route.js")),
-    profilesRoute: require(path.join(buildDir, "app", "api", "profiles", "route.js")),
-    watchEventsRoute: require(path.join(buildDir, "app", "api", "watch-events", "route.js")),
-    profileStore: require(path.join(buildDir, "lib", "profile-store.js"))
+    feedRoute: require(routePaths[0]),
+    profilesRoute: require(routePaths[1]),
+    watchEventsRoute: require(routePaths[2]),
+    profileStore: require(routePaths[3])
   };
 }
 
@@ -381,13 +394,8 @@ test("clamps and rounds out-of-range config values before logging applied config
   assert.equal(applied?.line.youtube.language, "fr");
 });
 
-test("runtime feed flow logs cache, subscription refresh, profile, and engagement behavior under config changes", async () => {
+test("runtime feed flow initializes roots once, expands pool, serves fast lane, and records engagement", async () => {
   const normalConfig = writeRuntimeConfig("runtime-normal.json");
-  const shortSubscriptionConfig = writeRuntimeConfig("runtime-short-subscription.json", {
-    feed: {
-      subscriptionRefreshMinutes: 0
-    }
-  });
   const fakeYoutubeClient = createFakeYoutubeClient();
   const { feedRoute, profilesRoute, watchEventsRoute, profileStore } =
     loadRuntimeModules(fakeYoutubeClient);
@@ -409,9 +417,9 @@ test("runtime feed flow logs cache, subscription refresh, profile, and engagemen
       });
       assert.equal(firstFeed.status, 200);
       assert.equal(firstFeed.body.queries.length, 1);
-      assert.equal(firstFeed.body.cache.status, "miss");
-      assert.equal(firstFeed.body.cache.refreshedBase, true);
-      assert.equal(firstFeed.body.cache.refreshedSubscriptions, true);
+      assert.equal(firstFeed.body.pool.status, "initialized");
+      assert.equal(firstFeed.body.pool.initializedRoot, true);
+      assert.equal(firstFeed.body.pool.expandedPool, false);
       assert.equal(
         firstFeed.body.videos.some(
           (video) => video.sourceNodeId === "tagSearch" && !/alpha/i.test(video.title)
@@ -427,21 +435,10 @@ test("runtime feed flow logs cache, subscription refresh, profile, and engagemen
         channelSort: "latest"
       });
       assert.equal(secondFeed.status, 200);
-      assert.equal(secondFeed.body.cache.status, "hit");
-      assert.deepEqual(fakeYoutubeClient.calls, firstCounts);
-
-      process.env.GRETEL_CONFIG = shortSubscriptionConfig;
-      const subscriptionRefreshFeed = await postJson(feedRoute, {
-        profileId,
-        tags: "alpha, beta",
-        channels: "Creator One",
-        channelSort: "latest"
-      });
-      assert.equal(subscriptionRefreshFeed.status, 200);
-      assert.equal(subscriptionRefreshFeed.body.cache.status, "stale");
-      assert.equal(subscriptionRefreshFeed.body.cache.refreshedBase, false);
-      assert.equal(subscriptionRefreshFeed.body.cache.refreshedSubscriptions, true);
-      assert.equal(fakeYoutubeClient.calls.getChannel, firstCounts.getChannel + 1);
+      assert.equal(secondFeed.body.pool.status, "served");
+      assert.equal(secondFeed.body.pool.initializedRoot, false);
+      assert.equal(secondFeed.body.pool.expandedPool, false);
+      assert.equal(fakeYoutubeClient.calls.videoSearch, firstCounts.videoSearch);
 
       const watchedVideo = firstFeed.body.videos.find(
         (video) => video.sourceNodeId === "channelVideos"
@@ -466,10 +463,10 @@ test("runtime feed flow logs cache, subscription refresh, profile, and engagemen
         cacheOnly: true
       });
       assert.equal(afterWatchFeed.status, 200);
-      assert.equal(afterWatchFeed.body.cache.status, "hit");
-      assert.equal(afterWatchFeed.body.cache.refreshedBase, false);
-      assert.equal(afterWatchFeed.body.cache.refreshedSubscriptions, false);
-      assert.deepEqual(fakeYoutubeClient.calls, countsBeforeCacheRefresh);
+      assert.equal(afterWatchFeed.body.pool.status, "served");
+      assert.equal(afterWatchFeed.body.pool.initializedRoot, false);
+      assert.equal(afterWatchFeed.body.pool.expandedPool, false);
+      assert.equal(fakeYoutubeClient.calls.videoSearch, countsBeforeCacheRefresh.videoSearch);
       assert.equal(
         afterWatchFeed.body.videos.some((video) => video.id === watchedVideo.id),
         false
@@ -487,16 +484,14 @@ test("runtime feed flow logs cache, subscription refresh, profile, and engagemen
         forceRefresh: true
       });
       assert.equal(afterWatchFetch.status, 200);
-      assert.equal(afterWatchFetch.body.cache.refreshedBase, true);
-      assert.equal(
-        afterWatchFetch.body.nodes.find((node) => node.id === "watchedVideos").inputVideos,
-        4
-      );
+      assert.equal(afterWatchFetch.body.pool.initializedRoot, false);
+      assert.equal(afterWatchFetch.body.pool.expandedPool, true);
+      assert.equal(fakeYoutubeClient.calls.videoSearch, firstCounts.videoSearch);
+      assert.equal(fakeYoutubeClient.calls.getInfo > firstCounts.getInfo, true);
 
       return {
         firstFeed: firstFeed.body,
         secondFeed: secondFeed.body,
-        subscriptionRefreshFeed: subscriptionRefreshFeed.body,
         afterWatchFeed: afterWatchFeed.body,
         afterWatchFetch: afterWatchFetch.body
       };
@@ -506,18 +501,16 @@ test("runtime feed flow logs cache, subscription refresh, profile, and engagemen
     const watchLogs = logs.filter((log) => log.line.event === "watch_event.saved");
     const profileLogs = logs.filter((log) => String(log.line.event).startsWith("profile."));
 
-    assert.equal(feedLogs.length, 5);
+    assert.equal(feedLogs.length, 4);
     assert.equal(watchLogs.length, 1);
     assert.equal(profileLogs.length, 0);
-    assert.equal(feedLogs[0].line.summary.cacheStatus, "miss");
-    assert.equal(feedLogs[1].line.summary.cacheStatus, "hit");
-    assert.equal(feedLogs[2].line.summary.refreshedSubscriptions, true);
-    assert.equal(feedLogs[3].line.summary.watchedSeeds, 1);
-    assert.equal(feedLogs[4].line.summary.forcedRefresh, true);
+    assert.equal(feedLogs[0].line.summary.poolStatus, "initialized");
+    assert.equal(feedLogs[1].line.summary.poolStatus, "served");
+    assert.equal(feedLogs[2].line.summary.watchedSeeds, 1);
+    assert.equal(feedLogs[3].line.summary.expandedPool, true);
 
-    assert.ok(flow.firstFeed.cache.videos <= flow.firstFeed.cache.targetVideos);
-    assert.ok(flow.subscriptionRefreshFeed.cache.videos <= flow.subscriptionRefreshFeed.cache.targetVideos);
-    assert.ok(flow.afterWatchFetch.cache.videos <= flow.afterWatchFetch.cache.targetVideos);
+    assert.ok(flow.firstFeed.pool.videos <= flow.firstFeed.pool.targetVideos);
+    assert.ok(flow.afterWatchFetch.pool.videos <= flow.afterWatchFetch.pool.targetVideos);
   } finally {
     if (profileId) {
       profileStore.resetProfile(profileId);
@@ -526,7 +519,7 @@ test("runtime feed flow logs cache, subscription refresh, profile, and engagemen
   }
 });
 
-test("runtime feed returns isolated tag tabs with a random all feed", async () => {
+test("runtime feed builds one combined root pool across all tags", async () => {
   const tagConfig = writeRuntimeConfig("runtime-tag-tabs.json", {
     feed: {
       maxQueries: 2,
@@ -554,23 +547,15 @@ test("runtime feed returns isolated tag tabs with a random all feed", async () =
         tags: "alpha, beta"
       });
       assert.equal(response.status, 200);
-      assert.deepEqual(
-        response.body.feedTabs.map((tab) => tab.label),
-        ["All", "alpha", "beta"]
+      assert.equal(response.body.feedTabs, undefined);
+      assert.equal(response.body.videos.length > 0, true);
+      assert.equal(
+        response.body.videos
+          .filter((video) => video.sourceNodeId === "tagSearch")
+          .every((video) => /alpha|beta/i.test(video.title)),
+        true
       );
-
-      const alphaTab = response.body.feedTabs.find((tab) => tab.key === "alpha");
-      const betaTab = response.body.feedTabs.find((tab) => tab.key === "beta");
-      const allTab = response.body.feedTabs.find((tab) => tab.key === "all");
-      assert.ok(alphaTab);
-      assert.ok(betaTab);
-      assert.ok(allTab);
-      assert.ok(alphaTab.videos.length > 0);
-      assert.ok(betaTab.videos.length > 0);
-      assert.equal(alphaTab.videos.every((video) => /alpha/i.test(video.title)), true);
-      assert.equal(betaTab.videos.every((video) => /beta/i.test(video.title)), true);
-      assert.equal(allTab.videos.length <= 6, true);
-      assert.deepEqual(response.body.videos, allTab.videos);
+      assert.equal(fakeYoutubeClient.calls.videoSearch, 2);
     });
   } finally {
     if (profileId) {

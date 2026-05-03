@@ -38,7 +38,6 @@ export function saveCentroid(profileId: string, cacheKey: string, original: numb
       `INSERT INTO feed_centroids (profile_id, cache_key, original_json, current_json, updated_at)
        VALUES (?, ?, ?, ?, ?)
        ON CONFLICT(profile_id, cache_key) DO UPDATE SET
-         original_json = excluded.original_json,
          current_json = excluded.current_json,
          updated_at = excluded.updated_at`
     )
