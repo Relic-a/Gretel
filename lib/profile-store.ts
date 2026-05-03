@@ -3,6 +3,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { getGretelConfig } from "./feed/config";
+import type { VideoInteraction } from "./feed/engagement";
 import type { FeedNodeId, FeedVideo } from "./feed/types";
 import { forgetYoutubeClient } from "./feed/youtube-client";
 
@@ -107,6 +108,26 @@ export function getDatabase() {
         PRIMARY KEY (profile_id, cache_key, node_id, video_id),
         FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS feed_centroids (
+        profile_id TEXT NOT NULL,
+        cache_key TEXT NOT NULL,
+        original_json TEXT NOT NULL,
+        current_json TEXT NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (profile_id, cache_key),
+        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS feed_video_embeddings (
+        profile_id TEXT NOT NULL,
+        video_id TEXT NOT NULL,
+        embedding_json TEXT NOT NULL,
+        retained INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (profile_id, video_id),
+        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+      );
     `);
   }
 
@@ -159,6 +180,8 @@ export function resetProfile(profileId: string) {
   database.prepare("DELETE FROM channel_affinity WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM feed_cache_state WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM feed_cache_videos WHERE profile_id = ?").run(profileId);
+  database.prepare("DELETE FROM feed_centroids WHERE profile_id = ?").run(profileId);
+  database.prepare("DELETE FROM feed_video_embeddings WHERE profile_id = ?").run(profileId);
   database.prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(Date.now(), profileId);
   resetYoutubeProfileCache(profileId);
 }
@@ -206,14 +229,6 @@ export function saveWatchedVideo(input: WatchEventInput) {
       watchedAt
     );
 
-  if (sourceNodeId) {
-    bumpNodeAffinity(input.profileId, sourceNodeId as FeedNodeId, watchedAt);
-  }
-
-  if (channelKey) {
-    bumpChannelAffinity(input.profileId, channelKey, watchedAt);
-  }
-
   database.prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(watchedAt, input.profileId);
   return true;
 }
@@ -249,6 +264,29 @@ export function getLatestWatchedVideos(profileId: string) {
     sourceNodeLabel: row.source_node_label || undefined,
     channelKey: row.channel_key || undefined
   }));
+}
+
+export function getVideoInteractions(profileId: string) {
+  const rows = getDatabase()
+    .prepare(
+      `SELECT video_id, watched_ratio
+       FROM watched_videos
+       WHERE profile_id = ?`
+    )
+    .all(profileId) as Array<{ video_id: string; watched_ratio: number }>;
+  const interactions = new Map<string, VideoInteraction>();
+
+  for (const row of rows) {
+    interactions.set(row.video_id, {
+      videoId: row.video_id,
+      watchTimeRatio: Number(row.watched_ratio) || 0,
+      liked: false,
+      clicked: false,
+      ignoreCount: 0
+    });
+  }
+
+  return interactions;
 }
 
 export function listHistoryVideos(profileId: string) {
@@ -319,67 +357,15 @@ export function unsaveVideo(profileId: string, videoId: string) {
 }
 
 export function getNodeBoosts(profileId: string) {
-  const rows = getDatabase()
-    .prepare("SELECT node_id, boost FROM node_affinity WHERE profile_id = ?")
-    .all(profileId) as Array<{ node_id: FeedNodeId; boost: number }>;
-
-  return Object.fromEntries(rows.map((row) => [row.node_id, row.boost])) as Partial<
-    Record<FeedNodeId, number>
-  >;
+  return {} as Partial<Record<FeedNodeId, number>>;
 }
 
 export function getChannelBoosts(profileId: string) {
-  const rows = getDatabase()
-    .prepare("SELECT channel_key, boost FROM channel_affinity WHERE profile_id = ?")
-    .all(profileId) as Array<{ channel_key: string; boost: number }>;
-
-  return Object.fromEntries(rows.map((row) => [row.channel_key, row.boost]));
+  return {};
 }
 
 export function normalizeChannelKey(value: string) {
   return value.replace(/\s+/g, " ").trim().toLowerCase();
-}
-
-function bumpNodeAffinity(profileId: string, nodeId: FeedNodeId, updatedAt: number) {
-  const config = getGretelConfig();
-
-  getDatabase()
-    .prepare(
-      `INSERT INTO node_affinity (profile_id, node_id, boost, updated_at)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(profile_id, node_id) DO UPDATE SET
-         boost = MIN(?, boost + ?),
-         updated_at = excluded.updated_at`
-    )
-    .run(
-      profileId,
-      nodeId,
-      config.learning.nodeAffinityStep,
-      updatedAt,
-      config.learning.maxAffinityBoost,
-      config.learning.nodeAffinityStep
-    );
-}
-
-function bumpChannelAffinity(profileId: string, channelKey: string, updatedAt: number) {
-  const config = getGretelConfig();
-
-  getDatabase()
-    .prepare(
-      `INSERT INTO channel_affinity (profile_id, channel_key, boost, updated_at)
-       VALUES (?, ?, ?, ?)
-       ON CONFLICT(profile_id, channel_key) DO UPDATE SET
-         boost = MIN(?, boost + ?),
-         updated_at = excluded.updated_at`
-    )
-    .run(
-      profileId,
-      channelKey,
-      config.learning.channelAffinityStep,
-      updatedAt,
-      config.learning.maxAffinityBoost,
-      config.learning.channelAffinityStep
-    );
 }
 
 function cleanProfileName(name: string) {

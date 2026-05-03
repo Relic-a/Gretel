@@ -96,9 +96,24 @@ export function saveFeedCacheVideos(
       video_json = excluded.video_json,
       updated_at = excluded.updated_at`
   );
+  const existingRows = database
+    .prepare(
+      `SELECT node_id, video_id
+       FROM feed_cache_videos
+       WHERE profile_id = ? AND cache_key = ?`
+    )
+    .all(profileId, cacheKey) as Array<{ node_id: FeedNodeId; video_id: string }>;
+  const admittedNodeByVideoId = new Map(existingRows.map((row) => [row.video_id, row.node_id]));
 
   for (const [nodeId, videos] of Object.entries(videosByNode) as Array<[FeedNodeId, FeedVideo[]]>) {
     for (const video of videos) {
+      const admittedNodeId = admittedNodeByVideoId.get(video.id);
+
+      if (admittedNodeId && admittedNodeId !== nodeId) {
+        continue;
+      }
+
+      admittedNodeByVideoId.set(video.id, nodeId);
       statement.run(
         profileId,
         cacheKey,
@@ -211,51 +226,37 @@ function pruneFeedCacheVideos(profileId: string, cacheKey: string, maxCachedVide
     return;
   }
 
-  const largestNodeStatement = database.prepare(
-    `SELECT node_id
-     FROM feed_cache_videos
-     WHERE profile_id = ? AND cache_key = ?
-     GROUP BY node_id
-     ORDER BY COUNT(*) DESC
-     LIMIT 1`
-  );
   const deleteStatement = database.prepare(
     `DELETE FROM feed_cache_videos
      WHERE rowid IN (
        SELECT rowid
        FROM feed_cache_videos
-       WHERE profile_id = ? AND cache_key = ? AND node_id = ?
-       ORDER BY recommendation_count DESC,
+       WHERE profile_id = ? AND cache_key = ?
+       ORDER BY CAST(json_extract(video_json, '$.engagementScore') AS REAL) ASC,
+                CAST(json_extract(video_json, '$.similarityScore') AS REAL) ASC,
+                recommendation_count DESC,
                 COALESCE(last_recommended_at, 0) DESC,
-                updated_at ASC,
                 first_seen_at ASC
        LIMIT 1
      )`
   );
 
   while (row.count > maxCachedVideos) {
-    const largestNode = largestNodeStatement.get(profileId, cacheKey) as
-      | { node_id: FeedNodeId }
-      | undefined;
-
-    if (!largestNode) {
-      return;
-    }
-
     const deleted = database
       .prepare(
         `SELECT video_id
          FROM feed_cache_videos
-         WHERE profile_id = ? AND cache_key = ? AND node_id = ?
-         ORDER BY recommendation_count DESC,
+         WHERE profile_id = ? AND cache_key = ?
+         ORDER BY CAST(json_extract(video_json, '$.engagementScore') AS REAL) ASC,
+                  CAST(json_extract(video_json, '$.similarityScore') AS REAL) ASC,
+                  recommendation_count DESC,
                   COALESCE(last_recommended_at, 0) DESC,
-                  updated_at ASC,
                   first_seen_at ASC
          LIMIT 1`
       )
-      .get(profileId, cacheKey, largestNode.node_id) as { video_id: string } | undefined;
+      .get(profileId, cacheKey) as { video_id: string } | undefined;
 
-    deleteStatement.run(profileId, cacheKey, largestNode.node_id);
+    deleteStatement.run(profileId, cacheKey);
 
     if (deleted) {
       removeThumbnailIfUnused(profileId, deleted.video_id);

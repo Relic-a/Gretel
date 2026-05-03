@@ -18,6 +18,13 @@ export type FeedVideo = {
   parent_title?: string;
   parent_author?: string;
   recommendation_depth?: number;
+  similarityScore?: number;
+  engagementScore?: number;
+  parentEngagementScore?: number;
+  watchTimeRatio?: number;
+  liked?: boolean;
+  clicked?: boolean;
+  ignoreCount?: number;
 };
 
 export type FeedNodeId =

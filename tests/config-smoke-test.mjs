@@ -167,6 +167,7 @@ function writeRuntimeConfig(name, overrides = {}) {
         minVideosPerChannel: 4,
         maxSharePerNode: 0.5,
         maxSharePerChannel: 1,
+        readyQueueLowWaterMark: 2,
         defaultNodeWeights: {
           tagSearch: 1,
           channelVideos: 1,
@@ -380,7 +381,7 @@ test("clamps and rounds out-of-range config values before logging applied config
   assert.equal(applied?.line.youtube.language, "fr");
 });
 
-test("runtime feed flow logs cache, subscription refresh, profile, and affinity behavior under config changes", async () => {
+test("runtime feed flow logs cache, subscription refresh, profile, and engagement behavior under config changes", async () => {
   const normalConfig = writeRuntimeConfig("runtime-normal.json");
   const shortSubscriptionConfig = writeRuntimeConfig("runtime-short-subscription.json", {
     feed: {
@@ -474,8 +475,8 @@ test("runtime feed flow logs cache, subscription refresh, profile, and affinity 
         false
       );
       assert.equal(
-        afterWatchFeed.body.nodes.find((node) => node.id === "channelVideos").effectiveWeight,
-        1.5
+        afterWatchFeed.body.videos.some((video) => video.engagementScore > 0),
+        false
       );
 
       const afterWatchFetch = await postJson(feedRoute, {

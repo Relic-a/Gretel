@@ -12,6 +12,7 @@ type ConfigInput = Partial<{
     }
   >;
   learning: Partial<GretelConfig["learning"]>;
+  embeddings: Partial<GretelConfig["embeddings"]>;
   client: Partial<GretelConfig["client"]>;
   youtube: Partial<GretelConfig["youtube"]>;
 }>;
@@ -45,6 +46,12 @@ export function getPublicGretelConfig() {
     },
     learning: {
       watchSaveThreshold: config.learning.watchSaveThreshold
+    },
+    embeddings: {
+      provider: config.embeddings.provider,
+      store: config.embeddings.store,
+      model: config.embeddings.model,
+      dimensions: config.embeddings.dimensions
     },
     client: {
       watchProgressPollMs: config.client.watchProgressPollMs
@@ -98,6 +105,13 @@ function logConfigIfChanged(config: GretelConfig) {
     path: configPath,
     feed: config.feed,
     learning: config.learning,
+    embeddings: {
+      provider: config.embeddings.provider,
+      store: config.embeddings.store,
+      model: config.embeddings.model,
+      dimensions: config.embeddings.dimensions,
+      batchSize: config.embeddings.batchSize
+    },
     client: config.client,
     youtube: config.youtube
   });
@@ -106,6 +120,7 @@ function logConfigIfChanged(config: GretelConfig) {
 function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
   const feed = input.feed || {};
   const learning = input.learning || {};
+  const embeddings = input.embeddings || {};
   const client = input.client || {};
   const youtube = input.youtube || {};
 
@@ -155,6 +170,44 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
       ),
       maxSharePerNode: share(feed.maxSharePerNode, defaults.feed.maxSharePerNode),
       maxSharePerChannel: share(feed.maxSharePerChannel, defaults.feed.maxSharePerChannel),
+      similarityThreshold: share(feed.similarityThreshold, defaults.feed.similarityThreshold),
+      coldStartInteractionThreshold: integer(
+        feed.coldStartInteractionThreshold,
+        defaults.feed.coldStartInteractionThreshold,
+        1,
+        10000
+      ),
+      expansionSeedCount: integer(feed.expansionSeedCount, defaults.feed.expansionSeedCount, 1, 100),
+      minRelatedVideosPerSeed: integer(
+        feed.minRelatedVideosPerSeed,
+        defaults.feed.minRelatedVideosPerSeed,
+        1,
+        100
+      ),
+      maxRelatedVideosPerSeed: integer(
+        feed.maxRelatedVideosPerSeed,
+        defaults.feed.maxRelatedVideosPerSeed,
+        1,
+        100
+      ),
+      readyQueueTargetSize: integer(
+        feed.readyQueueTargetSize,
+        defaults.feed.readyQueueTargetSize,
+        1,
+        1000
+      ),
+      readyQueueLowWaterMark: integer(
+        feed.readyQueueLowWaterMark,
+        defaults.feed.readyQueueLowWaterMark,
+        0,
+        1000
+      ),
+      subscriptionFastLanePerSession: integer(
+        feed.subscriptionFastLanePerSession,
+        defaults.feed.subscriptionFastLanePerSession,
+        0,
+        100
+      ),
       defaultNodeWeights: nodeWeights(
         feed.defaultNodeWeights,
         defaults.feed.defaultNodeWeights,
@@ -164,24 +217,56 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
     },
     learning: {
       watchSaveThreshold: share(learning.watchSaveThreshold, defaults.learning.watchSaveThreshold),
-      nodeAffinityStep: numberInRange(
-        learning.nodeAffinityStep,
-        defaults.learning.nodeAffinityStep,
+      watchTimeWeight: share(learning.watchTimeWeight, defaults.learning.watchTimeWeight),
+      likedWeight: share(learning.likedWeight, defaults.learning.likedWeight),
+      clickedWeight: share(learning.clickedWeight, defaults.learning.clickedWeight),
+      ignorePenaltyBase: numberInRange(
+        learning.ignorePenaltyBase,
+        defaults.learning.ignorePenaltyBase,
         0,
         20
       ),
-      channelAffinityStep: numberInRange(
-        learning.channelAffinityStep,
-        defaults.learning.channelAffinityStep,
-        0,
+      ignorePenaltyGrowth: numberInRange(
+        learning.ignorePenaltyGrowth,
+        defaults.learning.ignorePenaltyGrowth,
+        1,
         20
       ),
-      maxAffinityBoost: numberInRange(
-        learning.maxAffinityBoost,
-        defaults.learning.maxAffinityBoost,
-        0,
-        50
+      centroidLearningRate: share(
+        learning.centroidLearningRate,
+        defaults.learning.centroidLearningRate
+      ),
+      maxCentroidDrift: share(learning.maxCentroidDrift, defaults.learning.maxCentroidDrift),
+      watchCompletionThreshold: share(
+        learning.watchCompletionThreshold,
+        defaults.learning.watchCompletionThreshold
       )
+    },
+    embeddings: {
+      provider: oneOf(
+        embeddings.provider,
+        defaults.embeddings.provider,
+        ["openrouter", "mock"] as const
+      ),
+      store: oneOf(embeddings.store, defaults.embeddings.store, ["sqlite-vec"] as const),
+      openRouterApiKeyEnv: nonEmptyString(
+        embeddings.openRouterApiKeyEnv,
+        defaults.embeddings.openRouterApiKeyEnv
+      ),
+      openRouterBaseUrl: nonEmptyString(
+        embeddings.openRouterBaseUrl,
+        defaults.embeddings.openRouterBaseUrl
+      ),
+      model: nonEmptyString(embeddings.model, defaults.embeddings.model),
+      dimensions: integer(embeddings.dimensions, defaults.embeddings.dimensions, 1, 32768),
+      batchSize: integer(embeddings.batchSize, defaults.embeddings.batchSize, 1, 256),
+      requestTimeoutMs: integer(
+        embeddings.requestTimeoutMs,
+        defaults.embeddings.requestTimeoutMs,
+        1000,
+        120000
+      ),
+      mockSeed: integer(embeddings.mockSeed, defaults.embeddings.mockSeed, 1, 2147483647)
     },
     client: {
       watchProgressPollMs: integer(client.watchProgressPollMs, defaults.client.watchProgressPollMs, 250, 60000)
@@ -248,4 +333,8 @@ function numberInRange(value: unknown, fallback: number, min: number, max: numbe
 
 function nonEmptyString(value: unknown, fallback: string) {
   return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function oneOf<const T extends readonly string[]>(value: unknown, fallback: T[number], allowed: T) {
+  return (typeof value === "string" && allowed.includes(value) ? value : fallback) as T[number];
 }

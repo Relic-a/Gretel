@@ -1,5 +1,6 @@
 import { saveWatchedVideo } from "../../../lib/profile-store";
 import { errorFields, logError, logInfo, logWarn } from "../../../lib/logger";
+import { updateCentroidsForPositiveEngagement } from "../../../lib/feed/centroid-drift";
 
 export const runtime = "nodejs";
 
@@ -35,6 +36,7 @@ export async function POST(request: Request) {
     });
 
     if (saved) {
+      await updateCentroidsForPositiveEngagement(profileId, video);
       logInfo("watch_event.saved", {
         profileId,
         videoId: video.id,
