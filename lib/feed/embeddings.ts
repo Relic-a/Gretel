@@ -18,6 +18,9 @@ export function getEmbeddingProvider(config = getGretelConfig()): EmbeddingProvi
     config.embeddings.openRouterBaseUrl,
     process.env[config.embeddings.openRouterApiKeyEnv] || "",
     config.embeddings.model,
+    config.embeddings.dimensions,
+    process.env[config.embeddings.openRouterSiteUrlEnv] || "",
+    process.env[config.embeddings.openRouterAppNameEnv] || "",
     config.embeddings.requestTimeoutMs
   );
 }
@@ -27,6 +30,9 @@ class OpenRouterEmbeddingProvider implements EmbeddingProvider {
     private readonly baseUrl: string,
     private readonly apiKey: string,
     private readonly model: string,
+    private readonly dimensions: number,
+    private readonly siteUrl: string,
+    private readonly appName: string,
     private readonly timeoutMs: number
   ) {}
 
@@ -43,9 +49,11 @@ class OpenRouterEmbeddingProvider implements EmbeddingProvider {
         method: "POST",
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
-          "Content-Type": "application/json"
+          "Content-Type": "application/json",
+          ...(this.siteUrl ? { "HTTP-Referer": this.siteUrl } : {}),
+          ...(this.appName ? { "X-Title": this.appName } : {})
         },
-        body: JSON.stringify({ model: this.model, input: texts }),
+        body: JSON.stringify({ model: this.model, input: texts, dimensions: this.dimensions }),
         signal: controller.signal
       });
 

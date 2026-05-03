@@ -8,7 +8,7 @@ import { TopBar } from "./components/TopBar";
 import { FeedView } from "./components/FeedView";
 import { WatchView } from "./components/WatchView";
 import { normalize } from "./components/video-utils";
-import type { ChannelResult, FeedResponse, FeedVideo, Profile } from "./types";
+import type { ChannelResult, FeedResponse, FeedVideo, Profile, PublicGretelConfig } from "./types";
 
 type DashPlayer = MediaPlayerClass & {
   getBitrateInfoListFor: (mediaType: "video") => Array<{ height?: number; bitrate: number }>;
@@ -29,6 +29,7 @@ export default function Home() {
   const [channelDraft, setChannelDraft] = useState("");
   const [channelResults, setChannelResults] = useState<ChannelResult[]>([]);
   const [feed, setFeed] = useState<FeedResponse | null>(null);
+  const [config, setConfig] = useState<PublicGretelConfig | null>(null);
   const [section, setSection] = useState<Section>("home");
   const [savedVideos, setSavedVideos] = useState<FeedVideo[]>([]);
   const [historyVideos, setHistoryVideos] = useState<FeedVideo[]>([]);
@@ -62,7 +63,10 @@ export default function Home() {
 
     async function boot() {
       const saved = readSavedState();
-      const selectedProfileId = await loadProfiles(saved?.profileId);
+      const [selectedProfileId] = await Promise.all([
+        loadProfiles(saved?.profileId),
+        loadPublicConfig()
+      ]);
 
       if (disposed) {
         return;
@@ -175,7 +179,9 @@ export default function Home() {
       const watchedSeconds = Math.max(element.currentTime, 0);
       const watchedRatio = watchedSeconds / element.duration;
 
-      if (watchedRatio < 0.5 && !element.ended) {
+      const saveThreshold = config?.learning.watchSaveThreshold ?? 0.5;
+
+      if (watchedRatio < saveThreshold && !element.ended) {
         return;
       }
 
@@ -210,7 +216,7 @@ export default function Home() {
       element.removeEventListener("timeupdate", reportWatch);
       element.removeEventListener("ended", reportWatch);
     };
-  }, [activeVideo, profileId, section]);
+  }, [activeVideo, config?.learning.watchSaveThreshold, profileId, section]);
 
   useEffect(() => {
     const player = playerRef.current;
@@ -272,6 +278,17 @@ export default function Home() {
     setProfiles(nextProfiles);
     setProfileId(selected?.id || "");
     return selected?.id || "";
+  }
+
+  async function loadPublicConfig() {
+    const response = await fetch("/api/config");
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Could not load Gretel config.");
+    }
+
+    setConfig(data);
   }
 
   async function createProfileAndBuild(event?: FormEvent) {

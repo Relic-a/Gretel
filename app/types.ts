@@ -35,3 +35,25 @@ export type FeedResponse = {
   videos: FeedVideo[];
   upNextByVideoId?: Record<string, string[]>;
 };
+
+export type PublicGretelConfig = {
+  feed: {
+    maxVideos: number;
+    readyQueueTargetSize: number;
+  };
+  learning: {
+    watchSaveThreshold: number;
+  };
+  embeddings: {
+    provider: string;
+    store: string;
+    model: string;
+    dimensions: number;
+  };
+  client: {
+    watchProgressPollMs: number;
+  };
+  youtube: {
+    language: string;
+  };
+};

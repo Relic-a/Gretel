@@ -33,6 +33,8 @@ export type GretelConfig = {
     store: "sqlite-vec";
     openRouterApiKeyEnv: string;
     openRouterBaseUrl: string;
+    openRouterSiteUrlEnv: string;
+    openRouterAppNameEnv: string;
     model: string;
     dimensions: number;
     batchSize: number;
@@ -82,6 +84,8 @@ export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
     store: "sqlite-vec",
     openRouterApiKeyEnv: "OPENROUTER_API_KEY",
     openRouterBaseUrl: "https://openrouter.ai/api/v1",
+    openRouterSiteUrlEnv: "OPENROUTER_SITE_URL",
+    openRouterAppNameEnv: "OPENROUTER_APP_NAME",
     model: "qwen/qwen3-embedding-8b",
     dimensions: 4096,
     batchSize: 16,

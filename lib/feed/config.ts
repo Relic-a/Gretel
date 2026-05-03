@@ -223,6 +223,14 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
         embeddings.openRouterBaseUrl,
         defaults.embeddings.openRouterBaseUrl
       ),
+      openRouterSiteUrlEnv: nonEmptyString(
+        embeddings.openRouterSiteUrlEnv,
+        defaults.embeddings.openRouterSiteUrlEnv
+      ),
+      openRouterAppNameEnv: nonEmptyString(
+        embeddings.openRouterAppNameEnv,
+        defaults.embeddings.openRouterAppNameEnv
+      ),
       model: nonEmptyString(embeddings.model, defaults.embeddings.model),
       dimensions: integer(embeddings.dimensions, defaults.embeddings.dimensions, 1, 32768),
       batchSize: integer(embeddings.batchSize, defaults.embeddings.batchSize, 1, 256),
