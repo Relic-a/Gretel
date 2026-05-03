@@ -14,6 +14,10 @@ export type FeedVideo = {
   sourceNodeId?: FeedNodeId;
   sourceNodeLabel?: string;
   channelKey?: string;
+  parent_video_id?: string;
+  parent_title?: string;
+  parent_author?: string;
+  recommendation_depth?: number;
 };
 
 export type FeedNodeId =

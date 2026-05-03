@@ -8,7 +8,6 @@ import {
   getDuration,
   getTitle,
   getVideoId,
-  getVideoIdFromLink,
   shouldKeepVideo
 } from "./video-utils";
 import { getYoutubeClient } from "./youtube-client";
@@ -24,16 +23,14 @@ export async function recommendVideosFromSeeds(
     "feed.related_videos",
     { sourceVideos: sourceVideos.length },
     async () => {
-      const seedLinks = sourceVideos
-        .slice(0, getGretelConfig().feed.recommendationSeeds)
-        .map((video) => `https://www.youtube.com/watch?v=${video.id}`);
+      const seedVideos = sourceVideos.slice(0, getGretelConfig().feed.recommendationSeeds);
 
-      if (seedLinks.length === 0) {
+      if (seedVideos.length === 0) {
         return { value: [], output: { recommendationVideos: 0 } };
       }
 
       const recommendationVideos = await recommendVideosFromLinks(
-        seedLinks,
+        seedVideos,
         observation,
         profileId,
         sourceLabel
@@ -47,7 +44,7 @@ export async function recommendVideosFromSeeds(
 }
 
 async function recommendVideosFromLinks(
-  videoLinks: string[],
+  seedVideos: FeedVideo[],
   observation: FeedObservation,
   profileId: string,
   sourceLabel: string
@@ -55,7 +52,7 @@ async function recommendVideosFromLinks(
   return observeOperation(
     observation,
     "youtube.getInfo.recommendations",
-    { seedLinks: videoLinks.length },
+    { seedLinks: seedVideos.length },
     async () => {
       const youtube = await getYoutubeClient(profileId);
       const maxVideos = getGretelConfig().feed.maxVideos;
@@ -63,8 +60,8 @@ async function recommendVideosFromLinks(
       const seen = new Set<string>();
       const recommendations: FeedVideo[] = [];
 
-      for (const link of videoLinks) {
-        const seedId = getVideoIdFromLink(link);
+      for (const seedVideo of seedVideos) {
+        const seedId = seedVideo.id;
 
         if (!seedId) {
           continue;
@@ -90,7 +87,11 @@ async function recommendVideosFromLinks(
               author,
               duration,
               query: sourceLabel,
-              channelKey: normalizeChannelKey(author)
+              channelKey: normalizeChannelKey(author),
+              parent_video_id: seedVideo.id,
+              parent_title: seedVideo.title,
+              parent_author: seedVideo.author,
+              recommendation_depth: (seedVideo.recommendation_depth || 0) + 1
             });
             seedRecommendations += 1;
 
