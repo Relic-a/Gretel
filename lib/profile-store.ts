@@ -66,6 +66,15 @@ export function getDatabase() {
         FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
       );
 
+      CREATE TABLE IF NOT EXISTS liked_videos (
+        profile_id TEXT NOT NULL,
+        video_id TEXT NOT NULL,
+        video_json TEXT NOT NULL,
+        liked_at INTEGER NOT NULL,
+        PRIMARY KEY (profile_id, video_id),
+        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+      );
+
       CREATE TABLE IF NOT EXISTS feed_centroids (
         profile_id TEXT NOT NULL,
         cache_key TEXT NOT NULL,
@@ -156,9 +165,11 @@ export function deleteProfile(profileId: string) {
 }
 
 export function resetProfile(profileId: string) {
+  ensureLikedVideoTable();
   const database = getDatabase();
   database.prepare("DELETE FROM watched_videos WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM saved_videos WHERE profile_id = ?").run(profileId);
+  database.prepare("DELETE FROM liked_videos WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM feed_centroids WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM feed_video_embeddings WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM feed_pool_state WHERE profile_id = ?").run(profileId);
@@ -171,7 +182,7 @@ export function saveWatchedVideo(input: WatchEventInput) {
   const watchedRatio = input.durationSeconds > 0 ? input.watchedSeconds / input.durationSeconds : 0;
   const config = getGretelConfig();
 
-  if (watchedRatio <= config.learning.watchSaveThreshold || !getProfile(input.profileId)) {
+  if (watchedRatio < config.learning.watchSaveThreshold || !getProfile(input.profileId)) {
     return false;
   }
 
@@ -223,22 +234,37 @@ export function getWatchedVideoIds(profileId: string) {
 }
 
 export function getVideoInteractions(profileId: string) {
-  const rows = getDatabase()
+  ensureLikedVideoTable();
+  const watchedRows = getDatabase()
     .prepare(
       `SELECT video_id, watched_ratio
        FROM watched_videos
        WHERE profile_id = ?`
     )
     .all(profileId) as Array<{ video_id: string; watched_ratio: number }>;
+  const likedRows = getDatabase()
+    .prepare("SELECT video_id FROM liked_videos WHERE profile_id = ?")
+    .all(profileId) as Array<{ video_id: string }>;
   const interactions = new Map<string, VideoInteraction>();
 
-  for (const row of rows) {
+  for (const row of watchedRows) {
     interactions.set(row.video_id, {
       videoId: row.video_id,
       watchTimeRatio: Number(row.watched_ratio) || 0,
       liked: false,
       clicked: false,
       ignoreCount: 0
+    });
+  }
+
+  for (const row of likedRows) {
+    const existing = interactions.get(row.video_id);
+    interactions.set(row.video_id, {
+      videoId: row.video_id,
+      watchTimeRatio: existing?.watchTimeRatio || 0,
+      liked: true,
+      clicked: existing?.clicked || false,
+      ignoreCount: existing?.ignoreCount || 0
     });
   }
 
@@ -285,6 +311,15 @@ export function getSavedVideoIds(profileId: string) {
   return rows.map((row) => row.video_id);
 }
 
+export function getLikedVideoIds(profileId: string) {
+  ensureLikedVideoTable();
+  const rows = getDatabase()
+    .prepare("SELECT video_id FROM liked_videos WHERE profile_id = ?")
+    .all(profileId) as Array<{ video_id: string }>;
+
+  return rows.map((row) => row.video_id);
+}
+
 export function saveVideo(profileId: string, video: FeedVideo) {
   if (!getProfile(profileId)) {
     return false;
@@ -305,11 +340,54 @@ export function saveVideo(profileId: string, video: FeedVideo) {
   return true;
 }
 
+export function likeVideo(profileId: string, video: FeedVideo) {
+  ensureLikedVideoTable();
+
+  if (!getProfile(profileId)) {
+    return false;
+  }
+
+  const likedAt = Date.now();
+  getDatabase()
+    .prepare(
+      `INSERT INTO liked_videos (profile_id, video_id, video_json, liked_at)
+       VALUES (?, ?, ?, ?)
+       ON CONFLICT(profile_id, video_id) DO UPDATE SET
+         video_json = excluded.video_json,
+         liked_at = excluded.liked_at`
+    )
+    .run(profileId, video.id, JSON.stringify({ ...video, liked: true }), likedAt);
+
+  getDatabase().prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(likedAt, profileId);
+  return true;
+}
+
+export function unlikeVideo(profileId: string, videoId: string) {
+  ensureLikedVideoTable();
+  getDatabase()
+    .prepare("DELETE FROM liked_videos WHERE profile_id = ? AND video_id = ?")
+    .run(profileId, videoId);
+  getDatabase().prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(Date.now(), profileId);
+}
+
 export function unsaveVideo(profileId: string, videoId: string) {
   getDatabase()
     .prepare("DELETE FROM saved_videos WHERE profile_id = ? AND video_id = ?")
     .run(profileId, videoId);
   getDatabase().prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(Date.now(), profileId);
+}
+
+function ensureLikedVideoTable() {
+  getDatabase().exec(`
+    CREATE TABLE IF NOT EXISTS liked_videos (
+      profile_id TEXT NOT NULL,
+      video_id TEXT NOT NULL,
+      video_json TEXT NOT NULL,
+      liked_at INTEGER NOT NULL,
+      PRIMARY KEY (profile_id, video_id),
+      FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+    );
+  `);
 }
 
 export function normalizeChannelKey(value: string) {

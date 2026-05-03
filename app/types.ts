@@ -13,6 +13,10 @@ export type FeedVideo = {
   parent_title?: string;
   parent_author?: string;
   recommendation_depth?: number;
+  liked?: boolean;
+  clicked?: boolean;
+  ignoreCount?: number;
+  watchTimeRatio?: number;
 };
 
 export type Profile = {

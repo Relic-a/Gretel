@@ -5,7 +5,7 @@ import type { MediaPlayerClass } from "dashjs";
 
 import { ProfileModal } from "./components/ProfileModal";
 import { TopBar } from "./components/TopBar";
-import { VideoGrid } from "./components/VideoGrid";
+import { FeedView } from "./components/FeedView";
 import { WatchView } from "./components/WatchView";
 import { normalize } from "./components/video-utils";
 import type { ChannelResult, FeedResponse, FeedVideo, Profile } from "./types";
@@ -33,11 +33,13 @@ export default function Home() {
   const [savedVideos, setSavedVideos] = useState<FeedVideo[]>([]);
   const [historyVideos, setHistoryVideos] = useState<FeedVideo[]>([]);
   const [savedVideoIds, setSavedVideoIds] = useState<Set<string>>(new Set());
+  const [likedVideoIds, setLikedVideoIds] = useState<Set<string>>(new Set());
   const [activeVideo, setActiveVideo] = useState<FeedVideo | null>(null);
   const [quality, setQuality] = useState("auto");
   const [qualityOptions, setQualityOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [feedEnd, setFeedEnd] = useState(false);
   const [booted, setBooted] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [manageProfiles, setManageProfiles] = useState(false);
@@ -53,6 +55,7 @@ export default function Home() {
   const visibleVideos =
     section === "saved" ? savedVideos : section === "history" ? historyVideos : homeVideos;
   const sideVideos = orderedSideVideos(visibleVideos, activeVideo, feed?.upNextByVideoId).slice(0, 12);
+  const canAskForMore = section === "home" && Boolean(feed) && !loading && !feedEnd;
 
   useEffect(() => {
     let disposed = false;
@@ -71,6 +74,7 @@ export default function Home() {
 
       if (selectedProfileId) {
         await loadSavedVideos(selectedProfileId);
+        await loadLikedVideos(selectedProfileId);
       }
 
       if (selectedProfileId && (saved?.tags?.length || saved?.channels?.length)) {
@@ -112,7 +116,8 @@ export default function Home() {
     setQualityOptions([]);
 
     async function loadPlayer() {
-      const dashjs = await import("dashjs");
+      const dashModule = await import("dashjs");
+      const dashjs = dashModule as typeof import("dashjs");
 
       if (disposed || !videoRef.current) {
         return;
@@ -138,6 +143,9 @@ export default function Home() {
             label: bitrate.height ? `${bitrate.height}p` : `${Math.round(bitrate.bitrate / 1000)} kbps`
           }))
         );
+      });
+      player.on(dashjs.MediaPlayer.events.ERROR, () => {
+        setError("Could not open this video stream.");
       });
       playerRef.current = player;
     }
@@ -298,6 +306,7 @@ export default function Home() {
       setSavedVideos([]);
       setHistoryVideos([]);
       setSavedVideoIds(new Set());
+      setLikedVideoIds(new Set());
 
       await requestFeed({
         nextProfileId: data.profileId || "",
@@ -325,12 +334,14 @@ export default function Home() {
     setSavedVideos([]);
     setHistoryVideos([]);
     setSavedVideoIds(new Set());
+    setLikedVideoIds(new Set());
   }
 
   async function buildFeed(event?: FormEvent) {
     event?.preventDefault();
     setSection("home");
     setActiveVideo(null);
+    setFeedEnd(false);
     await requestFeed({ forceExpansion: true });
   }
 
@@ -372,6 +383,21 @@ export default function Home() {
     setSavedVideoIds(new Set(data.savedVideoIds || []));
   }
 
+  async function loadLikedVideos(nextProfileId = profileId) {
+    if (!nextProfileId) {
+      return;
+    }
+
+    const response = await fetch(`/api/liked-videos?profileId=${encodeURIComponent(nextProfileId)}`);
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Could not load liked videos.");
+    }
+
+    setLikedVideoIds(new Set(data.likedVideoIds || []));
+  }
+
   async function loadHistoryVideos(nextProfileId = profileId) {
     if (!nextProfileId) {
       return;
@@ -388,14 +414,19 @@ export default function Home() {
   }
 
   async function saveVideo(video: FeedVideo) {
-    if (!profileId || savedVideoIds.has(video.id)) {
+    if (!profileId) {
       return;
     }
 
     const response = await fetch("/api/saved-videos", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ profileId, video })
+      body: JSON.stringify({
+        profileId,
+        video,
+        videoId: video.id,
+        action: savedVideoIds.has(video.id) ? "unsave" : "save"
+      })
     });
     const data = await response.json();
 
@@ -406,6 +437,31 @@ export default function Home() {
 
     setSavedVideos(data.videos || []);
     setSavedVideoIds(new Set(data.savedVideoIds || []));
+  }
+
+  async function likeVideo(video: FeedVideo) {
+    if (!profileId) {
+      return;
+    }
+
+    const response = await fetch("/api/liked-videos", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        profileId,
+        video,
+        videoId: video.id,
+        action: likedVideoIds.has(video.id) ? "unlike" : "like"
+      })
+    });
+    const data = await response.json();
+
+    if (!response.ok) {
+      setError(data.error || "Could not update this like.");
+      return;
+    }
+
+    setLikedVideoIds(new Set(data.likedVideoIds || []));
   }
 
   async function requestFeed(input: {
@@ -429,7 +485,8 @@ export default function Home() {
           tags: nextTags,
           channels: nextChannels,
           profileId: nextProfileId,
-          forceExpansion: input.forceExpansion === true
+          forceExpansion: input.forceExpansion === true,
+          servingOnly: input.forceExpansion !== true
         })
       });
       const data = await response.json();
@@ -438,7 +495,21 @@ export default function Home() {
         throw new Error(data.error || "Could not build this feed.");
       }
 
-      setFeed(data);
+      setFeed((current) => {
+        if (!input.forceExpansion && current?.videos?.length) {
+          const seen = new Set(current.videos.map((video) => video.id));
+          const nextVideos = (data.videos || []).filter((video: FeedVideo) => !seen.has(video.id));
+          setFeedEnd(nextVideos.length === 0);
+
+          return {
+            ...data,
+            videos: [...current.videos, ...nextVideos]
+          };
+        }
+
+        setFeedEnd(false);
+        return data;
+      });
       setActiveVideo(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not build this feed.");
@@ -491,8 +562,12 @@ export default function Home() {
           setSavedVideos([]);
           setHistoryVideos([]);
           setSavedVideoIds(new Set());
+          setLikedVideoIds(new Set());
           void loadSavedVideos(nextProfileId).catch((caught) =>
             setError(caught instanceof Error ? caught.message : "Could not load saved videos.")
+          );
+          void loadLikedVideos(nextProfileId).catch((caught) =>
+            setError(caught instanceof Error ? caught.message : "Could not load liked videos.")
           );
           setShowProfileMenu(false);
         }}
@@ -511,8 +586,10 @@ export default function Home() {
           qualityOptions={qualityOptions}
           videoRef={videoRef}
           savedVideoIds={savedVideoIds}
+          likedVideoIds={likedVideoIds}
           onSelectVideo={setActiveVideo}
           onSaveVideo={saveVideo}
+          onLikeVideo={likeVideo}
           onAddChannel={addChannel}
           onRemoveChannel={removeChannel}
           onQualityChange={setQuality}
@@ -521,13 +598,26 @@ export default function Home() {
 
       {error && !manageProfiles && !needsProfile && <p className="error page-error">{error}</p>}
 
-      {booted && visibleVideos.length > 0 && (
-        <VideoGrid
+      {booted && visibleVideos.length > 0 && !activeVideo && (
+        <FeedView
+          title={section === "home" ? "Your Feed" : section === "saved" ? "Saved" : "History"}
+          subtitle={
+            section === "home"
+              ? "AI-curated picks, personalized for your interests."
+              : section === "saved"
+                ? "Videos you saved for later."
+                : "Videos that crossed your watch threshold."
+          }
           videos={visibleVideos}
           subscriptions={subscriptions}
           savedVideoIds={savedVideoIds}
+          likedVideoIds={likedVideoIds}
+          loading={loading}
+          canAskForMore={canAskForMore}
+          onLoadMore={() => requestFeed({ forceExpansion: false })}
           onSelectVideo={setActiveVideo}
           onSaveVideo={saveVideo}
+          onLikeVideo={likeVideo}
           onAddChannel={addChannel}
           onRemoveChannel={removeChannel}
         />

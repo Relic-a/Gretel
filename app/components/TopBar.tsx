@@ -21,23 +21,26 @@ export function TopBar(props: TopBarProps) {
       </button>
       <nav className="section-tabs" aria-label="Video sections">
         <button type="button" className={props.activeSection === "home" ? "active" : ""} onClick={props.onHome}>
-          Home
+          <span aria-hidden="true">⌂</span> Home
         </button>
         <button type="button" className={props.activeSection === "saved" ? "active" : ""} onClick={props.onSaved}>
-          Saved
+          <span aria-hidden="true">□</span> Saved
         </button>
         <button type="button" className={props.activeSection === "history" ? "active" : ""} onClick={props.onHistory}>
-          History
+          <span aria-hidden="true">↺</span> History
         </button>
       </nav>
       <div className="profile-menu">
         <button type="button" className="profile-button" onClick={props.onToggleProfileMenu}>
-          {props.activeProfile?.name || "Profile"}
+          <span className="profile-avatar" aria-hidden="true" />
+          {props.activeProfile?.name || "Select profile"}
+          <span aria-hidden="true">⌄</span>
         </button>
         {props.showProfileMenu && (
           <div className="profile-popover">
             {props.profiles.map((profile) => (
               <button type="button" key={profile.id} onClick={() => props.onSelectProfile(profile.id)}>
+                <span className="profile-avatar small" aria-hidden="true" />
                 {profile.name}
               </button>
             ))}
