@@ -40,7 +40,7 @@ export async function searchVideos(
       );
 
       for (const query of queries) {
-        const results = await youtube.search(query);
+        const results = await youtube.search(query, { type: "video" });
         const queryVideos: FeedVideo[] = [];
 
         for (const video of results.videos) {

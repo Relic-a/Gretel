@@ -197,6 +197,7 @@ function writeRuntimeConfig(name, overrides = {}) {
 function createFakeYoutubeClient() {
   const calls = {
     search: 0,
+    videoSearch: 0,
     getChannel: 0,
     getInfo: 0
   };
@@ -209,6 +210,9 @@ function createFakeYoutubeClient() {
       if (options.type === "channel") {
         return { channels: [{ id: `UC-${slug(query)}` }] };
       }
+
+      assert.equal(options.type, "video");
+      calls.videoSearch += 1;
 
       return {
         videos: Array.from({ length: 10 }, (_, index) =>
