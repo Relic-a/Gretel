@@ -4,9 +4,14 @@ import { getDatabase, getVideoInteractions } from "../profile-store";
 import type { FeedVideo } from "./types";
 import { cosineSimilarity, driftCentroid } from "./vector-math";
 import { getRetainedEmbedding, retainEmbedding } from "./algorithm-store";
+import { listPoolNodes, updatePoolSimilarities } from "./pool-store";
 
 export async function updateCentroidsForPositiveEngagement(profileId: string, video: FeedVideo) {
   const config = getGretelConfig();
+
+  if (!isPositiveEngagement(video, config.learning.watchSaveThreshold)) {
+    return;
+  }
 
   if (getVideoInteractions(profileId).size < config.feed.coldStartInteractionThreshold) {
     return;
@@ -58,6 +63,36 @@ export async function updateCentroidsForPositiveEngagement(profileId: string, vi
 
     if (driftDistance <= config.learning.maxCentroidDrift) {
       statement.run(JSON.stringify(proposed), updatedAt, profileId, row.cache_key);
+      recomputePoolSimilarities(profileId, row.cache_key, proposed);
     }
   }
+}
+
+function isPositiveEngagement(video: FeedVideo, watchSaveThreshold: number) {
+  if (video.liked || video.clicked) {
+    return true;
+  }
+
+  if ((video.ignoreCount || 0) > 0) {
+    return false;
+  }
+
+  return (video.watchTimeRatio || 0) >= watchSaveThreshold;
+}
+
+function recomputePoolSimilarities(profileId: string, poolKey: string, centroid: number[]) {
+  const rescored = listPoolNodes(profileId, poolKey).flatMap((node) => {
+    const embedding = getRetainedEmbedding(profileId, node.id);
+
+    if (!embedding) {
+      return [];
+    }
+
+    return [{
+      ...node,
+      similarityScore: cosineSimilarity(embedding, centroid)
+    }];
+  });
+
+  updatePoolSimilarities(profileId, poolKey, rescored);
 }

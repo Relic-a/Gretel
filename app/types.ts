@@ -29,4 +29,5 @@ export type ChannelResult = {
 export type FeedResponse = {
   profile: Profile;
   videos: FeedVideo[];
+  upNextByVideoId?: Record<string, string[]>;
 };

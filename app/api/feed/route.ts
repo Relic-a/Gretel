@@ -71,6 +71,7 @@ export async function POST(request: Request) {
       queries: feed.queries,
       nodes: feed.nodes,
       pool: feed.pool,
+      upNextByVideoId: feed.upNextByVideoId,
       videos: feed.videos
     });
   } catch (error) {

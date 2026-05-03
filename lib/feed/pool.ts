@@ -1,6 +1,7 @@
 import { applyEngagement, type VideoInteraction } from "./engagement";
 import type { GretelConfig } from "./config-defaults";
 import type { FeedNodeSummary, FeedVideo } from "./types";
+import { cosineSimilarity } from "./vector-math";
 
 export type CandidatePoolResult = {
   videos: FeedVideo[];
@@ -88,8 +89,40 @@ export function relatedBudgetForSeed(
   );
 }
 
+export function selectUpNextCandidates(input: {
+  currentVideo: FeedVideo;
+  candidates: FeedVideo[];
+  embeddings: Map<string, number[]>;
+  limit?: number;
+}) {
+  const currentEmbedding = input.embeddings.get(input.currentVideo.id);
+
+  if (!currentEmbedding) {
+    return input.candidates.slice(0, input.limit);
+  }
+
+  return [...input.candidates]
+    .sort((left, right) => {
+      const leftSimilarity = similarityToCurrent(currentEmbedding, left, input.embeddings);
+      const rightSimilarity = similarityToCurrent(currentEmbedding, right, input.embeddings);
+
+      return rightSimilarity - leftSimilarity ||
+        (right.engagementScore || 0) - (left.engagementScore || 0);
+    })
+    .slice(0, input.limit);
+}
+
 function expansionScore(video: FeedVideo, config: GretelConfig, warmStart: boolean) {
   return warmStart ? video.engagementScore || 0 : coldStartExpansionScore(video, config);
+}
+
+function similarityToCurrent(
+  currentEmbedding: number[],
+  candidate: FeedVideo,
+  embeddings: Map<string, number[]>
+) {
+  const candidateEmbedding = embeddings.get(candidate.id);
+  return candidateEmbedding ? cosineSimilarity(currentEmbedding, candidateEmbedding) : 0;
 }
 
 function coldStartExpansionScore(video: FeedVideo, config: GretelConfig) {

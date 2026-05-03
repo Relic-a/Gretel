@@ -297,7 +297,10 @@ test("centroid drift is bounded and pool similarities can be recomputed after a 
     assert.deepEqual(modules.algorithmStore.getCentroid(profile.id, poolKey).current, [1, 0]);
 
     modules.algorithmStore.retainEmbedding(profile.id, "far-video", [-1, 0]);
-    await modules.centroidDrift.updateCentroidsForPositiveEngagement(profile.id, video("far-video"));
+    await modules.centroidDrift.updateCentroidsForPositiveEngagement(
+      profile.id,
+      video("far-video", { liked: true })
+    );
     assert.deepEqual(modules.algorithmStore.getCentroid(profile.id, poolKey).current, [1, 0]);
 
     process.env.GRETEL_CONFIG = writeConfig("drift-valid.json", {
@@ -305,12 +308,6 @@ test("centroid drift is bounded and pool similarities can be recomputed after a 
       learning: { centroidLearningRate: 0.2, maxCentroidDrift: 0.25 },
       embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
     });
-    modules.algorithmStore.retainEmbedding(profile.id, "like-video", [0, 1]);
-    await modules.centroidDrift.updateCentroidsForPositiveEngagement(profile.id, video("like-video"));
-    const current = modules.algorithmStore.getCentroid(profile.id, poolKey).current;
-    assert.ok(current[0] < 1);
-    assert.ok(current[1] > 0);
-
     modules.poolStore.markRootDiscovered(profile.id, poolKey, Date.now());
     modules.poolStore.addPoolNodes(
       profile.id,
@@ -320,11 +317,15 @@ test("centroid drift is bounded and pool similarities can be recomputed after a 
       Date.now()
     );
     modules.algorithmStore.retainEmbedding(profile.id, "pool-node", [1, 0]);
-    modules.poolStore.updatePoolSimilarities(profile.id, poolKey, [
-      video("pool-node", {
-        similarityScore: modules.vectorMath.cosineSimilarity([1, 0], current)
-      })
-    ]);
+    modules.algorithmStore.retainEmbedding(profile.id, "like-video", [0, 1]);
+    await modules.centroidDrift.updateCentroidsForPositiveEngagement(
+      profile.id,
+      video("like-video", { liked: true })
+    );
+    const current = modules.algorithmStore.getCentroid(profile.id, poolKey).current;
+    assert.ok(current[0] < 1);
+    assert.ok(current[1] > 0);
+
     assert.notEqual(modules.poolStore.listPoolNodes(profile.id, poolKey)[0].similarityScore, 1);
   } finally {
     modules.profileStore.deleteProfile(profile.id);
@@ -359,9 +360,25 @@ test("serving excludes completed watched nodes and orders unserved nodes by pare
 });
 
 test("up next selects by similarity to the current video, not engagement score", () => {
-  const recommendations = require(path.join(buildDir, "lib", "feed", "recommendations.js"));
+  const { selectUpNextCandidates } = require(path.join(buildDir, "lib", "feed", "pool.js"));
+  const candidates = [
+    video("highest-engagement", { engagementScore: 10 }),
+    video("nearest", { engagementScore: 0.1 })
+  ];
+  const embeddings = new Map([
+    ["current", [1, 0]],
+    ["highest-engagement", [0, 1]],
+    ["nearest", [0.9, 0.1]]
+  ]);
 
-  assert.equal(typeof recommendations.selectUpNextCandidates, "function");
+  assert.deepEqual(
+    selectUpNextCandidates({
+      currentVideo: video("current"),
+      candidates,
+      embeddings
+    }).map((node) => node.id),
+    ["nearest", "highest-engagement"]
+  );
 });
 
 test("pruning removes lowest scoring nodes first and lets a high-scoring child survive its parent", () => {

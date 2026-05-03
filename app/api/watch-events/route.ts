@@ -36,7 +36,10 @@ export async function POST(request: Request) {
     });
 
     if (saved) {
-      await updateCentroidsForPositiveEngagement(profileId, video);
+      await updateCentroidsForPositiveEngagement(profileId, {
+        ...video,
+        watchTimeRatio: durationSeconds > 0 ? watchedSeconds / durationSeconds : 0
+      });
       logInfo("watch_event.saved", {
         profileId,
         videoId: video.id,

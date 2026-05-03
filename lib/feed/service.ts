@@ -13,7 +13,12 @@ import {
 import { getGretelConfig } from "./config";
 import { createEmbeddingInput, getEmbeddingProvider } from "./embeddings";
 import { applyEngagement } from "./engagement";
-import { createCandidatePoolFeed, relatedBudgetForSeed, selectExpansionSeeds } from "./pool";
+import {
+  createCandidatePoolFeed,
+  relatedBudgetForSeed,
+  selectExpansionSeeds,
+  selectUpNextCandidates
+} from "./pool";
 import { recommendVideosFromSeeds } from "./recommendations";
 import type { ChannelSort, FeedObservation, FeedVideo } from "./types";
 import { fetchChannelVideos, searchVideos } from "./youtube";
@@ -91,7 +96,8 @@ export async function createFeed(
   const poolRecommendations = readyPreview.videos.slice(0, config.feed.maxVideos);
   const videos = [...fastLaneVideos, ...poolRecommendations].slice(0, config.feed.maxVideos);
 
-  await retainReadyQueueEmbeddings(profileId, poolRecommendations);
+  await retainReadyQueueEmbeddings(profileId, videos);
+  const upNextByVideoId = buildUpNextByVideoId(profileId, videos);
   markPoolNodesServed(profileId, poolKey, poolRecommendations);
 
   const poolState = getFeedPoolState(profileId, poolKey);
@@ -113,7 +119,8 @@ export async function createFeed(
     searchVideos: poolVideos.filter((video) => video.sourceNodeId === "tagSearch").length,
     channelVideos: fastLaneVideos.length,
     relatedVideos: poolVideos.filter((video) => video.sourceNodeId === "relatedVideos").length,
-    pool
+    pool,
+    upNextByVideoId
   };
 }
 
@@ -153,7 +160,7 @@ async function initializePoolOnce(
     : [];
   const channelEmbeddings = await embedVideos(channelCandidates);
   const channelPoolVideos = scoreByCentroid(
-    channelCandidates,
+    persistentChannelCandidates(channelCandidates),
     channelEmbeddings,
     originalCentroid,
     "channelVideos"
@@ -162,6 +169,17 @@ async function initializePoolOnce(
   addPoolNodes(profileId, poolKey, "channelVideos", channelPoolVideos, timestamp);
 
   return true;
+}
+
+function persistentChannelCandidates(videos: FeedVideo[]) {
+  const fastLaneCap = getGretelConfig().feed.subscriptionFastLanePerSession;
+
+  if (fastLaneCap === 0) {
+    return videos;
+  }
+
+  const fastLaneIds = new Set(videos.slice(0, fastLaneCap).map((video) => video.id));
+  return videos.filter((video) => !fastLaneIds.has(video.id));
 }
 
 async function expandPool(
@@ -312,4 +330,27 @@ async function retainReadyQueueEmbeddings(profileId: string, videos: FeedVideo[]
 
   const embeddings = await embedVideos(missingVideos);
   retainVideoEmbeddings(profileId, missingVideos, embeddings);
+}
+
+function buildUpNextByVideoId(profileId: string, videos: FeedVideo[]) {
+  const embeddings = new Map<string, number[]>();
+
+  for (const video of videos) {
+    const embedding = getRetainedEmbedding(profileId, video.id);
+
+    if (embedding) {
+      embeddings.set(video.id, embedding);
+    }
+  }
+
+  return Object.fromEntries(
+    videos.map((video) => [
+      video.id,
+      selectUpNextCandidates({
+        currentVideo: video,
+        candidates: videos.filter((candidate) => candidate.id !== video.id),
+        embeddings
+      }).map((candidate) => candidate.id)
+    ])
+  );
 }

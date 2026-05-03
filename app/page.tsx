@@ -52,7 +52,7 @@ export default function Home() {
   const homeVideos = feed?.videos || [];
   const visibleVideos =
     section === "saved" ? savedVideos : section === "history" ? historyVideos : homeVideos;
-  const sideVideos = visibleVideos.filter((video) => video.id !== activeVideo?.id).slice(0, 12);
+  const sideVideos = orderedSideVideos(visibleVideos, activeVideo, feed?.upNextByVideoId).slice(0, 12);
 
   useEffect(() => {
     let disposed = false;
@@ -563,6 +563,26 @@ export default function Home() {
         />
       )}
     </main>
+  );
+}
+
+function orderedSideVideos(
+  videos: FeedVideo[],
+  activeVideo: FeedVideo | null,
+  upNextByVideoId: Record<string, string[]> | undefined
+) {
+  const candidates = videos.filter((video) => video.id !== activeVideo?.id);
+  const orderedIds = activeVideo ? upNextByVideoId?.[activeVideo.id] : null;
+
+  if (!orderedIds) {
+    return candidates;
+  }
+
+  const order = new Map(orderedIds.map((id, index) => [id, index]));
+  return [...candidates].sort(
+    (left, right) =>
+      (order.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
+      (order.get(right.id) ?? Number.MAX_SAFE_INTEGER)
   );
 }
 
