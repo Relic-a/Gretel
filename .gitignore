@@ -29,3 +29,5 @@ pnpm-debug.log*
 # editor / os
 .DS_Store
 .vscode/
+
+gretel_design/

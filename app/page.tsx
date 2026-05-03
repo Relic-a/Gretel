@@ -17,6 +17,7 @@ type DashPlayer = MediaPlayerClass & {
 
 const clientStateKey = "gretel.clientState.v2";
 const starterTags = ["AI engineering", "TypeScript", "product design"];
+const allFeedKey = "all";
 type Section = "home" | "saved" | "history";
 
 export default function Home() {
@@ -29,6 +30,7 @@ export default function Home() {
   const [channelDraft, setChannelDraft] = useState("");
   const [channelResults, setChannelResults] = useState<ChannelResult[]>([]);
   const [feed, setFeed] = useState<FeedResponse | null>(null);
+  const [activeFeedKey, setActiveFeedKey] = useState(allFeedKey);
   const [section, setSection] = useState<Section>("home");
   const [savedVideos, setSavedVideos] = useState<FeedVideo[]>([]);
   const [historyVideos, setHistoryVideos] = useState<FeedVideo[]>([]);
@@ -49,8 +51,10 @@ export default function Home() {
   );
   const activeProfile = profiles.find((profile) => profile.id === profileId);
   const needsProfile = booted && profiles.length === 0 && !feed;
+  const homeVideos =
+    feed?.feedTabs?.find((tab) => tab.key === activeFeedKey)?.videos || feed?.videos || [];
   const visibleVideos =
-    section === "saved" ? savedVideos : section === "history" ? historyVideos : feed?.videos || [];
+    section === "saved" ? savedVideos : section === "history" ? historyVideos : homeVideos;
   const sideVideos = visibleVideos.filter((video) => video.id !== activeVideo?.id).slice(0, 12);
 
   useEffect(() => {
@@ -291,6 +295,7 @@ export default function Home() {
       setProfileId(data.profileId || "");
       setProfileName("");
       setFeed(null);
+      setActiveFeedKey(allFeedKey);
       setActiveVideo(null);
       setManageProfiles(false);
       setSection("home");
@@ -320,6 +325,7 @@ export default function Home() {
     setProfiles(data.profiles || []);
     setProfileId(data.profileId || "");
     setFeed(null);
+    setActiveFeedKey(allFeedKey);
     setActiveVideo(null);
     setSavedVideos([]);
     setHistoryVideos([]);
@@ -438,6 +444,7 @@ export default function Home() {
       }
 
       setFeed(data);
+      setActiveFeedKey(allFeedKey);
       setActiveVideo(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not build this feed.");
@@ -485,6 +492,7 @@ export default function Home() {
         onSelectProfile={(nextProfileId) => {
           setProfileId(nextProfileId);
           setFeed(null);
+          setActiveFeedKey(allFeedKey);
           setActiveVideo(null);
           setSection("home");
           setSavedVideos([]);
@@ -519,6 +527,21 @@ export default function Home() {
       )}
 
       {error && !manageProfiles && !needsProfile && <p className="error page-error">{error}</p>}
+
+      {booted && section === "home" && feed?.feedTabs && feed.feedTabs.length > 1 && !activeVideo && (
+        <nav className="feed-tabs" aria-label="Home feeds">
+          {feed.feedTabs.map((tab) => (
+            <button
+              type="button"
+              key={tab.key}
+              className={tab.key === activeFeedKey ? "active" : ""}
+              onClick={() => setActiveFeedKey(tab.key)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      )}
 
       {booted && visibleVideos.length > 0 && (
         <VideoGrid

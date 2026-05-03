@@ -11,6 +11,12 @@ export type FeedVideo = {
   channelKey?: string;
 };
 
+export type FeedTab = {
+  key: string;
+  label: string;
+  videos: FeedVideo[];
+};
+
 export type Profile = {
   id: string;
   name: string;
@@ -25,4 +31,5 @@ export type ChannelResult = {
 export type FeedResponse = {
   profile: Profile;
   videos: FeedVideo[];
+  feedTabs?: FeedTab[];
 };

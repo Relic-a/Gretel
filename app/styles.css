@@ -84,6 +84,28 @@ button:disabled {
   color: var(--ink);
 }
 
+.feed-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.feed-tabs button {
+  min-height: 34px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #ecefed;
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.feed-tabs button:hover,
+.feed-tabs button.active {
+  background: var(--ink);
+  color: #fff;
+}
+
 .brand-button,
 .profile-button {
   min-height: 38px;

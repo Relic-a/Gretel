@@ -520,3 +520,56 @@ test("runtime feed flow logs cache, subscription refresh, profile, and affinity 
     }
   }
 });
+
+test("runtime feed returns isolated tag tabs with a random all feed", async () => {
+  const tagConfig = writeRuntimeConfig("runtime-tag-tabs.json", {
+    feed: {
+      maxQueries: 2,
+      defaultNodeWeights: {
+        tagSearch: 1,
+        channelVideos: 0,
+        relatedVideos: 0,
+        watchedVideos: 0
+      }
+    }
+  });
+  const fakeYoutubeClient = createFakeYoutubeClient();
+  const { feedRoute, profilesRoute, profileStore } = loadRuntimeModules(fakeYoutubeClient);
+  let profileId = "";
+
+  try {
+    await captureLogs(async () => {
+      process.env.GRETEL_CONFIG = tagConfig;
+      const created = await postJson(profilesRoute, { name: "Tag Tabs Profile" });
+      assert.equal(created.status, 200);
+      profileId = created.body.profileId;
+
+      const response = await postJson(feedRoute, {
+        profileId,
+        tags: "alpha, beta"
+      });
+      assert.equal(response.status, 200);
+      assert.deepEqual(
+        response.body.feedTabs.map((tab) => tab.label),
+        ["All", "alpha", "beta"]
+      );
+
+      const alphaTab = response.body.feedTabs.find((tab) => tab.key === "alpha");
+      const betaTab = response.body.feedTabs.find((tab) => tab.key === "beta");
+      const allTab = response.body.feedTabs.find((tab) => tab.key === "all");
+      assert.ok(alphaTab);
+      assert.ok(betaTab);
+      assert.ok(allTab);
+      assert.ok(alphaTab.videos.length > 0);
+      assert.ok(betaTab.videos.length > 0);
+      assert.equal(alphaTab.videos.every((video) => /alpha/i.test(video.title)), true);
+      assert.equal(betaTab.videos.every((video) => /beta/i.test(video.title)), true);
+      assert.equal(allTab.videos.length <= 6, true);
+      assert.deepEqual(response.body.videos, allTab.videos);
+    });
+  } finally {
+    if (profileId) {
+      profileStore.deleteProfile(profileId);
+    }
+  }
+});
