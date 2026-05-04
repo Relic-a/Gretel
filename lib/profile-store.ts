@@ -100,6 +100,16 @@ export function getDatabase() {
         PRIMARY KEY (profile_id, pool_key, video_id),
         FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS feed_visited_videos (
+        profile_id TEXT NOT NULL,
+        pool_key TEXT NOT NULL,
+        video_id TEXT NOT NULL,
+        first_seen_at INTEGER NOT NULL,
+        last_seen_at INTEGER NOT NULL,
+        PRIMARY KEY (profile_id, pool_key, video_id),
+        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+      );
     `);
   }
 
@@ -154,6 +164,7 @@ export function resetProfile(profileId: string) {
   deleteFeedAlgorithmRows(profileId);
   database.prepare("DELETE FROM feed_pool_state WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM feed_pool_nodes WHERE profile_id = ?").run(profileId);
+  database.prepare("DELETE FROM feed_visited_videos WHERE profile_id = ?").run(profileId);
   database.prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(Date.now(), profileId);
   resetYoutubeProfileCache(profileId);
 }

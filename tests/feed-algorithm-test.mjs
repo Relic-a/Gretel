@@ -468,6 +468,90 @@ test("pruning removes lowest scoring nodes first and lets a high-scoring child s
   }
 });
 
+test("pruning cleans non-engaged embeddings and pruned videos are not re-admitted", async () => {
+  const infoSeeds = [];
+  const modules = loadRuntimeModules({
+    youtubeClient: createFakeYoutubeClient({
+      infoForSeed(seedId) {
+        infoSeeds.push(seedId);
+        return [
+          rawVideo("stale-related", "stale related", "Related"),
+          rawVideo("watched-related", "watched related", "Related"),
+          rawVideo("fresh-related", "fresh related", "Related")
+        ];
+      }
+    }),
+    embeddingForText: () => [1, 0]
+  });
+  const profile = modules.profileStore.createProfile("Visited Prune");
+  profileStoreForCleanup = modules.profileStore;
+  const poolKey = modules.poolStore.createFeedPoolKey({
+    tags: ["alpha"],
+    channels: [],
+    channelSort: "mixed"
+  });
+
+  try {
+    process.env.GRETEL_CONFIG = writeConfig("visited-prune.json", {
+      feed: {
+        maxQueries: 1,
+        maxVideos: 8,
+        similarityThreshold: 0.75,
+        readyQueueLowWaterMark: 20,
+        recommendationSeeds: 1,
+        expansionSeedCount: 1,
+        minRelatedVideosPerSeed: 3,
+        maxRelatedVideosPerSeed: 3,
+        subscriptionFastLanePerSession: 0
+      },
+      embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
+    });
+    modules.poolStore.markRootDiscovered(profile.id, poolKey, Date.now());
+    modules.algorithmStore.saveCentroid(profile.id, poolKey, [1, 0], [1, 0]);
+    modules.poolStore.addPoolNodes(
+      profile.id,
+      poolKey,
+      "tagSearch",
+      [
+        video("seed", { similarityScore: 1, engagementScore: 1 }),
+        video("stale-related", { similarityScore: 1, engagementScore: -5 })
+      ],
+      Date.now()
+    );
+    modules.algorithmStore.retainEmbedding(profile.id, "stale-related", [1, 0]);
+    modules.poolStore.prunePool(
+      profile.id,
+      poolKey,
+      [
+        video("seed", { similarityScore: 1, engagementScore: 1 }),
+        video("stale-related", { similarityScore: 1, engagementScore: -5 })
+      ],
+      1
+    );
+    modules.profileStore.saveWatchedVideo({
+      profileId: profile.id,
+      video: video("watched-related"),
+      watchedSeconds: 100,
+      durationSeconds: 100
+    });
+
+    assert.equal(modules.algorithmStore.getRetainedEmbedding(profile.id, "stale-related"), null);
+
+    await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
+      forceExpansion: true
+    });
+    const relatedIds = modules.poolStore
+      .listPoolNodes(profile.id, poolKey)
+      .filter((node) => node.sourceNodeId === "relatedVideos")
+      .map((node) => node.id);
+
+    assert.deepEqual(infoSeeds, ["seed"]);
+    assert.deepEqual(relatedIds, ["fresh-related"]);
+  } finally {
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});
+
 test("subscription fast lane is served up to cap, never pooled, and never used as expansion seeds", async () => {
   const infoSeeds = [];
   const modules = loadRuntimeModules({

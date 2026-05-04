@@ -3,7 +3,7 @@ import {
   addPoolNodes,
   createFeedPoolKey,
   getFeedPoolState,
-  getPoolVideoIds,
+  getVisitedVideoIds,
   listPoolNodes,
   markPoolNodesServed,
   markRootDiscovered,
@@ -23,6 +23,7 @@ import { recommendVideosFromSeeds } from "./recommendations";
 import type { ChannelSort, FeedObservation, FeedVideo } from "./types";
 import { fetchChannelVideos, searchVideos } from "./youtube";
 import { getVideoInteractions } from "../profile-store";
+import { observeOperation } from "./observation";
 import {
   getCentroid,
   getRetainedEmbedding,
@@ -59,6 +60,7 @@ export async function createFeed(
   );
 
   let poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
+  recordScoringObservation(observation, profileId, poolVideos, "initial");
   let readyPreview = createCandidatePoolFeed({
     rootVideos: poolVideos.filter((video) => video.sourceNodeId === "tagSearch"),
     channelVideos: poolVideos.filter((video) => video.sourceNodeId === "channelVideos"),
@@ -74,6 +76,7 @@ export async function createFeed(
   if (expandedPool) {
     await expandPool(profileId, poolKey, poolVideos, observation);
     poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
+    recordScoringObservation(observation, profileId, poolVideos, "afterExpansion");
     readyPreview = createCandidatePoolFeed({
       rootVideos: poolVideos.filter((video) => video.sourceNodeId === "tagSearch"),
       channelVideos: poolVideos.filter((video) => video.sourceNodeId === "channelVideos"),
@@ -84,7 +87,28 @@ export async function createFeed(
     });
   }
 
-  prunePool(profileId, poolKey, poolVideos, config.feed.poolSizeCap);
+  const prunedVideos = prunePool(profileId, poolKey, poolVideos, config.feed.poolSizeCap);
+
+  observation.operations.push({
+    name: "feed.phase6.pruning",
+    durationMs: 0,
+    status: "ok",
+    input: { poolVideos: poolVideos.length, poolSizeCap: config.feed.poolSizeCap },
+    output: { prunedVideos: prunedVideos.length }
+  });
+
+  if (prunedVideos.length > 0) {
+    poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
+    recordScoringObservation(observation, profileId, poolVideos, "afterPruning");
+    readyPreview = createCandidatePoolFeed({
+      rootVideos: poolVideos.filter((video) => video.sourceNodeId === "tagSearch"),
+      channelVideos: poolVideos.filter((video) => video.sourceNodeId === "channelVideos"),
+      relatedVideos: poolVideos.filter((video) => video.sourceNodeId === "relatedVideos"),
+      watchedVideoIds,
+      interactions: getVideoInteractions(profileId),
+      config
+    });
+  }
 
   const fastLaneVideos = await getSubscriptionFastLaneVideos(
     channels,
@@ -96,9 +120,24 @@ export async function createFeed(
   const poolRecommendations = readyPreview.videos.slice(0, config.feed.maxVideos);
   const videos = [...fastLaneVideos, ...poolRecommendations].slice(0, config.feed.maxVideos);
 
-  await retainReadyQueueEmbeddings(profileId, videos);
+  await retainReadyQueueEmbeddings(profileId, videos, observation);
   const upNextByVideoId = buildUpNextByVideoId(profileId, videos);
   markPoolNodesServed(profileId, poolKey, poolRecommendations);
+  observation.operations.push({
+    name: "feed.phase5.serving",
+    durationMs: 0,
+    status: "ok",
+    input: {
+      readyQueueTargetSize: config.feed.readyQueueTargetSize,
+      maxVideos: config.feed.maxVideos
+    },
+    output: {
+      fastLaneVideos: fastLaneVideos.length,
+      poolVideos: poolRecommendations.length,
+      finalVideos: videos.length,
+      upNextLists: Object.keys(upNextByVideoId).length
+    }
+  });
 
   const poolState = getFeedPoolState(profileId, poolKey);
   const pool = {
@@ -150,6 +189,18 @@ async function initializePoolOnce(
   );
   const scoredRoots = scoreByCentroid(rootVideos, rootEmbeddings, originalCentroid, "tagSearch");
 
+  observation.operations.push({
+    name: "feed.phase1.roots",
+    durationMs: 0,
+    status: "ok",
+    input: { queries: queries.length },
+    output: {
+      filteredVideos: rootVideos.length,
+      embeddedVideos: rootEmbeddings.size,
+      centroidCompleted: originalCentroid.length > 0
+    }
+  });
+
   markRootDiscovered(profileId, poolKey, timestamp);
   saveCentroid(profileId, poolKey, originalCentroid, originalCentroid);
   retainVideoEmbeddings(profileId, scoredRoots, rootEmbeddings);
@@ -165,6 +216,18 @@ async function initializePoolOnce(
     originalCentroid,
     "channelVideos"
   ).filter((video) => (video.similarityScore || 0) >= getGretelConfig().feed.similarityThreshold);
+
+  observation.operations.push({
+    name: "feed.phase1.channels",
+    durationMs: 0,
+    status: "ok",
+    input: { channels: channels.length, candidates: channelCandidates.length },
+    output: {
+      embeddedVideos: channelEmbeddings.size,
+      admittedVideos: channelPoolVideos.length,
+      filteredByCentroid: channelCandidates.length - channelPoolVideos.length
+    }
+  });
 
   addPoolNodes(profileId, poolKey, "channelVideos", channelPoolVideos, timestamp);
 
@@ -198,31 +261,53 @@ async function expandPool(
     return;
   }
 
-  const rawRelatedVideos = await recommendVideosFromSeeds(
-    seeds,
+  await observeOperation(
     observation,
-    profileId,
-    "Recommended from",
-    (seed, seedVideos) =>
-      relatedBudgetForSeed(
-        seed,
-        seedVideos,
-        config,
-        interactions.size >= config.feed.coldStartInteractionThreshold
-      )
-  );
-  const visitedVideoIds = getPoolVideoIds(profileId, poolKey);
-  const newCandidates = rawRelatedVideos.filter((video) => !visitedVideoIds.has(video.id));
-  const embeddings = await embedVideos(newCandidates);
-  const parentScores = new Map(seeds.map((seed) => [seed.id, seed.engagementScore || 0]));
-  const relatedVideos = scoreByCentroid(newCandidates, embeddings, centroid, "relatedVideos")
-    .map((video) => ({
-      ...video,
-      parentEngagementScore: parentScores.get(video.parent_video_id || "") || 0
-    }))
-    .filter((video) => (video.similarityScore || 0) >= config.feed.similarityThreshold);
+    "feed.phase2.expansion",
+    {
+      poolVideos: poolVideos.length,
+      seeds: seeds.length,
+      warmStart: interactions.size >= config.feed.coldStartInteractionThreshold
+    },
+    async () => {
+      const rawRelatedVideos = await recommendVideosFromSeeds(
+        seeds,
+        observation,
+        profileId,
+        "Recommended from",
+        (seed, seedVideos) =>
+          relatedBudgetForSeed(
+            seed,
+            seedVideos,
+            config,
+            interactions.size >= config.feed.coldStartInteractionThreshold
+          )
+      );
+      const visitedVideoIds = getVisitedVideoIds(profileId, poolKey);
+      const newCandidates = rawRelatedVideos.filter((video) => !visitedVideoIds.has(video.id));
+      const embeddings = await embedVideos(newCandidates);
+      const parentScores = new Map(seeds.map((seed) => [seed.id, seed.engagementScore || 0]));
+      const relatedVideos = scoreByCentroid(newCandidates, embeddings, centroid, "relatedVideos")
+        .map((video) => ({
+          ...video,
+          parentEngagementScore: parentScores.get(video.parent_video_id || "") || 0
+        }))
+        .filter((video) => (video.similarityScore || 0) >= config.feed.similarityThreshold);
 
-  addPoolNodes(profileId, poolKey, "relatedVideos", relatedVideos, Date.now());
+      addPoolNodes(profileId, poolKey, "relatedVideos", relatedVideos, Date.now());
+
+      return {
+        value: undefined,
+        output: {
+          fetchedCandidates: rawRelatedVideos.length,
+          skippedVisited: rawRelatedVideos.length - newCandidates.length,
+          embeddedCandidates: embeddings.size,
+          admittedVideos: relatedVideos.length,
+          filteredByCentroid: newCandidates.length - relatedVideos.length
+        }
+      };
+    }
+  );
 }
 
 async function getSubscriptionFastLaneVideos(
@@ -261,6 +346,32 @@ function scorePoolVideos(profileId: string, poolKey: string, videos: FeedVideo[]
   updatePoolSimilarities(profileId, poolKey, rescored);
 
   return rescored;
+}
+
+function recordScoringObservation(
+  observation: FeedObservation,
+  profileId: string,
+  videos: FeedVideo[],
+  reason: string
+) {
+  const config = getGretelConfig();
+  const interactions = getVideoInteractions(profileId);
+  const scoredVideos = videos.filter((video) => typeof video.engagementScore === "number");
+
+  observation.operations.push({
+    name: "feed.phase3.scoring",
+    durationMs: 0,
+    status: "ok",
+    input: {
+      reason,
+      poolVideos: videos.length,
+      interactions: interactions.size
+    },
+    output: {
+      coldStart: interactions.size < config.feed.coldStartInteractionThreshold,
+      scoredVideos: scoredVideos.length
+    }
+  });
 }
 
 async function embedVideos(videos: FeedVideo[]) {
@@ -321,15 +432,33 @@ function rescoreCachedVideos(profileId: string, videos: FeedVideo[], centroid: n
   });
 }
 
-async function retainReadyQueueEmbeddings(profileId: string, videos: FeedVideo[]) {
+async function retainReadyQueueEmbeddings(
+  profileId: string,
+  videos: FeedVideo[],
+  observation: FeedObservation
+) {
   const missingVideos = videos.filter((video) => !getRetainedEmbedding(profileId, video.id));
 
   if (missingVideos.length === 0) {
+    observation.operations.push({
+      name: "feed.phase5.ready_embeddings",
+      durationMs: 0,
+      status: "ok",
+      input: { readyVideos: videos.length },
+      output: { embeddedVideos: 0, retainedEmbeddings: 0 }
+    });
     return;
   }
 
   const embeddings = await embedVideos(missingVideos);
   retainVideoEmbeddings(profileId, missingVideos, embeddings);
+  observation.operations.push({
+    name: "feed.phase5.ready_embeddings",
+    durationMs: 0,
+    status: "ok",
+    input: { readyVideos: videos.length, missingEmbeddings: missingVideos.length },
+    output: { embeddedVideos: embeddings.size, retainedEmbeddings: embeddings.size }
+  });
 }
 
 function buildUpNextByVideoId(profileId: string, videos: FeedVideo[]) {

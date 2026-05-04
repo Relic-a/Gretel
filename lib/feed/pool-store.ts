@@ -1,4 +1,5 @@
-import { getDatabase } from "../profile-store";
+import { getDatabase, getLikedVideoIds, getWatchedVideoIds } from "../profile-store";
+import { deleteRetainedEmbeddings } from "./algorithm-store";
 import type { FeedNodeId, FeedVideo } from "./types";
 
 export type FeedPoolState = {
@@ -50,6 +51,16 @@ export function ensureFeedPoolTables() {
       updated_at INTEGER NOT NULL,
       served_count INTEGER NOT NULL DEFAULT 0,
       last_served_at INTEGER,
+      PRIMARY KEY (profile_id, pool_key, video_id),
+      FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+    );
+
+    CREATE TABLE IF NOT EXISTS feed_visited_videos (
+      profile_id TEXT NOT NULL,
+      pool_key TEXT NOT NULL,
+      video_id TEXT NOT NULL,
+      first_seen_at INTEGER NOT NULL,
+      last_seen_at INTEGER NOT NULL,
       PRIMARY KEY (profile_id, pool_key, video_id),
       FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
     );
@@ -111,6 +122,12 @@ export function addPoolNodes(
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(profile_id, pool_key, video_id) DO NOTHING`
   );
+  const visitedStatement = getDatabase().prepare(
+    `INSERT INTO feed_visited_videos (profile_id, pool_key, video_id, first_seen_at, last_seen_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(profile_id, pool_key, video_id) DO UPDATE SET
+       last_seen_at = excluded.last_seen_at`
+  );
 
   for (const video of videos) {
     statement.run(
@@ -125,6 +142,7 @@ export function addPoolNodes(
       timestamp,
       timestamp
     );
+    visitedStatement.run(profileId, poolKey, video.id, timestamp, timestamp);
   }
 
   touchPool(profileId, poolKey, timestamp);
@@ -179,6 +197,24 @@ export function getPoolVideoIds(profileId: string, poolKey: string) {
   return new Set(rows.map((row) => row.video_id));
 }
 
+export function getVisitedVideoIds(profileId: string, poolKey: string) {
+  ensureFeedPoolTables();
+  const rows = getDatabase()
+    .prepare("SELECT video_id FROM feed_visited_videos WHERE profile_id = ? AND pool_key = ?")
+    .all(profileId, poolKey) as Array<{ video_id: string }>;
+  const videoIds = new Set(rows.map((row) => row.video_id));
+
+  for (const videoId of getPoolVideoIds(profileId, poolKey)) {
+    videoIds.add(videoId);
+  }
+
+  for (const videoId of getWatchedVideoIds(profileId)) {
+    videoIds.add(videoId);
+  }
+
+  return videoIds;
+}
+
 export function markPoolNodesServed(profileId: string, poolKey: string, videos: FeedVideo[]) {
   if (videos.length === 0) {
     return;
@@ -226,7 +262,7 @@ export function prunePool(profileId: string, poolKey: string, scoredVideos: Feed
   const excess = scoredVideos.length - maxPoolVideos;
 
   if (excess <= 0) {
-    return;
+    return [];
   }
 
   const sorted = [...scoredVideos].sort(
@@ -238,15 +274,31 @@ export function prunePool(profileId: string, poolKey: string, scoredVideos: Feed
     "DELETE FROM feed_pool_nodes WHERE profile_id = ? AND pool_key = ? AND video_id = ?"
   );
 
-  for (const video of sorted.slice(0, excess)) {
+  const prunedVideos = sorted.slice(0, excess);
+  const retainedVideoIds = new Set([
+    ...getWatchedVideoIds(profileId),
+    ...getLikedVideoIds(profileId)
+  ]);
+
+  for (const video of prunedVideos) {
     statement.run(profileId, poolKey, video.id);
   }
+
+  deleteRetainedEmbeddings(
+    profileId,
+    prunedVideos
+      .map((video) => video.id)
+      .filter((videoId) => !retainedVideoIds.has(videoId))
+  );
+
+  return prunedVideos;
 }
 
 export function deleteFeedPoolData(profileId: string) {
   ensureFeedPoolTables();
   getDatabase().prepare("DELETE FROM feed_pool_state WHERE profile_id = ?").run(profileId);
   getDatabase().prepare("DELETE FROM feed_pool_nodes WHERE profile_id = ?").run(profileId);
+  getDatabase().prepare("DELETE FROM feed_visited_videos WHERE profile_id = ?").run(profileId);
 }
 
 function touchPool(profileId: string, poolKey: string, timestamp: number) {

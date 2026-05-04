@@ -157,6 +157,22 @@ export function getRetainedEmbedding(profileId: string, videoId: string) {
   return row ? JSON.parse(row.embedding_json) as number[] : null;
 }
 
+export function deleteRetainedEmbeddings(profileId: string, videoIds: string[]) {
+  if (videoIds.length === 0) {
+    return;
+  }
+
+  ensureFeedAlgorithmTables();
+  const tableName = quotedTableName("feed_video_embeddings");
+  const statement = getDatabase().prepare(
+    `DELETE FROM ${tableName} WHERE profile_id = ? AND video_id = ?`
+  );
+
+  for (const videoId of videoIds) {
+    statement.run(profileId, videoId);
+  }
+}
+
 export function deleteFeedAlgorithmData(profileId: string) {
   ensureFeedAlgorithmTables();
   for (const tableName of listFeedAlgorithmTableNames()) {

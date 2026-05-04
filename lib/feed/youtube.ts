@@ -42,6 +42,7 @@ export async function searchVideos(
       for (const query of queries) {
         const results = await youtube.search(query, { type: "video" });
         const queryVideos: FeedVideo[] = [];
+        const fetchedVideos = results.videos.length;
 
         for (const video of results.videos) {
           const id = getVideoId(video);
@@ -74,6 +75,16 @@ export async function searchVideos(
         }
 
         videosByQuery.push(queryVideos);
+        observation.operations.push({
+          name: "feed.phase1.tag_filter",
+          durationMs: 0,
+          status: "ok",
+          input: { query, fetchedVideos },
+          output: {
+            keptVideos: queryVideos.length,
+            filteredVideos: fetchedVideos - queryVideos.length
+          }
+        });
       }
 
       const mixed = mixVideoBuckets(videosByQuery);
@@ -81,7 +92,7 @@ export async function searchVideos(
       return {
         value: mixed,
         output: {
-          rawVideos: videosByQuery.reduce((total, videos) => total + videos.length, 0),
+          keptVideos: videosByQuery.reduce((total, videos) => total + videos.length, 0),
           integratedVideos: mixed.length
         }
       };
@@ -159,6 +170,16 @@ export async function fetchChannelVideos(
           }
 
           videosByChannel.push(channelVideos);
+          observation.operations.push({
+            name: "feed.phase1.channel_fetch",
+            durationMs: 0,
+            status: "ok",
+            input: { channel: channelName, fetchedVideos: sourceVideos.length },
+            output: {
+              keptVideos: channelVideos.length,
+              filteredVideos: sourceVideos.length - channelVideos.length
+            }
+          });
         } catch (error) {
           logWarn("youtube.channel_fetch_failed", {
             requestId: observation.requestId,
@@ -175,7 +196,7 @@ export async function fetchChannelVideos(
       return {
         value: mixed,
         output: {
-          rawVideos: videosByChannel.reduce((total, videos) => total + videos.length, 0),
+          keptVideos: videosByChannel.reduce((total, videos) => total + videos.length, 0),
           integratedVideos: mixed.length
         }
       };

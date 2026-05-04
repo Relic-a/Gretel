@@ -10,15 +10,28 @@ import {
   updateCentroid
 } from "./algorithm-store";
 import { listPoolNodes, updatePoolSimilarities } from "./pool-store";
+import { logInfo } from "../logger";
 
 export async function updateCentroidsForPositiveEngagement(profileId: string, video: FeedVideo) {
   const config = getGretelConfig();
 
   if (!isPositiveEngagement(video, config.learning.watchSaveThreshold)) {
+    logInfo("feed.phase4.centroid_drift", {
+      profileId,
+      videoId: video.id,
+      status: "skipped",
+      reason: "not_positive_engagement"
+    });
     return;
   }
 
   if (getVideoInteractions(profileId).size < config.feed.coldStartInteractionThreshold) {
+    logInfo("feed.phase4.centroid_drift", {
+      profileId,
+      videoId: video.id,
+      status: "skipped",
+      reason: "cold_start"
+    });
     return;
   }
 
@@ -34,11 +47,19 @@ export async function updateCentroidsForPositiveEngagement(profileId: string, vi
   }
 
   if (!embedding) {
+    logInfo("feed.phase4.centroid_drift", {
+      profileId,
+      videoId: video.id,
+      status: "skipped",
+      reason: "missing_embedding"
+    });
     return;
   }
 
   const rows = listCentroids(profileId);
   const updatedAt = Date.now();
+  let updatedCentroids = 0;
+  let rejectedCentroids = 0;
 
   for (const row of rows) {
     if (row.original.length === 0 || row.current.length === 0) {
@@ -51,8 +72,20 @@ export async function updateCentroidsForPositiveEngagement(profileId: string, vi
     if (driftDistance <= config.learning.maxCentroidDrift) {
       updateCentroid(profileId, row.cacheKey, proposed, updatedAt);
       recomputePoolSimilarities(profileId, row.cacheKey, proposed);
+      updatedCentroids += 1;
+    } else {
+      rejectedCentroids += 1;
     }
   }
+
+  logInfo("feed.phase4.centroid_drift", {
+    profileId,
+    videoId: video.id,
+    status: updatedCentroids > 0 ? "updated" : "unchanged",
+    centroidsChecked: rows.length,
+    updatedCentroids,
+    rejectedCentroids
+  });
 }
 
 function isPositiveEngagement(video: FeedVideo, watchSaveThreshold: number) {
