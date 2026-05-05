@@ -102,7 +102,7 @@ export function FeedView(props: FeedViewProps) {
               video={video}
               saved={props.savedVideoIds.has(video.id)}
               liked={props.likedVideoIds.has(video.id)}
-              showSubscribe
+              showSubscribe={false}
               subscribed={subscribed}
               onSelectVideo={props.onSelectVideo}
               onSaveVideo={props.onSaveVideo}

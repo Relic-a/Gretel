@@ -47,6 +47,7 @@ export default function Home() {
   const [manageProfiles, setManageProfiles] = useState(false);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const playerRef = useRef<DashPlayer | null>(null);
+  const pendingVideoIdRef = useRef<string | null>(null);
   const subscriptions = useMemo(
     () => new Set(channels.map((channel) => normalize(channel))),
     [channels]
@@ -64,6 +65,7 @@ export default function Home() {
 
     async function boot() {
       const saved = readSavedState();
+      const route = readRouteFromUrl();
       const [selectedProfileId] = await Promise.all([
         loadProfiles(saved?.profileId),
         loadPublicConfig()
@@ -76,6 +78,8 @@ export default function Home() {
       setTags(saved?.tags?.length ? saved.tags : starterTags);
       setChannels(saved?.channels || []);
       setBooted(true);
+      setSection(route.section);
+      pendingVideoIdRef.current = route.videoId;
 
       if (selectedProfileId) {
         const cachedFeed = readCachedFeed(selectedProfileId);
@@ -86,6 +90,10 @@ export default function Home() {
 
         await loadSavedVideos(selectedProfileId);
         await loadLikedVideos(selectedProfileId);
+
+        if (route.section === "history") {
+          await loadHistoryVideos(selectedProfileId);
+        }
       }
 
       if (selectedProfileId && (saved?.tags?.length || saved?.channels?.length)) {
@@ -107,6 +115,45 @@ export default function Home() {
       disposed = true;
     };
   }, []);
+
+  useEffect(() => {
+    function applyRoute() {
+      const route = readRouteFromUrl();
+      pendingVideoIdRef.current = route.videoId;
+      setActiveVideo(null);
+      setSection(route.section);
+
+      if (route.section === "saved") {
+        void loadSavedVideos(profileId).catch((caught) =>
+          setError(caught instanceof Error ? caught.message : "Could not load saved videos.")
+        );
+      }
+
+      if (route.section === "history") {
+        void loadHistoryVideos(profileId).catch((caught) =>
+          setError(caught instanceof Error ? caught.message : "Could not load history.")
+        );
+      }
+    }
+
+    window.addEventListener("popstate", applyRoute);
+    return () => window.removeEventListener("popstate", applyRoute);
+  }, [profileId]);
+
+  useEffect(() => {
+    const pendingVideoId = pendingVideoIdRef.current;
+
+    if (!booted || !pendingVideoId) {
+      return;
+    }
+
+    const matchingVideo = visibleVideos.find((video) => video.id === pendingVideoId);
+
+    if (matchingVideo) {
+      setActiveVideo(matchingVideo);
+      pendingVideoIdRef.current = null;
+    }
+  }, [booted, visibleVideos]);
 
   useEffect(() => {
     if (!booted) {
@@ -340,6 +387,7 @@ export default function Home() {
       setSavedVideoIds(new Set());
       setLikedVideoIds(new Set());
       clearCachedFeed(data.profileId || "");
+      writeRoute("home");
 
       await requestFeed({
         nextProfileId: data.profileId || "",
@@ -368,12 +416,14 @@ export default function Home() {
     setHistoryVideos([]);
     setSavedVideoIds(new Set());
     setLikedVideoIds(new Set());
+    writeRoute("home");
   }
 
   async function buildFeed(event?: FormEvent) {
     event?.preventDefault();
     setSection("home");
     setActiveVideo(null);
+    writeRoute("home");
     setFeedEnd(false);
     await requestFeed({ forceExpansion: true });
   }
@@ -382,6 +432,7 @@ export default function Home() {
     setError("");
     setSection("saved");
     setActiveVideo(null);
+    writeRoute("saved");
     try {
       await loadSavedVideos(profileId);
     } catch (caught) {
@@ -393,6 +444,7 @@ export default function Home() {
     setError("");
     setSection("history");
     setActiveVideo(null);
+    writeRoute("history");
     try {
       await loadHistoryVideos(profileId);
     } catch (caught) {
@@ -576,6 +628,12 @@ export default function Home() {
     setChannels(channels.filter((channel) => normalize(channel) !== normalize(value)));
   }
 
+  function openVideo(video: FeedVideo) {
+    setActiveVideo(video);
+    writeRoute(section, video.id);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   return (
     <main className="app-shell">
       <TopBar
@@ -592,6 +650,7 @@ export default function Home() {
           setFeed(readCachedFeed(nextProfileId));
           setActiveVideo(null);
           setSection("home");
+          writeRoute("home");
           setSavedVideos([]);
           setHistoryVideos([]);
           setSavedVideoIds(new Set());
@@ -620,7 +679,7 @@ export default function Home() {
           videoRef={videoRef}
           savedVideoIds={savedVideoIds}
           likedVideoIds={likedVideoIds}
-          onSelectVideo={setActiveVideo}
+          onSelectVideo={openVideo}
           onSaveVideo={saveVideo}
           onLikeVideo={likeVideo}
           onAddChannel={addChannel}
@@ -648,7 +707,7 @@ export default function Home() {
           loading={loading}
           canAskForMore={canAskForMore}
           onLoadMore={() => requestFeed({ forceExpansion: false })}
-          onSelectVideo={setActiveVideo}
+          onSelectVideo={openVideo}
           onSaveVideo={saveVideo}
           onLikeVideo={likeVideo}
           onAddChannel={addChannel}
@@ -782,5 +841,36 @@ function clearCachedFeed(profileId: string) {
     window.localStorage.removeItem(feedCacheKey(profileId));
   } catch {
     // Ignore storage failures.
+  }
+}
+
+function readRouteFromUrl(): { section: Section; videoId: string | null } {
+  const params = new URLSearchParams(window.location.search);
+  const sectionParam = params.get("section");
+  const section: Section =
+    sectionParam === "saved" || sectionParam === "history" ? sectionParam : "home";
+
+  return {
+    section,
+    videoId: params.get("video")
+  };
+}
+
+function writeRoute(section: Section, videoId?: string) {
+  const params = new URLSearchParams();
+
+  if (section !== "home") {
+    params.set("section", section);
+  }
+
+  if (videoId) {
+    params.set("video", videoId);
+  }
+
+  const query = params.toString();
+  const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+
+  if (window.location.pathname + window.location.search !== nextUrl) {
+    window.history.pushState(null, "", nextUrl);
   }
 }

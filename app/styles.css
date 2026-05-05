@@ -60,7 +60,7 @@ button:disabled {
   inset: 0 0 auto;
   z-index: 20;
   display: grid;
-  grid-template-columns: 220px 1fr auto auto;
+  grid-template-columns: 220px 1fr auto;
   align-items: stretch;
   height: var(--topbar-height);
   gap: 24px;
@@ -89,15 +89,15 @@ button:disabled {
 
 .section-tabs button {
   position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
   min-width: 92px;
   padding: 0 4px;
   background: transparent;
   color: #494e68;
   font-weight: 750;
-}
-
-.section-tabs button span {
-  margin-right: 8px;
 }
 
 .section-tabs button.active {
@@ -119,15 +119,6 @@ button:disabled {
   position: relative;
   align-self: center;
   justify-self: end;
-}
-
-.topbar-icons {
-  display: flex;
-  align-items: center;
-  justify-self: end;
-  gap: 22px;
-  color: #3f465f;
-  font-size: 1.45rem;
 }
 
 .profile-button {
@@ -378,6 +369,9 @@ button:disabled {
 }
 
 .actions-popover button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   min-height: 34px;
   padding: 0 10px;
   border-radius: 6px;
@@ -480,6 +474,14 @@ button:disabled {
 .action-button.active {
   border-color: var(--color-brand);
   background: var(--color-brand-soft);
+}
+
+.icon-only {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  min-width: 40px;
+  padding: 0;
 }
 
 .danger-button {
@@ -608,13 +610,84 @@ button:disabled {
   gap: 36px;
 }
 
-.watch-player video {
-  display: block;
-  width: 100%;
+.player-shell {
+  position: relative;
   overflow: hidden;
   border-radius: var(--radius-card);
   background: #05060a;
   aspect-ratio: 16 / 9;
+}
+
+.player-shell:fullscreen {
+  display: grid;
+  place-items: center;
+  border-radius: 0;
+}
+
+.watch-player video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #05060a;
+  object-fit: contain;
+}
+
+.player-controls {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: grid;
+  grid-template-columns: auto auto minmax(90px, 1fr) auto auto auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 14px;
+  background: linear-gradient(180deg, transparent, rgb(0 0 0 / 0.78));
+  color: #fff;
+}
+
+.control-button {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  background: rgb(255 255 255 / 0.14);
+  color: #fff;
+}
+
+.control-button:hover {
+  background: rgb(255 255 255 / 0.22);
+}
+
+.time-code {
+  min-width: 42px;
+  font-size: 0.82rem;
+  font-weight: 800;
+  text-align: center;
+}
+
+.seek-control {
+  min-height: auto;
+  padding: 0;
+  border: 0;
+  accent-color: #fff;
+}
+
+.quality-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.quality-control select {
+  width: 96px;
+  min-height: 36px;
+  border-color: rgb(255 255 255 / 0.28);
+  background: rgb(16 18 28 / 0.86);
+  color: #fff;
 }
 
 .watch-meta {
@@ -653,39 +726,75 @@ button:disabled {
   font-size: 0.86rem;
 }
 
-.inline-actions {
-  position: relative;
-  top: auto;
-  right: auto;
-}
-
-.player-settings {
-  position: absolute;
-  top: 12px;
-  right: 0;
-}
-
-.player-settings select {
-  width: 98px;
-  min-height: 38px;
-  padding: 0 12px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-text);
-}
-
-.more-section {
+.comments-section {
   display: grid;
   gap: 14px;
   padding-top: 24px;
   border-top: 1px solid var(--color-border);
 }
 
-.more-section h2,
+.comments-section h2,
 .side-head h2 {
   margin: 0;
   font-size: 1rem;
+}
+
+.comments-section h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.comment-form {
+  display: grid;
+  gap: 10px;
+}
+
+.comment-form textarea {
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  background: #fff;
+  color: var(--color-text);
+  font: inherit;
+}
+
+.comment-form button {
+  justify-self: end;
+  min-height: 38px;
+  padding: 0 16px;
+  border-radius: var(--radius-control);
+  background: var(--color-brand);
+  color: #fff;
+  font-weight: 850;
+}
+
+.comment-list {
+  display: grid;
+  gap: 12px;
+}
+
+.comment-list > p {
+  margin: 0;
+  color: var(--color-muted);
+  font-weight: 750;
+}
+
+.comment {
+  display: flex;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: var(--color-surface);
+}
+
+.comment p {
+  margin: 0;
+  line-height: 1.45;
 }
 
 .side-list {
@@ -995,7 +1104,7 @@ select:focus {
 
 @media (max-width: 1180px) {
   .topbar {
-    grid-template-columns: 170px 1fr auto auto;
+    grid-template-columns: 170px 1fr auto;
     padding: 0 22px;
   }
 
@@ -1033,10 +1142,6 @@ select:focus {
     padding: 0 12px;
   }
 
-  .topbar-icons {
-    display: none;
-  }
-
   .brand-button {
     font-size: 1.75rem;
   }
@@ -1056,7 +1161,7 @@ select:focus {
 
   .section-tabs button {
     min-width: 0;
-    width: 25%;
+    width: 33.333%;
     font-size: 0.82rem;
   }
 
@@ -1114,8 +1219,19 @@ select:focus {
     min-width: 100%;
   }
 
-  .player-settings {
-    position: static;
+  .player-controls {
+    grid-template-columns: auto auto 1fr auto;
+    gap: 8px;
+    padding: 10px;
+  }
+
+  .player-controls .time-code:nth-of-type(2),
+  .quality-control span {
+    display: none;
+  }
+
+  .quality-control select {
+    width: 82px;
   }
 
   .side-video {

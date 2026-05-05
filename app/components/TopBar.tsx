@@ -1,3 +1,5 @@
+import { Bookmark, ChevronDown, History, Home, Settings } from "lucide-react";
+
 import type { Profile } from "../types";
 
 type TopBarProps = {
@@ -21,23 +23,20 @@ export function TopBar(props: TopBarProps) {
       </button>
       <nav className="section-tabs" aria-label="Video sections">
         <button type="button" className={props.activeSection === "home" ? "active" : ""} onClick={props.onHome}>
-          <span aria-hidden="true">⌂</span> Home
-        </button>
-        <button type="button" onClick={props.onHome}>
-          <span aria-hidden="true">⌖</span> Explore
+          <Home aria-hidden="true" size={19} /> Home
         </button>
         <button type="button" className={props.activeSection === "saved" ? "active" : ""} onClick={props.onSaved}>
-          <span aria-hidden="true">□</span> Saved
+          <Bookmark aria-hidden="true" size={19} /> Saved
         </button>
         <button type="button" className={props.activeSection === "history" ? "active" : ""} onClick={props.onHistory}>
-          <span aria-hidden="true">↺</span> History
+          <History aria-hidden="true" size={19} /> History
         </button>
       </nav>
       <div className="profile-menu">
         <button type="button" className="profile-button" onClick={props.onToggleProfileMenu}>
           <span className="profile-avatar" aria-hidden="true" />
           {props.activeProfile?.name || "Select profile"}
-          <span aria-hidden="true">⌄</span>
+          <ChevronDown aria-hidden="true" size={17} />
         </button>
         {props.showProfileMenu && (
           <div className="profile-popover">
@@ -49,15 +48,11 @@ export function TopBar(props: TopBarProps) {
               </button>
             ))}
             <button type="button" onClick={props.onManageProfiles}>
-              <span className="manage-icon" aria-hidden="true">⚙</span>
+              <Settings className="manage-icon" aria-hidden="true" size={19} />
               Manage profiles
             </button>
           </div>
         )}
-      </div>
-      <div className="topbar-icons" aria-hidden="true">
-        <span>♧</span>
-        <span>☰</span>
       </div>
     </header>
   );
