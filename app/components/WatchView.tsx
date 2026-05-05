@@ -1,8 +1,11 @@
-import { FormEvent, type RefObject, useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Bookmark,
   Heart,
-  MessageCircle
+  MessageCircle,
+  ChevronDown,
+  Loader2,
+  Pin,
 } from "lucide-react";
 
 import type { FeedVideo } from "../types";
@@ -14,7 +17,8 @@ type WatchViewProps = {
   subscriptions: Set<string>;
   savedVideoIds: Set<string>;
   likedVideoIds: Set<string>;
-  videoRef: RefObject<HTMLIFrameElement | null>;
+  profileId: string;
+  videoRef: React.RefObject<HTMLIFrameElement | null>;
   onSelectVideo: (video: FeedVideo) => void;
   onSaveVideo: (video: FeedVideo) => void;
   onLikeVideo: (video: FeedVideo) => void;
@@ -22,42 +26,113 @@ type WatchViewProps = {
   onRemoveChannel: (channel: string) => void;
 };
 
+type YtComment = {
+  author: string;
+  content: string;
+  published: string;
+  likes: string;
+  isPinned: boolean;
+  authorIsOwner: boolean;
+};
+
 export function WatchView(props: WatchViewProps) {
-  const [commentDraft, setCommentDraft] = useState("");
-  const [comments, setComments] = useState<string[]>([]);
+  const [description, setDescription] = useState("");
+  const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const [comments, setComments] = useState<YtComment[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [error, setError] = useState("");
+  const [hasMore, setHasMore] = useState(true);
+  const [page, setPage] = useState(0);
+  const [commentsLoaded, setCommentsLoaded] = useState(false);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const commentsSectionRef = useRef<HTMLDivElement | null>(null);
+  const fetchInProgress = useRef(false);
+
   const subscribed = props.subscriptions.has(normalize(props.activeVideo.author));
   const saved = props.savedVideoIds.has(props.activeVideo.id);
   const liked = props.likedVideoIds.has(props.activeVideo.id);
 
-  useEffect(() => {
-    try {
-      const raw = window.localStorage.getItem(commentKey(props.activeVideo.id));
-      setComments(raw ? JSON.parse(raw).filter((value: unknown) => typeof value === "string") : []);
-    } catch {
-      setComments([]);
-    }
-
-    setCommentDraft("");
-  }, [props.activeVideo.id]);
-
   const embedUrl = `https://www.youtube-nocookie.com/embed/${props.activeVideo.id}?autoplay=1&rel=0`;
 
-  function addComment(event: FormEvent) {
-    event.preventDefault();
-    const nextComment = commentDraft.replace(/\s+/g, " ").trim();
+  // Lazy-load comments when the user scrolls past the player into the meta area
+  useEffect(() => {
+    const section = commentsSectionRef.current;
+    if (!section || commentsLoaded) return;
 
-    if (!nextComment) {
-      return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && !commentsLoaded && !fetchInProgress.current) {
+          fetchInProgress.current = true;
+          fetchComments(0);
+        }
+      },
+      { rootMargin: "200px" }
+    );
+
+    observer.observe(section);
+    return () => observer.disconnect();
+  }, [commentsLoaded, props.activeVideo.id]);
+
+  // Infinite scroll: load more when the sentinel becomes visible
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || !commentsLoaded || !hasMore || loadingMore) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !fetchInProgress.current) {
+          fetchInProgress.current = true;
+          fetchComments(page + 1);
+        }
+      },
+      { rootMargin: "400px" }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [commentsLoaded, hasMore, loadingMore, page, props.activeVideo.id]);
+
+  async function fetchComments(nextPage: number) {
+    if (nextPage === 0) {
+      setLoading(true);
+    } else {
+      setLoadingMore(true);
     }
-
-    const nextComments = [nextComment, ...comments];
-    setComments(nextComments);
-    setCommentDraft("");
+    setError("");
 
     try {
-      window.localStorage.setItem(commentKey(props.activeVideo.id), JSON.stringify(nextComments));
-    } catch {
-      // Comments remain visible for this session if storage is unavailable.
+      const res = await fetch("/api/comments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoId: props.activeVideo.id,
+          profileId: props.profileId,
+          page: nextPage,
+        }),
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to load comments.");
+      }
+
+      if (nextPage === 0) {
+        setComments(data.comments || []);
+        setDescription(data.description || "");
+        setCommentsLoaded(true);
+      } else {
+        setComments((prev) => [...prev, ...(data.comments || [])]);
+        setPage(nextPage);
+      }
+
+      setHasMore(data.hasMore === true);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Failed to load comments.");
+    } finally {
+      setLoading(false);
+      setLoadingMore(false);
+      fetchInProgress.current = false;
     }
   }
 
@@ -114,26 +189,95 @@ export function WatchView(props: WatchViewProps) {
               <Bookmark aria-hidden="true" size={19} fill={saved ? "currentColor" : "none"} />
             </button>
           </div>
-          <div className="comments-section">
-            <h2><MessageCircle aria-hidden="true" size={19} /> Comments</h2>
-            <form className="comment-form" onSubmit={addComment}>
-              <textarea
-                value={commentDraft}
-                onChange={(event) => setCommentDraft(event.target.value)}
-                placeholder="Add a comment"
-                rows={3}
-              />
-              <button type="submit">Comment</button>
-            </form>
-            <div className="comment-list">
-              {comments.length === 0 && <p>No comments yet.</p>}
-              {comments.map((comment, index) => (
-                <article className="comment" key={`${comment}-${index}`}>
-                  <span className="avatar">Y</span>
-                  <p>{comment}</p>
-                </article>
-              ))}
+
+          {/* Video description */}
+          {description && (
+            <div className="watch-description">
+              <div className={`description-body ${descriptionExpanded ? "expanded" : "collapsed"}`}>
+                {description}
+              </div>
+              {description.length > 300 && (
+                <button
+                  type="button"
+                  className="description-toggle"
+                  onClick={() => setDescriptionExpanded(!descriptionExpanded)}
+                >
+                  {descriptionExpanded ? "Show less" : "Show more"}
+                  <ChevronDown
+                    aria-hidden="true"
+                    size={16}
+                    style={{
+                      transform: descriptionExpanded ? "rotate(180deg)" : "rotate(0deg)",
+                      transition: "transform 0.2s",
+                    }}
+                  />
+                </button>
+              )}
             </div>
+          )}
+
+          {/* Comments section — lazy-loaded via IntersectionObserver */}
+          <div className="comments-section" ref={commentsSectionRef}>
+            <h2><MessageCircle aria-hidden="true" size={19} /> Comments</h2>
+
+            {loading && (
+              <div className="comments-loader">
+                <Loader2 aria-hidden="true" size={20} className="spinner" />
+                <span>Loading comments…</span>
+              </div>
+            )}
+
+            {error && <p className="comments-error">{error}</p>}
+
+            {commentsLoaded && comments.length === 0 && !loading && (
+              <p className="comments-empty">No comments yet.</p>
+            )}
+
+            {comments.length > 0 && (
+              <div className="comment-list">
+                {comments.map((comment, index) => (
+                  <article className="comment" key={`${comment.author}-${comment.published}-${index}`}>
+                    <span className="avatar">{comment.author.slice(0, 1).toUpperCase()}</span>
+                    <div className="comment-body">
+                      <div className="comment-head">
+                        <strong className="comment-author">
+                          {comment.author}
+                          {comment.authorIsOwner && (
+                            <span className="owner-badge" title="Channel owner">&#x2713;</span>
+                          )}
+                        </strong>
+                        <span className="comment-time">{comment.published}</span>
+                      </div>
+                      <p>{comment.content}</p>
+                      {comment.likes !== "0" && (
+                        <span className="comment-likes">&#x2764; {comment.likes}</span>
+                      )}
+                      {comment.isPinned && (
+                        <span className="comment-pinned">
+                          <Pin aria-hidden="true" size={12} /> Pinned
+                        </span>
+                      )}
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+
+            {/* Sentinel for infinite scroll */}
+            {commentsLoaded && hasMore && (
+              <div ref={sentinelRef} className="comments-sentinel">
+                {loadingMore && (
+                  <div className="comments-loader">
+                    <Loader2 aria-hidden="true" size={20} className="spinner" />
+                    <span>Loading more comments…</span>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {commentsLoaded && !hasMore && comments.length > 0 && (
+              <p className="comments-end">No more comments.</p>
+            )}
           </div>
         </div>
       </div>
@@ -158,8 +302,4 @@ export function WatchView(props: WatchViewProps) {
       </div>
     </section>
   );
-}
-
-function commentKey(videoId: string) {
-  return `gretel.comments.${videoId}`;
 }

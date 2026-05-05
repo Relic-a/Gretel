@@ -578,6 +578,7 @@ export default function Home() {
           videoRef={videoRef}
           savedVideoIds={savedVideoIds}
           likedVideoIds={likedVideoIds}
+          profileId={profileId}
           onSelectVideo={openVideo}
           onSaveVideo={saveVideo}
           onLikeVideo={likeVideo}
