@@ -190,7 +190,34 @@ export default function Home() {
       const player = dashjs.MediaPlayer().create() as DashPlayer;
       player.updateSettings({
         streaming: {
-          abr: { autoSwitchBitrate: { video: true, audio: true } }
+          cacheInitSegments: true,
+          buffer: {
+            initialBufferLevel: 4,
+            bufferTimeDefault: 24,
+            bufferTimeAtTopQuality: 45,
+            bufferTimeAtTopQualityLongForm: 90,
+            longFormContentDurationThreshold: 600,
+            bufferToKeep: 30,
+            fastSwitchEnabled: true
+          },
+          scheduling: {
+            scheduleWhilePaused: true
+          },
+          abr: {
+            autoSwitchBitrate: { video: true, audio: true },
+            rules: {
+              throughputRule: { active: true },
+              bolaRule: { active: true },
+              insufficientBufferRule: {
+                active: true,
+                parameters: {
+                  throughputSafetyFactor: 0.85,
+                  segmentIgnoreCount: 2
+                }
+              },
+              abandonRequestsRule: { active: true }
+            }
+          }
         }
       });
       player.initialize(
@@ -296,6 +323,19 @@ export default function Home() {
     });
     player.setRepresentationForTypeByIndex("video", Number(quality), true);
   }, [quality]);
+
+  function seekActiveVideo(seconds: number) {
+    const player = playerRef.current;
+
+    if (player) {
+      player.seek(seconds);
+      return;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.currentTime = seconds;
+    }
+  }
 
   useEffect(() => {
     if (channelDraft.trim().length < 2) {
@@ -682,6 +722,7 @@ export default function Home() {
           onAddChannel={addChannel}
           onRemoveChannel={removeChannel}
           onQualityChange={setQuality}
+          onSeek={seekActiveVideo}
         />
       )}
 

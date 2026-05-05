@@ -1,4 +1,4 @@
-import { FormEvent, type RefObject, useEffect, useRef, useState } from "react";
+import { FormEvent, type KeyboardEvent, type MouseEvent, type RefObject, useEffect, useRef, useState } from "react";
 import {
   Bookmark,
   Heart,
@@ -29,6 +29,7 @@ type WatchViewProps = {
   onAddChannel: (channel: string) => void;
   onRemoveChannel: (channel: string) => void;
   onQualityChange: (quality: string) => void;
+  onSeek: (seconds: number) => void;
 };
 
 export function WatchView(props: WatchViewProps) {
@@ -43,6 +44,7 @@ export function WatchView(props: WatchViewProps) {
   const subscribed = props.subscriptions.has(normalize(props.activeVideo.author));
   const saved = props.savedVideoIds.has(props.activeVideo.id);
   const liked = props.likedVideoIds.has(props.activeVideo.id);
+  const durationLimit = duration || durationFromText(props.activeVideo.duration);
 
   useEffect(() => {
     const video = props.videoRef.current;
@@ -65,6 +67,9 @@ export function WatchView(props: WatchViewProps) {
     element.addEventListener("pause", sync);
     element.addEventListener("timeupdate", sync);
     element.addEventListener("loadedmetadata", sync);
+    element.addEventListener("durationchange", sync);
+    element.addEventListener("canplay", sync);
+    element.addEventListener("seeked", sync);
     element.addEventListener("volumechange", sync);
 
     return () => {
@@ -72,6 +77,9 @@ export function WatchView(props: WatchViewProps) {
       element.removeEventListener("pause", sync);
       element.removeEventListener("timeupdate", sync);
       element.removeEventListener("loadedmetadata", sync);
+      element.removeEventListener("durationchange", sync);
+      element.removeEventListener("canplay", sync);
+      element.removeEventListener("seeked", sync);
       element.removeEventListener("volumechange", sync);
     };
   }, [props.activeVideo.id, props.videoRef]);
@@ -111,11 +119,46 @@ export function WatchView(props: WatchViewProps) {
   }
 
   function seek(value: string) {
-    const video = props.videoRef.current;
+    const nextTime = Number(value);
 
-    if (video) {
-      video.currentTime = Number(value);
+    if (Number.isFinite(nextTime)) {
+      setCurrentTime(nextTime);
+      props.onSeek(nextTime);
     }
+  }
+
+  function seekBy(offsetSeconds: number) {
+    const nextTime = Math.max(0, Math.min(currentTime + offsetSeconds, durationLimit || currentTime + offsetSeconds));
+    setCurrentTime(nextTime);
+    props.onSeek(nextTime);
+  }
+
+  function handlePlayerKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+    const target = event.target;
+
+    if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement) {
+      return;
+    }
+
+    if (event.key === "ArrowLeft") {
+      event.preventDefault();
+      seekBy(-5);
+    }
+
+    if (event.key === "ArrowRight") {
+      event.preventDefault();
+      seekBy(5);
+    }
+  }
+
+  function focusPlayerShell(event: MouseEvent<HTMLDivElement>) {
+    const target = event.target;
+
+    if (target instanceof HTMLButtonElement || target instanceof HTMLInputElement || target instanceof HTMLSelectElement) {
+      return;
+    }
+
+    playerShellRef.current?.focus();
   }
 
   function toggleMute() {
@@ -157,7 +200,7 @@ export function WatchView(props: WatchViewProps) {
   return (
     <section className="watch-layout open">
       <div className="watch-player">
-        <div className="player-shell" ref={playerShellRef}>
+        <div className="player-shell" ref={playerShellRef} tabIndex={0} onKeyDown={handlePlayerKeyDown} onMouseDown={focusPlayerShell}>
           <video ref={props.videoRef} playsInline poster={thumbnailFor(props.activeVideo)} onClick={togglePlay} />
           <div className="player-controls">
             <button type="button" className="control-button" onClick={togglePlay} aria-label={playing ? "Pause" : "Play"}>
@@ -168,13 +211,14 @@ export function WatchView(props: WatchViewProps) {
               type="range"
               className="seek-control"
               min="0"
-              max={duration || 0}
+              max={durationLimit || 0}
               step="0.1"
-              value={Math.min(currentTime, duration || currentTime)}
-              onChange={(event) => seek(event.target.value)}
+              value={Math.min(currentTime, durationLimit || currentTime)}
+              onInput={(event) => seek(event.currentTarget.value)}
+              onChange={(event) => seek(event.currentTarget.value)}
               aria-label="Seek"
             />
-            <span className="time-code">{formatTime(duration)}</span>
+            <span className="time-code">{formatTime(durationLimit)}</span>
             <button type="button" className="control-button" onClick={toggleMute} aria-label={muted ? "Unmute" : "Mute"}>
               {muted ? <VolumeX aria-hidden="true" size={20} /> : <Volume2 aria-hidden="true" size={20} />}
             </button>
@@ -288,6 +332,24 @@ function formatTime(seconds: number) {
   const remainder = String(rounded % 60).padStart(2, "0");
 
   return `${minutes}:${remainder}`;
+}
+
+function durationFromText(duration: string) {
+  const parts = duration.split(":").map((part) => Number(part));
+
+  if (parts.some((part) => !Number.isFinite(part))) {
+    return 0;
+  }
+
+  if (parts.length === 2) {
+    return parts[0] * 60 + parts[1];
+  }
+
+  if (parts.length === 3) {
+    return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  }
+
+  return 0;
 }
 
 function commentKey(videoId: string) {
