@@ -42,9 +42,10 @@ export async function searchVideos(
       for (const query of queries) {
         const results = await youtube.search(query, { type: "video" });
         const queryVideos: FeedVideo[] = [];
-        const fetchedVideos = results.videos.length;
+        const sourceVideos = getSearchVideoItems(results);
+        const fetchedVideos = sourceVideos.length;
 
-        for (const video of results.videos) {
+        for (const video of sourceVideos) {
           const id = getVideoId(video);
           const duration = getDuration(video);
           const title = getTitle(video);
@@ -98,6 +99,16 @@ export async function searchVideos(
       };
     }
   );
+}
+
+function getSearchVideoItems(results: { videos?: unknown[]; results?: unknown[] }) {
+  if (Array.isArray(results.results)) {
+    return results.results.filter(
+      (item) => item && typeof item === "object" && "type" in item && item.type === "Video"
+    );
+  }
+
+  return Array.isArray(results.videos) ? results.videos : [];
 }
 
 function titleMatchesQuery(title: string, query: string) {

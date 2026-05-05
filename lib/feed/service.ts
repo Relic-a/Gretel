@@ -179,8 +179,11 @@ async function initializePoolOnce(
   }
 
   const timestamp = Date.now();
-  const rootVideos = queries.length > 0 ? await searchVideos(queries, observation, profileId) : [];
-  const rootEmbeddings = await embedVideos(rootVideos);
+  const discoveredRootVideos = queries.length > 0 ? await searchVideos(queries, observation, profileId) : [];
+  const discoveredRootEmbeddings = await embedVideos(discoveredRootVideos);
+  const rootFilter = filterEmbeddingOutliers(discoveredRootVideos, discoveredRootEmbeddings);
+  const rootVideos = rootFilter.videos;
+  const rootEmbeddings = rootFilter.embeddings;
   const originalCentroid = averageNormalizedVectors(
     rootVideos.flatMap((video) => {
       const embedding = rootEmbeddings.get(video.id);
@@ -195,6 +198,8 @@ async function initializePoolOnce(
     status: "ok",
     input: { queries: queries.length },
     output: {
+      discoveredVideos: discoveredRootVideos.length,
+      filteredByEmbeddingVariance: rootFilter.filteredVideos,
       filteredVideos: rootVideos.length,
       embeddedVideos: rootEmbeddings.size,
       centroidCompleted: originalCentroid.length > 0
@@ -294,6 +299,7 @@ async function expandPool(
         }))
         .filter((video) => (video.similarityScore || 0) >= config.feed.similarityThreshold);
 
+      retainVideoEmbeddings(profileId, relatedVideos, embeddings);
       addPoolNodes(profileId, poolKey, "relatedVideos", relatedVideos, Date.now());
 
       return {
@@ -302,6 +308,7 @@ async function expandPool(
           fetchedCandidates: rawRelatedVideos.length,
           skippedVisited: rawRelatedVideos.length - newCandidates.length,
           embeddedCandidates: embeddings.size,
+          retainedEmbeddings: relatedVideos.length,
           admittedVideos: relatedVideos.length,
           filteredByCentroid: newCandidates.length - relatedVideos.length
         }
@@ -411,6 +418,42 @@ function scoreByCentroid(
       similarityScore
     };
   });
+}
+
+function filterEmbeddingOutliers(videos: FeedVideo[], embeddings: Map<string, number[]>) {
+  if (videos.length < 3 || embeddings.size < 3) {
+    return { videos, embeddings, filteredVideos: 0 };
+  }
+
+  const centroid = averageNormalizedVectors(
+    videos.flatMap((video) => {
+      const embedding = embeddings.get(video.id);
+      return embedding ? [embedding] : [];
+    })
+  );
+
+  if (centroid.length === 0) {
+    return { videos, embeddings, filteredVideos: 0 };
+  }
+
+  const distances = videos.map((video) => {
+    const embedding = embeddings.get(video.id);
+    return embedding ? 1 - cosineSimilarity(embedding, centroid) : 1;
+  });
+  const mean = distances.reduce((sum, distance) => sum + distance, 0) / distances.length;
+  const variance = distances.reduce((sum, distance) => sum + (distance - mean) ** 2, 0) / distances.length;
+  const maxDistance = mean + Math.sqrt(variance);
+  const keptVideos = videos.filter((_video, index) => distances[index] <= maxDistance);
+  const keptIds = new Set(keptVideos.map((video) => video.id));
+  const keptEmbeddings = new Map(
+    [...embeddings].filter(([videoId]) => keptIds.has(videoId))
+  );
+
+  return {
+    videos: keptVideos,
+    embeddings: keptEmbeddings,
+    filteredVideos: videos.length - keptVideos.length
+  };
 }
 
 function rescoreCachedVideos(profileId: string, videos: FeedVideo[], centroid: number[]) {

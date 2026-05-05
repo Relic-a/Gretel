@@ -33,8 +33,10 @@ after(() => {
 test("root discovery filters titles, stores a unit centroid, and gates channel videos by centroid similarity", async () => {
   const modules = loadRuntimeModules({
     youtubeClient: createFakeYoutubeClient({
-      searchVideos: [
+      searchResults: [
         rawVideo("root-alpha-1", "alpha root one", "Search"),
+        rawVideo("root-alpha-outlier", "alpha soap update", "Search"),
+        { type: "Channel", id: "channel-card", title: "alpha channel card" },
         rawVideo("root-no-match", "unrelated cooking", "Search"),
         rawVideo("root-alpha-2", "second alpha root", "Search")
       ],
@@ -82,6 +84,7 @@ test("root discovery filters titles, stores a unit centroid, and gates channel v
 
     assert.equal(roots.length, 2);
     assert.equal(roots.every((video) => /alpha/i.test(video.title)), true);
+    assert.equal(roots.some((video) => video.id === "root-alpha-outlier"), false);
     assert.equal(magnitude(centroid), 1);
     assert.deepEqual(channels.map((video) => video.id), ["channel-above"]);
     assert.equal(
@@ -169,6 +172,8 @@ test("pool expansion budgets by score, skips visited videos, enforces threshold,
     assert.equal(related.some((node) => node.id === "root-alpha"), false);
     assert.deepEqual(related.map((node) => node.id), ["related-above"]);
     assert.equal(related[0].parent_video_id, "root-alpha");
+    assert.deepEqual(modules.algorithmStore.getRetainedEmbedding(profile.id, "related-above"), [1, 0]);
+    assert.equal(modules.algorithmStore.getRetainedEmbedding(profile.id, "related-below"), null);
   } finally {
     modules.profileStore.deleteProfile(profile.id);
   }
@@ -701,11 +706,15 @@ function loadRuntimeModules({ youtubeClient, embeddingForText = () => [1, 0] } =
   };
 }
 
-function createFakeYoutubeClient({ searchVideos = [], channelVideos = [], infoForSeed = () => [] } = {}) {
+function createFakeYoutubeClient({ searchVideos = [], searchResults = null, channelVideos = [], infoForSeed = () => [] } = {}) {
   return {
     async search(_query, options = {}) {
       if (options.type === "channel") {
         return { channels: [{ id: "UC-creator-one" }] };
+      }
+
+      if (searchResults) {
+        return { results: searchResults };
       }
 
       return { videos: searchVideos };
@@ -744,6 +753,10 @@ function testConfig(overrides = {}) {
 }
 
 function rootDiscoveryEmbedding(text) {
+  if (/alpha soap update/i.test(text)) {
+    return [0, 1];
+  }
+
   if (/channel below/i.test(text)) {
     return [0.6, 0.8];
   }
@@ -753,6 +766,7 @@ function rootDiscoveryEmbedding(text) {
 
 function rawVideo(id, title, author) {
   return {
+    type: "Video",
     id,
     title,
     author: { name: author },
