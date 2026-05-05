@@ -1,14 +1,8 @@
-import { FormEvent, type KeyboardEvent, type MouseEvent, type RefObject, useEffect, useRef, useState } from "react";
+import { FormEvent, type RefObject, useEffect, useState } from "react";
 import {
   Bookmark,
   Heart,
-  Maximize,
-  MessageCircle,
-  Minimize,
-  Pause,
-  Play,
-  Volume2,
-  VolumeX
+  MessageCircle
 } from "lucide-react";
 
 import type { FeedVideo } from "../types";
@@ -20,78 +14,20 @@ type WatchViewProps = {
   subscriptions: Set<string>;
   savedVideoIds: Set<string>;
   likedVideoIds: Set<string>;
-  quality: string;
-  qualityOptions: Array<{ value: string; label: string }>;
-  videoRef: RefObject<HTMLVideoElement | null>;
+  videoRef: RefObject<HTMLIFrameElement | null>;
   onSelectVideo: (video: FeedVideo) => void;
   onSaveVideo: (video: FeedVideo) => void;
   onLikeVideo: (video: FeedVideo) => void;
   onAddChannel: (channel: string) => void;
   onRemoveChannel: (channel: string) => void;
-  onQualityChange: (quality: string) => void;
-  onSeek: (seconds: number) => void;
 };
 
 export function WatchView(props: WatchViewProps) {
-  const playerShellRef = useRef<HTMLDivElement | null>(null);
-  const [playing, setPlaying] = useState(false);
-  const [muted, setMuted] = useState(false);
-  const [currentTime, setCurrentTime] = useState(0);
-  const [duration, setDuration] = useState(0);
-  const [fullscreen, setFullscreen] = useState(false);
   const [commentDraft, setCommentDraft] = useState("");
   const [comments, setComments] = useState<string[]>([]);
   const subscribed = props.subscriptions.has(normalize(props.activeVideo.author));
   const saved = props.savedVideoIds.has(props.activeVideo.id);
   const liked = props.likedVideoIds.has(props.activeVideo.id);
-  const durationLimit = duration || durationFromText(props.activeVideo.duration);
-
-  useEffect(() => {
-    const video = props.videoRef.current;
-
-    if (!video) {
-      return;
-    }
-
-    const element = video;
-
-    function sync() {
-      setPlaying(!element.paused);
-      setMuted(element.muted);
-      setCurrentTime(element.currentTime || 0);
-      setDuration(Number.isFinite(element.duration) ? element.duration : 0);
-    }
-
-    sync();
-    element.addEventListener("play", sync);
-    element.addEventListener("pause", sync);
-    element.addEventListener("timeupdate", sync);
-    element.addEventListener("loadedmetadata", sync);
-    element.addEventListener("durationchange", sync);
-    element.addEventListener("canplay", sync);
-    element.addEventListener("seeked", sync);
-    element.addEventListener("volumechange", sync);
-
-    return () => {
-      element.removeEventListener("play", sync);
-      element.removeEventListener("pause", sync);
-      element.removeEventListener("timeupdate", sync);
-      element.removeEventListener("loadedmetadata", sync);
-      element.removeEventListener("durationchange", sync);
-      element.removeEventListener("canplay", sync);
-      element.removeEventListener("seeked", sync);
-      element.removeEventListener("volumechange", sync);
-    };
-  }, [props.activeVideo.id, props.videoRef]);
-
-  useEffect(() => {
-    function syncFullscreen() {
-      setFullscreen(document.fullscreenElement === playerShellRef.current);
-    }
-
-    document.addEventListener("fullscreenchange", syncFullscreen);
-    return () => document.removeEventListener("fullscreenchange", syncFullscreen);
-  }, []);
 
   useEffect(() => {
     try {
@@ -104,79 +40,7 @@ export function WatchView(props: WatchViewProps) {
     setCommentDraft("");
   }, [props.activeVideo.id]);
 
-  function togglePlay() {
-    const video = props.videoRef.current;
-
-    if (!video) {
-      return;
-    }
-
-    if (video.paused) {
-      void video.play();
-    } else {
-      video.pause();
-    }
-  }
-
-  function seek(value: string) {
-    const nextTime = Number(value);
-
-    if (Number.isFinite(nextTime)) {
-      setCurrentTime(nextTime);
-      props.onSeek(nextTime);
-    }
-  }
-
-  function seekBy(offsetSeconds: number) {
-    const nextTime = Math.max(0, Math.min(currentTime + offsetSeconds, durationLimit || currentTime + offsetSeconds));
-    setCurrentTime(nextTime);
-    props.onSeek(nextTime);
-  }
-
-  function handlePlayerKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    const target = event.target;
-
-    if (target instanceof HTMLInputElement || target instanceof HTMLSelectElement || target instanceof HTMLTextAreaElement) {
-      return;
-    }
-
-    if (event.key === "ArrowLeft") {
-      event.preventDefault();
-      seekBy(-5);
-    }
-
-    if (event.key === "ArrowRight") {
-      event.preventDefault();
-      seekBy(5);
-    }
-  }
-
-  function focusPlayerShell(event: MouseEvent<HTMLDivElement>) {
-    const target = event.target;
-
-    if (target instanceof HTMLButtonElement || target instanceof HTMLInputElement || target instanceof HTMLSelectElement) {
-      return;
-    }
-
-    playerShellRef.current?.focus();
-  }
-
-  function toggleMute() {
-    const video = props.videoRef.current;
-
-    if (video) {
-      video.muted = !video.muted;
-    }
-  }
-
-  async function toggleFullscreen() {
-    if (document.fullscreenElement) {
-      await document.exitFullscreen();
-      return;
-    }
-
-    await playerShellRef.current?.requestFullscreen();
-  }
+  const embedUrl = `https://www.youtube-nocookie.com/embed/${props.activeVideo.id}?autoplay=1&rel=0`;
 
   function addComment(event: FormEvent) {
     event.preventDefault();
@@ -200,43 +64,17 @@ export function WatchView(props: WatchViewProps) {
   return (
     <section className="watch-layout open">
       <div className="watch-player">
-        <div className="player-shell" ref={playerShellRef} tabIndex={0} onKeyDown={handlePlayerKeyDown} onMouseDown={focusPlayerShell}>
-          <video ref={props.videoRef} playsInline poster={thumbnailFor(props.activeVideo)} onClick={togglePlay} />
-          <div className="player-controls">
-            <button type="button" className="control-button" onClick={togglePlay} aria-label={playing ? "Pause" : "Play"}>
-              {playing ? <Pause aria-hidden="true" size={20} /> : <Play aria-hidden="true" size={20} />}
-            </button>
-            <span className="time-code">{formatTime(currentTime)}</span>
-            <input
-              type="range"
-              className="seek-control"
-              min="0"
-              max={durationLimit || 0}
-              step="0.1"
-              value={Math.min(currentTime, durationLimit || currentTime)}
-              onInput={(event) => seek(event.currentTarget.value)}
-              onChange={(event) => seek(event.currentTarget.value)}
-              aria-label="Seek"
-            />
-            <span className="time-code">{formatTime(durationLimit)}</span>
-            <button type="button" className="control-button" onClick={toggleMute} aria-label={muted ? "Unmute" : "Mute"}>
-              {muted ? <VolumeX aria-hidden="true" size={20} /> : <Volume2 aria-hidden="true" size={20} />}
-            </button>
-            <label className="quality-control">
-              <span>Quality</span>
-              <select value={props.quality} onChange={(event) => props.onQualityChange(event.target.value)}>
-                <option value="auto">Auto</option>
-                {props.qualityOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button type="button" className="control-button" onClick={toggleFullscreen} aria-label={fullscreen ? "Exit fullscreen" : "Fullscreen"}>
-              {fullscreen ? <Minimize aria-hidden="true" size={20} /> : <Maximize aria-hidden="true" size={20} />}
-            </button>
-          </div>
+        <div className="player-shell">
+          <iframe
+            ref={props.videoRef}
+            src={embedUrl}
+            width="100%"
+            height="100%"
+            allow="autoplay; encrypted-media; fullscreen"
+            allowFullScreen
+            style={{ border: 0, display: "block" }}
+            title={props.activeVideo.title}
+          />
         </div>
         <div className="watch-meta">
           <h1>{props.activeVideo.title}</h1>
@@ -320,36 +158,6 @@ export function WatchView(props: WatchViewProps) {
       </div>
     </section>
   );
-}
-
-function formatTime(seconds: number) {
-  if (!Number.isFinite(seconds) || seconds <= 0) {
-    return "0:00";
-  }
-
-  const rounded = Math.floor(seconds);
-  const minutes = Math.floor(rounded / 60);
-  const remainder = String(rounded % 60).padStart(2, "0");
-
-  return `${minutes}:${remainder}`;
-}
-
-function durationFromText(duration: string) {
-  const parts = duration.split(":").map((part) => Number(part));
-
-  if (parts.some((part) => !Number.isFinite(part))) {
-    return 0;
-  }
-
-  if (parts.length === 2) {
-    return parts[0] * 60 + parts[1];
-  }
-
-  if (parts.length === 3) {
-    return parts[0] * 3600 + parts[1] * 60 + parts[2];
-  }
-
-  return 0;
 }
 
 function commentKey(videoId: string) {

@@ -1,7 +1,6 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import type { MediaPlayerClass, Representation } from "dashjs";
 
 import { ProfileModal } from "./components/ProfileModal";
 import { TopBar } from "./components/TopBar";
@@ -9,8 +8,6 @@ import { FeedView } from "./components/FeedView";
 import { WatchView } from "./components/WatchView";
 import { normalize } from "./components/video-utils";
 import type { ChannelResult, FeedResponse, FeedVideo, Profile, PublicGretelConfig } from "./types";
-
-type DashPlayer = MediaPlayerClass;
 
 const clientStateKey = "gretel.clientState.v2";
 const feedCachePrefix = "gretel.feedCache.v1";
@@ -34,16 +31,13 @@ export default function Home() {
   const [savedVideoIds, setSavedVideoIds] = useState<Set<string>>(new Set());
   const [likedVideoIds, setLikedVideoIds] = useState<Set<string>>(new Set());
   const [activeVideo, setActiveVideo] = useState<FeedVideo | null>(null);
-  const [quality, setQuality] = useState("auto");
-  const [qualityOptions, setQualityOptions] = useState<Array<{ value: string; label: string }>>([]);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [feedEnd, setFeedEnd] = useState(false);
   const [booted, setBooted] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [manageProfiles, setManageProfiles] = useState(false);
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const playerRef = useRef<DashPlayer | null>(null);
+  const videoRef = useRef<HTMLIFrameElement | null>(null);
   const pendingVideoIdRef = useRef<string | null>(null);
   const subscriptions = useMemo(
     () => new Set(channels.map((channel) => normalize(channel))),
@@ -169,105 +163,14 @@ export default function Home() {
   }, [booted, profileId, feed]);
 
   useEffect(() => {
-    if (!activeVideo || !videoRef.current) {
+    if (!activeVideo || !profileId) {
       return;
     }
 
-    let disposed = false;
-    const video = activeVideo;
-    setQuality("auto");
-    setQualityOptions([]);
-
-    async function loadPlayer() {
-      const dashModule = await import("dashjs");
-      const dashjs = dashModule as typeof import("dashjs");
-
-      if (disposed || !videoRef.current) {
-        return;
-      }
-
-      playerRef.current?.destroy();
-      const player = dashjs.MediaPlayer().create() as DashPlayer;
-      player.updateSettings({
-        streaming: {
-          cacheInitSegments: true,
-          buffer: {
-            initialBufferLevel: 4,
-            bufferTimeDefault: 24,
-            bufferTimeAtTopQuality: 45,
-            bufferTimeAtTopQualityLongForm: 90,
-            longFormContentDurationThreshold: 600,
-            bufferToKeep: 30,
-            fastSwitchEnabled: true
-          },
-          scheduling: {
-            scheduleWhilePaused: true
-          },
-          abr: {
-            autoSwitchBitrate: { video: true, audio: true },
-            rules: {
-              throughputRule: { active: true },
-              bolaRule: { active: true },
-              insufficientBufferRule: {
-                active: true,
-                parameters: {
-                  throughputSafetyFactor: 0.85,
-                  segmentIgnoreCount: 2
-                }
-              },
-              abandonRequestsRule: { active: true }
-            }
-          }
-        }
-      });
-      player.initialize(
-        videoRef.current,
-        `/api/videos/${video.id}/stream?profileId=${encodeURIComponent(profileId)}`,
-        true
-      );
-      player.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED, () => {
-        const bitrates = player.getRepresentationsByType("video");
-        setQualityOptions(
-          bitrates.map((bitrate, index) => ({
-            value: String(index),
-            label: labelForRepresentation(bitrate)
-          }))
-        );
-      });
-      player.on(dashjs.MediaPlayer.events.ERROR, () => {
-        setError("Could not open this video stream.");
-      });
-      playerRef.current = player;
-    }
-
-    loadPlayer().catch(() => setError("Could not open this video stream."));
-
-    return () => {
-      disposed = true;
-      playerRef.current?.destroy();
-      playerRef.current = null;
-    };
-  }, [activeVideo, profileId]);
-
-  useEffect(() => {
-    if (!activeVideo || !profileId || !videoRef.current) {
-      return;
-    }
-
-    const element = videoRef.current;
     let sent = false;
 
     async function reportWatch() {
-      if (sent || !Number.isFinite(element.duration) || element.duration <= 0) {
-        return;
-      }
-
-      const watchedSeconds = Math.max(element.currentTime, 0);
-      const watchedRatio = watchedSeconds / element.duration;
-
-      const saveThreshold = config?.learning.watchSaveThreshold ?? 0.5;
-
-      if (watchedRatio < saveThreshold && !element.ended) {
+      if (sent) {
         return;
       }
 
@@ -280,8 +183,8 @@ export default function Home() {
           body: JSON.stringify({
             profileId,
             video: activeVideo,
-            watchedSeconds,
-            durationSeconds: element.duration
+            watchedSeconds: 0,
+            durationSeconds: 0
           })
         });
         const data = await response.json();
@@ -295,47 +198,8 @@ export default function Home() {
       }
     }
 
-    element.addEventListener("timeupdate", reportWatch);
-    element.addEventListener("ended", reportWatch);
-
-    return () => {
-      element.removeEventListener("timeupdate", reportWatch);
-      element.removeEventListener("ended", reportWatch);
-    };
-  }, [activeVideo, config?.learning.watchSaveThreshold, profileId, section]);
-
-  useEffect(() => {
-    const player = playerRef.current;
-
-    if (!player) {
-      return;
-    }
-
-    if (quality === "auto") {
-      player.updateSettings({
-        streaming: { abr: { autoSwitchBitrate: { video: true } } }
-      });
-      return;
-    }
-
-    player.updateSettings({
-      streaming: { abr: { autoSwitchBitrate: { video: false } } }
-    });
-    player.setRepresentationForTypeByIndex("video", Number(quality), true);
-  }, [quality]);
-
-  function seekActiveVideo(seconds: number) {
-    const player = playerRef.current;
-
-    if (player) {
-      player.seek(seconds);
-      return;
-    }
-
-    if (videoRef.current) {
-      videoRef.current.currentTime = seconds;
-    }
-  }
+    void reportWatch();
+  }, [activeVideo, profileId, section]);
 
   useEffect(() => {
     if (channelDraft.trim().length < 2) {
@@ -711,8 +575,6 @@ export default function Home() {
           activeVideo={activeVideo}
           sideVideos={sideVideos}
           subscriptions={subscriptions}
-          quality={quality}
-          qualityOptions={qualityOptions}
           videoRef={videoRef}
           savedVideoIds={savedVideoIds}
           likedVideoIds={likedVideoIds}
@@ -721,8 +583,6 @@ export default function Home() {
           onLikeVideo={likeVideo}
           onAddChannel={addChannel}
           onRemoveChannel={removeChannel}
-          onQualityChange={setQuality}
-          onSeek={seekActiveVideo}
         />
       )}
 
@@ -804,14 +664,6 @@ function orderedSideVideos(
       (order.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
       (order.get(right.id) ?? Number.MAX_SAFE_INTEGER)
   );
-}
-
-function labelForRepresentation(representation: Representation) {
-  if (representation.height > 0) {
-    return `${representation.height}p`;
-  }
-
-  return `${Math.round(representation.bitrateInKbit)} kbps`;
 }
 
 function readSavedState() {
