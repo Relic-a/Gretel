@@ -18,10 +18,16 @@ export async function GET(
 
   try {
     const youtube = await getYoutubeClient(profile.id);
-    const info = await youtube.getBasicInfo(videoId);
+    const info = await youtube.getBasicInfo(videoId, { client: "ANDROID" });
     const manifest = await info.toDash({
+      url_transformer: (streamUrl) => {
+        const proxyUrl = new URL(`/api/videos/${encodeURIComponent(videoId)}/stream/proxy`, request.url);
+        proxyUrl.searchParams.set("profileId", profile.id);
+        proxyUrl.searchParams.set("url", streamUrl.toString());
+        return proxyUrl;
+      },
       manifest_options: {
-        include_thumbnails: true
+        include_thumbnails: false
       }
     });
 
