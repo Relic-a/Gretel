@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
-import type { MediaPlayerClass } from "dashjs";
+import type { MediaPlayerClass, Representation } from "dashjs";
 
 import { ProfileModal } from "./components/ProfileModal";
 import { TopBar } from "./components/TopBar";
@@ -10,10 +10,7 @@ import { WatchView } from "./components/WatchView";
 import { normalize } from "./components/video-utils";
 import type { ChannelResult, FeedResponse, FeedVideo, Profile, PublicGretelConfig } from "./types";
 
-type DashPlayer = MediaPlayerClass & {
-  getBitrateInfoListFor: (mediaType: "video") => Array<{ height?: number; bitrate: number }>;
-  setQualityFor: (mediaType: "video", quality: number, forceReplace?: boolean) => void;
-};
+type DashPlayer = MediaPlayerClass;
 
 const clientStateKey = "gretel.clientState.v2";
 const feedCachePrefix = "gretel.feedCache.v1";
@@ -202,11 +199,11 @@ export default function Home() {
         true
       );
       player.on(dashjs.MediaPlayer.events.STREAM_INITIALIZED, () => {
-        const bitrates = player.getBitrateInfoListFor("video");
+        const bitrates = player.getRepresentationsByType("video");
         setQualityOptions(
           bitrates.map((bitrate, index) => ({
             value: String(index),
-            label: bitrate.height ? `${bitrate.height}p` : `${Math.round(bitrate.bitrate / 1000)} kbps`
+            label: labelForRepresentation(bitrate)
           }))
         );
       });
@@ -297,7 +294,7 @@ export default function Home() {
     player.updateSettings({
       streaming: { abr: { autoSwitchBitrate: { video: false } } }
     });
-    player.setQualityFor("video", Number(quality), true);
+    player.setRepresentationForTypeByIndex("video", Number(quality), true);
   }, [quality]);
 
   useEffect(() => {
@@ -766,6 +763,14 @@ function orderedSideVideos(
       (order.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
       (order.get(right.id) ?? Number.MAX_SAFE_INTEGER)
   );
+}
+
+function labelForRepresentation(representation: Representation) {
+  if (representation.height > 0) {
+    return `${representation.height}p`;
+  }
+
+  return `${Math.round(representation.bitrateInKbit)} kbps`;
 }
 
 function readSavedState() {
