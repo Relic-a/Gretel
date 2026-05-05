@@ -114,6 +114,7 @@ export async function POST(request: Request) {
 function extractComments(page: any) {
   const results: Array<{
     author: string;
+    authorAvatarUrl?: string;
     content: string;
     published: string;
     likes: string;
@@ -125,8 +126,13 @@ function extractComments(page: any) {
     const comment = thread.comment;
     if (!comment) continue;
 
+    const authorAvatarUrl = comment.author?.thumbnails && Array.isArray(comment.author.thumbnails) && comment.author.thumbnails.length > 0
+      ? String(comment.author.thumbnails[0].url ?? "")
+      : undefined;
+
     results.push({
       author: comment.author?.name?.toString() ?? "Unknown",
+      authorAvatarUrl: authorAvatarUrl || comment.creator_thumbnail_url || undefined,
       content: comment.content?.toString() ?? "",
       published: comment.published_time ?? "",
       likes: comment.like_count ?? "0",

@@ -7,6 +7,7 @@ import { normalizeChannelKey } from "../profile-store";
 import { errorFields, logWarn } from "../logger";
 import {
   getAuthor,
+  getAuthorAvatarUrl,
   getChannelVideoAuthor,
   getDuration,
   getPublishedAt,
@@ -60,6 +61,7 @@ export async function searchVideos(
             id,
             title,
             author,
+            channelAvatarUrl: getAuthorAvatarUrl(video),
             duration,
             query,
             thumbnailUrl: getThumbnailUrl(video) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
@@ -165,6 +167,7 @@ export async function fetchChannelVideos(
               id,
               title: getTitle(video),
               author,
+              channelAvatarUrl: getAuthorAvatarUrl(video),
               duration,
               query: channelName,
               thumbnailUrl: getThumbnailUrl(video) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,

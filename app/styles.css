@@ -420,6 +420,16 @@ button:disabled {
   font-weight: 900;
 }
 
+img.avatar {
+  display: block;
+  object-fit: cover;
+  background: var(--color-surface-soft);
+}
+
+.avatar-placeholder {
+  background: #000 !important;
+}
+
 .avatar.large {
   width: 44px;
   height: 44px;

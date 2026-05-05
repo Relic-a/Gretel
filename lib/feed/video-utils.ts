@@ -353,6 +353,39 @@ function getThumbnailFromValue(value: unknown): string {
   return "";
 }
 
+export function getAuthorAvatarUrl(video: unknown): string | undefined {
+  if (!video || typeof video !== "object") {
+    return undefined;
+  }
+
+  const author = "author" in video ? (video as Record<string, unknown>).author : undefined;
+
+  if (!author || typeof author !== "object") {
+    return undefined;
+  }
+
+  if (!("thumbnails" in author)) {
+    return undefined;
+  }
+
+  const thumbnails = (author as Record<string, unknown>).thumbnails;
+
+  if (!Array.isArray(thumbnails) || thumbnails.length === 0) {
+    return undefined;
+  }
+
+  for (const thumb of thumbnails) {
+    if (thumb && typeof thumb === "object" && "url" in thumb) {
+      const url = getText((thumb as Record<string, unknown>).url);
+      if (url) {
+        return normalizeThumbnailUrl(url);
+      }
+    }
+  }
+
+  return undefined;
+}
+
 function normalizeThumbnailUrl(url: string) {
   return url.startsWith("//") ? `https:${url}` : url;
 }

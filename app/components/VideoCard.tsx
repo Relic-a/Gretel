@@ -35,7 +35,11 @@ export function VideoCard(props: VideoCardProps) {
       <div className="video-meta">
         <h2>{props.video.title}</h2>
         <div className="channel-line">
-          <span className="avatar">{props.video.author.slice(0, 1).toUpperCase()}</span>
+          {props.video.channelAvatarUrl ? (
+            <img className="avatar" src={props.video.channelAvatarUrl} alt="" loading="lazy" />
+          ) : (
+            <span className="avatar">{props.video.author.slice(0, 1).toUpperCase()}</span>
+          )}
           <span>{props.video.author}</span>
           <span className="verified-dot" aria-label="Verified channel" />
         </div>

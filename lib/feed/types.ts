@@ -4,6 +4,7 @@ export type FeedVideo = {
   id: string;
   title: string;
   author: string;
+  channelAvatarUrl?: string;
   duration: string;
   query: string;
   thumbnailUrl?: string;

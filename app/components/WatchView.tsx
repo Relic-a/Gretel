@@ -28,6 +28,7 @@ type WatchViewProps = {
 
 type YtComment = {
   author: string;
+  authorAvatarUrl?: string;
   content: string;
   published: string;
   likes: string;
@@ -155,7 +156,11 @@ export function WatchView(props: WatchViewProps) {
           <h1>{props.activeVideo.title}</h1>
           <div className="watch-actions-row">
             <div className="watch-channel">
-              <span className="avatar large">{props.activeVideo.author.slice(0, 1).toUpperCase()}</span>
+              {props.activeVideo.channelAvatarUrl ? (
+                <img className="avatar large" src={props.activeVideo.channelAvatarUrl} alt="" />
+              ) : (
+                <span className="avatar large avatar-placeholder" />
+              )}
               <div>
                 <strong>{props.activeVideo.author}</strong>
                 <span>{formatPublished(props.activeVideo)}</span>
@@ -237,7 +242,11 @@ export function WatchView(props: WatchViewProps) {
               <div className="comment-list">
                 {comments.map((comment, index) => (
                   <article className="comment" key={`${comment.author}-${comment.published}-${index}`}>
-                    <span className="avatar">{comment.author.slice(0, 1).toUpperCase()}</span>
+                    {comment.authorAvatarUrl ? (
+                      <img className="avatar" src={comment.authorAvatarUrl} alt="" loading="lazy" />
+                    ) : (
+                      <span className="avatar avatar-placeholder" />
+                    )}
                     <div className="comment-body">
                       <div className="comment-head">
                         <strong className="comment-author">
