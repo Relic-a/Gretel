@@ -58,7 +58,7 @@ export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
     recommendationSeeds: 4,
     minVideosPerQuery: 3,
     minVideosPerChannel: 3,
-    similarityThreshold: 0.32,
+    similarityThreshold: 0.45,
     coldStartInteractionThreshold: 12,
     expansionSeedCount: 4,
     minRelatedVideosPerSeed: 1,
