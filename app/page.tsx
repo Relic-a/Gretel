@@ -16,6 +16,7 @@ type DashPlayer = MediaPlayerClass & {
 };
 
 const clientStateKey = "gretel.clientState.v2";
+const feedCachePrefix = "gretel.feedCache.v1";
 const starterTags = ["AI engineering", "TypeScript", "product design"];
 type Section = "home" | "saved" | "history";
 
@@ -77,6 +78,12 @@ export default function Home() {
       setBooted(true);
 
       if (selectedProfileId) {
+        const cachedFeed = readCachedFeed(selectedProfileId);
+
+        if (cachedFeed) {
+          setFeed(cachedFeed);
+        }
+
         await loadSavedVideos(selectedProfileId);
         await loadLikedVideos(selectedProfileId);
       }
@@ -108,6 +115,14 @@ export default function Home() {
 
     window.localStorage.setItem(clientStateKey, JSON.stringify({ profileId, tags, channels }));
   }, [booted, profileId, tags, channels]);
+
+  useEffect(() => {
+    if (!booted || !profileId || !feed?.videos?.length) {
+      return;
+    }
+
+    writeCachedFeed(profileId, feed);
+  }, [booted, profileId, feed]);
 
   useEffect(() => {
     if (!activeVideo || !videoRef.current) {
@@ -324,6 +339,7 @@ export default function Home() {
       setHistoryVideos([]);
       setSavedVideoIds(new Set());
       setLikedVideoIds(new Set());
+      clearCachedFeed(data.profileId || "");
 
       await requestFeed({
         nextProfileId: data.profileId || "",
@@ -573,7 +589,7 @@ export default function Home() {
         onToggleProfileMenu={() => setShowProfileMenu(!showProfileMenu)}
         onSelectProfile={(nextProfileId) => {
           setProfileId(nextProfileId);
-          setFeed(null);
+          setFeed(readCachedFeed(nextProfileId));
           setActiveVideo(null);
           setSection("home");
           setSavedVideos([]);
@@ -615,7 +631,7 @@ export default function Home() {
 
       {error && !manageProfiles && !needsProfile && <p className="error page-error">{error}</p>}
 
-      {booted && visibleVideos.length > 0 && !activeVideo && (
+      {booted && (visibleVideos.length > 0 || (loading && section === "home")) && !activeVideo && (
         <FeedView
           title={section === "home" ? "Your Feed" : section === "saved" ? "Saved" : "History"}
           subtitle={
@@ -712,5 +728,59 @@ function readSavedState() {
     };
   } catch {
     return null;
+  }
+}
+
+function feedCacheKey(profileId: string) {
+  return `${feedCachePrefix}.${profileId}`;
+}
+
+function readCachedFeed(profileId: string) {
+  try {
+    const raw = window.localStorage.getItem(feedCacheKey(profileId));
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw);
+
+    if (!Array.isArray(parsed.videos)) {
+      return null;
+    }
+
+    return {
+      ...parsed,
+      videos: parsed.videos.filter((video: unknown) => Boolean(video && typeof video === "object"))
+    } as FeedResponse;
+  } catch {
+    return null;
+  }
+}
+
+function writeCachedFeed(profileId: string, feed: FeedResponse) {
+  try {
+    window.localStorage.setItem(
+      feedCacheKey(profileId),
+      JSON.stringify({
+        ...feed,
+        videos: feed.videos.slice(0, 96),
+        cachedAt: Date.now()
+      })
+    );
+  } catch {
+    // The feed still works if the browser storage quota is full.
+  }
+}
+
+function clearCachedFeed(profileId: string) {
+  if (!profileId) {
+    return;
+  }
+
+  try {
+    window.localStorage.removeItem(feedCacheKey(profileId));
+  } catch {
+    // Ignore storage failures.
   }
 }

@@ -42,11 +42,12 @@ export function ProfileModal(props: ProfileModalProps) {
 
         {props.manageProfiles && (
           <div className="profile-list">
+            <strong>Your profiles ({props.profiles.length})</strong>
             {props.profiles.map((profile) => (
               <div className="profile-row" key={profile.id}>
-                <span>{profile.name}</span>
-                <button type="button" className="danger-button" onClick={() => props.onDeleteProfile(profile.id)}>
-                  Delete
+                <span><span className="profile-avatar small" aria-hidden="true" />{profile.name}</span>
+                <button type="button" className="icon-button danger-icon" onClick={() => props.onDeleteProfile(profile.id)} aria-label={`Delete ${profile.name}`}>
+                  ⌫
                 </button>
               </div>
             ))}
@@ -54,14 +55,20 @@ export function ProfileModal(props: ProfileModalProps) {
         )}
 
         <form onSubmit={props.onSubmit} className="setup-form">
-          <input
-            value={props.profileName}
-            onChange={(event) => props.onProfileNameChange(event.target.value)}
-            placeholder="Profile name"
-          />
+          {props.manageProfiles && <h2>Add a new profile</h2>}
+          {!props.manageProfiles && <p className="modal-copy">Tell us what you're into. We'll build your personalized feed.</p>}
+          <label>
+            <span>Profile name</span>
+            <small>Give your profile a name so you can easily switch between them.</small>
+            <input
+              value={props.profileName}
+              onChange={(event) => props.onProfileNameChange(event.target.value)}
+              placeholder="Profile name"
+            />
+          </label>
 
           <TagEditor
-            label="Tags"
+            label="Topics"
             values={props.tags}
             draft={props.tagDraft}
             setDraft={props.onTagDraftChange}

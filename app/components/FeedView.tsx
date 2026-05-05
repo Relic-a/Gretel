@@ -31,6 +31,8 @@ export function FeedView(props: FeedViewProps) {
     () => props.videos.slice(0, visibleCount),
     [props.videos, visibleCount]
   );
+  const currentPage = Math.max(1, Math.ceil(visibleVideos.length / batchSize));
+  const pageCount = Math.max(1, Math.ceil(props.videos.length / batchSize));
 
   useEffect(() => {
     const feedKey = props.videos[0]?.id || "";
@@ -84,6 +86,9 @@ export function FeedView(props: FeedViewProps) {
           <button type="button" className="chip">Programming</button>
           <button type="button" className="chip">Productivity</button>
           <button type="button" className="chip">AI</button>
+          <button type="button" className="filter-button" aria-label="Open filters">
+            <span aria-hidden="true">≡</span> Filters
+          </button>
         </div>
       </div>
 
@@ -97,7 +102,7 @@ export function FeedView(props: FeedViewProps) {
               video={video}
               saved={props.savedVideoIds.has(video.id)}
               liked={props.likedVideoIds.has(video.id)}
-              showSubscribe={false}
+              showSubscribe
               subscribed={subscribed}
               onSelectVideo={props.onSelectVideo}
               onSaveVideo={props.onSaveVideo}
@@ -107,11 +112,62 @@ export function FeedView(props: FeedViewProps) {
             />
           );
         })}
+        {props.loading &&
+          Array.from({ length: visibleVideos.length === 0 ? batchSize : 4 }).map((_, index) => (
+            <VideoCardSkeleton key={`feed-skeleton-${index}`} />
+          ))}
       </div>
 
       <div ref={loaderRef} className="feed-loader">
-        {props.loading ? "Loading more videos..." : visibleVideos.length < props.videos.length ? "Loading..." : ""}
+        {visibleVideos.length > 0 && (
+          <div className="feed-pagination" aria-label="Feed pagination">
+            <button type="button" aria-label="Previous page" onClick={() => setVisibleCount(Math.max(batchSize, visibleCount - batchSize))}>‹</button>
+            {[1, 2, 3].filter((page) => page <= pageCount).map((page) => (
+              <button
+                type="button"
+                key={page}
+                className={currentPage === page ? "active" : ""}
+                onClick={() => setVisibleCount(Math.min(page * batchSize, props.videos.length))}
+              >
+                {page}
+              </button>
+            ))}
+            {pageCount > 4 && <span>...</span>}
+            {pageCount > 3 && (
+              <button
+                type="button"
+                className={currentPage === pageCount ? "active" : ""}
+                onClick={() => setVisibleCount(props.videos.length)}
+              >
+                {pageCount}
+              </button>
+            )}
+            <button type="button" aria-label="Next page" onClick={() => setVisibleCount(Math.min(props.videos.length, visibleCount + batchSize))}>›</button>
+            <span className="feed-count">Showing 1-{Math.min(visibleVideos.length, props.videos.length)} of {props.videos.length} videos</span>
+          </div>
+        )}
+        <span className="loader-copy">
+          {props.loading ? "Loading more videos..." : visibleVideos.length < props.videos.length ? "Loading..." : ""}
+        </span>
       </div>
     </section>
+  );
+}
+
+function VideoCardSkeleton() {
+  return (
+    <article className="video-card skeleton-card" aria-hidden="true">
+      <div className="skeleton skeleton-thumb" />
+      <div className="video-meta">
+        <div className="skeleton skeleton-line wide" />
+        <div className="skeleton skeleton-line medium" />
+        <div className="skeleton skeleton-channel">
+          <span className="skeleton skeleton-avatar" />
+          <span className="skeleton skeleton-line short" />
+        </div>
+        <div className="skeleton skeleton-button" />
+        <div className="skeleton skeleton-line tiny" />
+      </div>
+    </article>
   );
 }

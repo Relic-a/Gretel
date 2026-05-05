@@ -23,6 +23,9 @@ export function TopBar(props: TopBarProps) {
         <button type="button" className={props.activeSection === "home" ? "active" : ""} onClick={props.onHome}>
           <span aria-hidden="true">⌂</span> Home
         </button>
+        <button type="button" onClick={props.onHome}>
+          <span aria-hidden="true">⌖</span> Explore
+        </button>
         <button type="button" className={props.activeSection === "saved" ? "active" : ""} onClick={props.onSaved}>
           <span aria-hidden="true">□</span> Saved
         </button>
@@ -42,13 +45,19 @@ export function TopBar(props: TopBarProps) {
               <button type="button" key={profile.id} onClick={() => props.onSelectProfile(profile.id)}>
                 <span className="profile-avatar small" aria-hidden="true" />
                 {profile.name}
+                {profile.id === props.activeProfile?.id && <span className="selected-mark" aria-hidden="true">✓</span>}
               </button>
             ))}
             <button type="button" onClick={props.onManageProfiles}>
+              <span className="manage-icon" aria-hidden="true">⚙</span>
               Manage profiles
             </button>
           </div>
         )}
+      </div>
+      <div className="topbar-icons" aria-hidden="true">
+        <span>♧</span>
+        <span>☰</span>
       </div>
     </header>
   );
