@@ -14,6 +14,7 @@ export type StoredPoolNode = FeedVideo & {
   firstSeenAt: number;
   lastServedAt: number;
   servedCount: number;
+  impressionCount: number;
 };
 
 export function createFeedPoolKey(input: {
@@ -52,6 +53,7 @@ export function ensureFeedPoolTables() {
       first_seen_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
       served_count INTEGER NOT NULL DEFAULT 0,
+      impression_count INTEGER NOT NULL DEFAULT 0,
       last_served_at INTEGER,
       PRIMARY KEY (profile_id, pool_key, video_id),
       FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
@@ -69,6 +71,7 @@ export function ensureFeedPoolTables() {
   `);
 
   ensureColumn("feed_pool_state", "last_expanded_at", "INTEGER NOT NULL DEFAULT 0");
+  ensureColumn("feed_pool_nodes", "impression_count", "INTEGER NOT NULL DEFAULT 0");
 }
 
 export function getFeedPoolState(profileId: string, poolKey: string): FeedPoolState | null {
@@ -160,7 +163,8 @@ export function listPoolNodes(profileId: string, poolKey: string) {
   const rows = getDatabase()
     .prepare(
       `SELECT node_id, video_json, similarity_score, parent_engagement_score,
-              first_seen_at, COALESCE(last_served_at, 0) AS last_served_at, served_count
+              first_seen_at, COALESCE(last_served_at, 0) AS last_served_at,
+              served_count, impression_count
        FROM feed_pool_nodes
        WHERE profile_id = ? AND pool_key = ?
        ORDER BY first_seen_at ASC`
@@ -173,6 +177,7 @@ export function listPoolNodes(profileId: string, poolKey: string) {
       first_seen_at: number;
       last_served_at: number;
       served_count: number;
+      impression_count: number;
     }>;
 
   return rows.flatMap<StoredPoolNode>((row) => {
@@ -187,7 +192,8 @@ export function listPoolNodes(profileId: string, poolKey: string) {
         poolNodeId: row.node_id,
         firstSeenAt: row.first_seen_at,
         lastServedAt: row.last_served_at,
-        servedCount: row.served_count
+        servedCount: row.served_count || 0,
+        impressionCount: row.impression_count || 0
       }];
     } catch {
       return [];

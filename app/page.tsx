@@ -42,6 +42,8 @@ export default function Home() {
   const videoRef = useRef<HTMLIFrameElement | null>(null);
   const pendingVideoIdRef = useRef<string | null>(null);
   const feedRequestIdRef = useRef(0);
+  const pendingImpressionIdsRef = useRef<Set<string>>(new Set());
+  const impressionTimerRef = useRef<number | null>(null);
   const subscriptions = useMemo(
     () => new Set(channels.map((channel) => normalize(channel))),
     [channels]
@@ -164,6 +166,14 @@ export default function Home() {
 
     writeCachedFeed(profileId, feed);
   }, [booted, profileId, feed]);
+
+  useEffect(() => {
+    return () => {
+      if (impressionTimerRef.current !== null) {
+        window.clearTimeout(impressionTimerRef.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (!activeVideo || !profileId) {
@@ -463,6 +473,37 @@ export default function Home() {
     setLikedVideoIds(new Set(data.likedVideoIds || []));
   }
 
+  function recordVideoImpression(video: FeedVideo) {
+    if (!profileId) {
+      return;
+    }
+
+    pendingImpressionIdsRef.current.add(video.id);
+
+    if (impressionTimerRef.current !== null) {
+      return;
+    }
+
+    const targetProfileId = profileId;
+    impressionTimerRef.current = window.setTimeout(async () => {
+      const videoIds = [...pendingImpressionIdsRef.current];
+      pendingImpressionIdsRef.current.clear();
+      impressionTimerRef.current = null;
+
+      if (videoIds.length === 0) {
+        return;
+      }
+
+      try {
+        await fetch("/api/impressions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ profileId: targetProfileId, videoIds })
+        });
+      } catch {}
+    }, 250);
+  }
+
   async function requestFeed(input: {
     nextProfileId?: string;
     nextTags?: string[];
@@ -651,6 +692,7 @@ export default function Home() {
           onSelectVideo={openVideo}
           onSaveVideo={saveVideo}
           onLikeVideo={likeVideo}
+          onVideoImpression={section === "home" ? recordVideoImpression : undefined}
           onAddChannel={addChannel}
           onRemoveChannel={removeChannel}
         />

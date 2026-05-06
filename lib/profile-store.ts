@@ -110,6 +110,16 @@ export function getDatabase() {
         PRIMARY KEY (profile_id, pool_key, video_id),
         FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS video_impressions (
+        profile_id TEXT NOT NULL,
+        video_id TEXT NOT NULL,
+        impression_count INTEGER NOT NULL DEFAULT 0,
+        first_seen_at INTEGER NOT NULL,
+        last_seen_at INTEGER NOT NULL,
+        PRIMARY KEY (profile_id, video_id),
+        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+      );
     `);
   }
 
@@ -150,6 +160,8 @@ export function createProfile(name: string) {
 
 export function deleteProfile(profileId: string) {
   deleteFeedAlgorithmRows(profileId);
+  ensureVideoImpressionsTable();
+  getDatabase().prepare("DELETE FROM video_impressions WHERE profile_id = ?").run(profileId);
   getDatabase().prepare("DELETE FROM profiles WHERE id = ?").run(profileId);
   resetYoutubeProfileCache(profileId);
   return listProfiles()[0] || null;
@@ -157,10 +169,12 @@ export function deleteProfile(profileId: string) {
 
 export function resetProfile(profileId: string) {
   ensureLikedVideoTable();
+  ensureVideoImpressionsTable();
   const database = getDatabase();
   database.prepare("DELETE FROM watched_videos WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM saved_videos WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM liked_videos WHERE profile_id = ?").run(profileId);
+  database.prepare("DELETE FROM video_impressions WHERE profile_id = ?").run(profileId);
   deleteFeedAlgorithmRows(profileId);
   database.prepare("DELETE FROM feed_pool_state WHERE profile_id = ?").run(profileId);
   database.prepare("DELETE FROM feed_pool_nodes WHERE profile_id = ?").run(profileId);
@@ -243,6 +257,46 @@ export function getWatchedVideoIds(profileId: string) {
     .all(profileId) as Array<{ video_id: string }>;
 
   return rows.map((row) => row.video_id);
+}
+
+export function recordVideoImpressions(profileId: string, videoIds: string[]) {
+  ensureVideoImpressionsTable();
+
+  if (!getProfile(profileId)) {
+    return 0;
+  }
+
+  const uniqueVideoIds = [...new Set(videoIds.map((videoId) => videoId.trim()).filter(Boolean))];
+
+  if (uniqueVideoIds.length === 0) {
+    return 0;
+  }
+
+  const timestamp = Date.now();
+  const statement = getDatabase().prepare(
+    `INSERT INTO video_impressions (
+      profile_id, video_id, impression_count, first_seen_at, last_seen_at
+    ) VALUES (?, ?, 1, ?, ?)
+    ON CONFLICT(profile_id, video_id) DO UPDATE SET
+      impression_count = impression_count + 1,
+      last_seen_at = excluded.last_seen_at`
+  );
+
+  for (const videoId of uniqueVideoIds) {
+    statement.run(profileId, videoId, timestamp, timestamp);
+  }
+
+  return uniqueVideoIds.length;
+}
+
+export function getVideoImpressionCounts(profileId: string) {
+  ensureVideoImpressionsTable();
+
+  const rows = getDatabase()
+    .prepare("SELECT video_id, impression_count FROM video_impressions WHERE profile_id = ?")
+    .all(profileId) as Array<{ video_id: string; impression_count: number }>;
+
+  return new Map(rows.map((row) => [row.video_id, row.impression_count]));
 }
 
 export function getVideoInteractions(profileId: string) {
@@ -396,6 +450,20 @@ function ensureLikedVideoTable() {
       video_id TEXT NOT NULL,
       video_json TEXT NOT NULL,
       liked_at INTEGER NOT NULL,
+      PRIMARY KEY (profile_id, video_id),
+      FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+    );
+  `);
+}
+
+function ensureVideoImpressionsTable() {
+  getDatabase().exec(`
+    CREATE TABLE IF NOT EXISTS video_impressions (
+      profile_id TEXT NOT NULL,
+      video_id TEXT NOT NULL,
+      impression_count INTEGER NOT NULL DEFAULT 0,
+      first_seen_at INTEGER NOT NULL,
+      last_seen_at INTEGER NOT NULL,
       PRIMARY KEY (profile_id, video_id),
       FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
     );

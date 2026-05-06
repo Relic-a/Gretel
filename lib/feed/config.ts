@@ -139,6 +139,12 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
         0,
         100
       ),
+      fastLaneImpressionPenaltyFactor: numberInRange(
+        serving.fastLaneImpressionPenaltyFactor,
+        defaults.serving.fastLaneImpressionPenaltyFactor,
+        0,
+        100
+      ),
       warmSemanticWeight: numberInRange(
         serving.warmSemanticWeight,
         defaults.serving.warmSemanticWeight,

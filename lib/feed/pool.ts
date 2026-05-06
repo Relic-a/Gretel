@@ -122,14 +122,14 @@ export function describeServingScore(video: FeedVideo, config: GretelConfig, isC
   const semanticScore = video.similarityScore || 0;
   const engagementScore = video.engagementScore || video.parentEngagementScore || 0;
   const parentEngagementScore = video.parentEngagementScore || 0;
-  const servedCount = video.servedCount || 0;
+  const impressionCount = video.impressionCount || 0;
   const semanticWeight = config.serving.warmSemanticWeight;
   const servedPenaltyFactor = config.serving.servedPenaltyFactor;
   const coldStartParentEngagementWeight = config.feed.coldStartParentEngagementWeight;
   const baseScore = isColdStart
     ? coldStartExpansionScore(video, config)
     : warmServingScore(video, config);
-  const servedPenalty = servedCount * servedPenaltyFactor;
+  const servedPenalty = impressionCount * servedPenaltyFactor;
   const score = servedPenalty === 0
     ? baseScore
     : baseScore >= 0
@@ -144,7 +144,7 @@ export function describeServingScore(video: FeedVideo, config: GretelConfig, isC
     engagementScore,
     engagementContribution: isColdStart ? parentEngagementScore * coldStartParentEngagementWeight : engagementScore,
     parentEngagementScore,
-    servedCount,
+    impressionCount,
     servedPenalty,
     mode: isColdStart ? "coldStart" : "warm",
     weights: {

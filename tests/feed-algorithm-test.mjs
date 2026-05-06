@@ -524,7 +524,7 @@ test("scoring computes engagement, nonlinear ignore decay, accumulated interacti
 
   const warmFeed = createCandidatePoolFeed({
     rootVideos: [
-      video("already-served", { similarityScore: 1, parentEngagementScore: 1, servedCount: 1 }),
+      video("already-seen", { similarityScore: 1, parentEngagementScore: 1, impressionCount: 1 }),
       video("semantic-boost", { similarityScore: 1, parentEngagementScore: 0.5 }),
       video("low-semantic", { similarityScore: 0, parentEngagementScore: 0.6 })
     ],
@@ -548,7 +548,7 @@ test("scoring computes engagement, nonlinear ignore decay, accumulated interacti
   });
   assert.deepEqual(
     warmFeed.videos.map((node) => node.id),
-    ["semantic-boost", "already-served", "low-semantic"]
+    ["semantic-boost", "already-seen", "low-semantic"]
   );
 });
 
@@ -619,6 +619,7 @@ test("logs the top serving items with score breakdown and serving parameters", a
     await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
       servingOnly: true
     });
+    modules.profileStore.recordVideoImpressions(profile.id, ["root-a"]);
 
     const logs = await captureConsoleLogs(async () => {
       await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
@@ -631,13 +632,15 @@ test("logs the top serving items with score breakdown and serving parameters", a
     assert.equal(topItemsLog.coldStart, false);
     assert.equal(topItemsLog.parameters.warmSemanticWeight, 0.25);
     assert.equal(topItemsLog.parameters.servedPenaltyFactor, 0.2);
+    assert.equal(topItemsLog.parameters.fastLaneImpressionPenaltyFactor, 0.08);
     assert.equal(topItemsLog.parameters.coldStartInteractionThreshold, 1);
     assert.equal(topItemsLog.topItems.length, 3);
     assert.equal(topItemsLog.topItems[0].id, "root-a");
-    assert.equal(topItemsLog.topItems[0].servedCount, 1);
+    assert.equal(topItemsLog.topItems[0].impressionCount, 1);
     assert.equal(topItemsLog.topItems[0].semanticScore, 1);
     assert.equal(topItemsLog.topItems[0].engagementScore, 0.55);
     assert.equal(topItemsLog.topItems[0].baseScore, 0.8);
+    assert.equal(topItemsLog.topItems[0].servedPenalty, 0.2);
     assert.ok(Math.abs(topItemsLog.topItems[0].score - (0.8 / 1.2)) < 1e-9);
     assert.equal(topItemsLog.topItems[0].weights.semanticWeight, 0.25);
     assert.equal(topItemsLog.topItems[0].weights.servedPenaltyFactor, 0.2);
@@ -973,8 +976,14 @@ test("subscription fast lane is served up to cap, never pooled, and never used a
         readyQueueLowWaterMark: 20,
         recommendationSeeds: 4
       },
+      serving: {
+        fastLaneImpressionPenaltyFactor: 1
+      },
       embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
     });
+    modules.profileStore.recordVideoImpressions(profile.id, ["fast-1"]);
+    modules.profileStore.recordVideoImpressions(profile.id, ["fast-1"]);
+    modules.profileStore.recordVideoImpressions(profile.id, ["fast-1"]);
     const feed = await modules.service.createFeed(
       profile.id,
       ["alpha"],
@@ -994,6 +1003,7 @@ test("subscription fast lane is served up to cap, never pooled, and never used a
       .map((node) => node.id);
 
     assert.equal(servedFastLaneIds.length, 2);
+    assert.deepEqual(servedFastLaneIds, ["fast-2", "fast-3"]);
     assert.equal(servedFastLaneIds.some((id) => poolIds.has(id)), false);
     assert.equal(infoSeeds.some((id) => servedFastLaneIds.includes(id)), false);
   } finally {
@@ -1009,6 +1019,7 @@ function compileModules() {
   const files = [
     ...listTsFiles(path.join(repoRoot, "lib")),
     path.join(repoRoot, "app", "api", "feed", "route.ts"),
+    path.join(repoRoot, "app", "api", "impressions", "route.ts"),
     path.join(repoRoot, "app", "api", "profiles", "route.ts"),
     path.join(repoRoot, "app", "api", "watch-events", "route.ts")
   ].map((file) => path.relative(repoRoot, file));

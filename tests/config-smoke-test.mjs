@@ -43,6 +43,7 @@ function compileConfigModules() {
       "lib/feed/youtube-client.ts",
       "lib/feed/types.ts",
       "app/api/feed/route.ts",
+      "app/api/impressions/route.ts",
       "app/api/profiles/route.ts",
       "app/api/watch-events/route.ts"
     ],

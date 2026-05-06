@@ -17,6 +17,7 @@ type FeedViewProps = {
   onSelectVideo: (video: FeedVideo) => void;
   onSaveVideo: (video: FeedVideo) => void;
   onLikeVideo: (video: FeedVideo) => void;
+  onVideoImpression?: (video: FeedVideo) => void;
   onAddChannel: (channel: string) => void;
   onRemoveChannel: (channel: string) => void;
 };
@@ -93,6 +94,7 @@ export function FeedView(props: FeedViewProps) {
               onSelectVideo={props.onSelectVideo}
               onSaveVideo={props.onSaveVideo}
               onLikeVideo={props.onLikeVideo}
+              onImpression={props.onVideoImpression}
               onAddChannel={props.onAddChannel}
               onRemoveChannel={props.onRemoveChannel}
             />

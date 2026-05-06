@@ -14,6 +14,9 @@ export type FeedVideo = {
   parent_title?: string;
   parent_author?: string;
   recommendation_depth?: number;
+  sourceNodeId?: "tagSearch" | "channelVideos" | "relatedVideos";
+  sourceNodeLabel?: string;
+  impressionCount?: number;
   liked?: boolean;
   clicked?: boolean;
   ignoreCount?: number;

@@ -1,10 +1,11 @@
 {
   "serving": {
     "servedPenaltyFactor": 0.2,
+    "fastLaneImpressionPenaltyFactor": 0.08,
     "warmSemanticWeight": 0.25
   },
   "expansion": {
-    "initialFetchSize": 96,
+    "initialFetchSize": 160,
     "minDelayBetweenFetchesMs": 500,
     "maxFetchCallsPerCycle": 4,
     "cycleCooldownMs": 120000,
@@ -17,7 +18,7 @@
   "feed": {
     "maxQueries": 5,
     "maxVideos": 48,
-    "poolSizeCap": 120,
+    "poolSizeCap": 240,
     "subscriptionRefreshMinutes": 45,
     "recommendationSeeds": 4,
     "minVideosPerQuery": 3,
@@ -26,9 +27,9 @@
     "coldStartInteractionThreshold": 8,
     "expansionSeedCount": 4,
     "minRelatedVideosPerSeed": 1,
-    "maxRelatedVideosPerSeed": 6,
-    "readyQueueTargetSize": 48,
-    "readyQueueLowWaterMark": 16,
+    "maxRelatedVideosPerSeed": 12,
+    "readyQueueTargetSize": 96,
+    "readyQueueLowWaterMark": 72,
     "subscriptionFastLanePerSession": 2,
     "coldStartParentEngagementWeight": 0.05
   },

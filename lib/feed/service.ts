@@ -25,7 +25,12 @@ import {
 import { recommendVideosFromSeeds } from "./recommendations";
 import type { ChannelSort, FeedObservation, FeedVideo } from "./types";
 import { fetchChannelVideos, searchVideos } from "./youtube";
-import { getProfile, getVideoInteractions } from "../profile-store";
+import {
+  getProfile,
+  getVideoImpressionCounts,
+  getVideoInteractions,
+  getWatchedVideoIds
+} from "../profile-store";
 import { logInfo } from "../logger";
 import { observeOperation } from "./observation";
 import {
@@ -258,7 +263,7 @@ async function initializePoolOnce(
     : [];
   const channelEmbeddings = await embedVideos(profileId, channelCandidates);
   const channelPoolVideos = scoreByCentroid(
-    persistentChannelCandidates(channelCandidates),
+    persistentChannelCandidates(profileId, channelCandidates),
     channelEmbeddings,
     originalCentroid,
     "channelVideos"
@@ -282,14 +287,22 @@ async function initializePoolOnce(
   return true;
 }
 
-function persistentChannelCandidates(videos: FeedVideo[]) {
-  const fastLaneCap = getGretelConfig().feed.subscriptionFastLanePerSession;
+function persistentChannelCandidates(profileId: string, videos: FeedVideo[]) {
+  const config = getGretelConfig();
+  const fastLaneCap = config.feed.subscriptionFastLanePerSession;
 
   if (fastLaneCap === 0) {
     return videos;
   }
 
-  const fastLaneIds = new Set(videos.slice(0, fastLaneCap).map((video) => video.id));
+  const fastLaneIds = new Set(
+    selectSubscriptionFastLaneVideos(
+      videos,
+      profileId,
+      new Set(getWatchedVideoIds(profileId)),
+      config
+    ).map((video) => video.id)
+  );
   return videos.filter((video) => !fastLaneIds.has(video.id));
 }
 
@@ -397,11 +410,35 @@ async function getSubscriptionFastLaneVideos(
 
   const videos = await fetchChannelVideos(channels, channelSort, observation, profileId);
 
+  return selectSubscriptionFastLaneVideos(videos, profileId, watchedVideoIds, config);
+}
+
+function selectSubscriptionFastLaneVideos(
+  videos: FeedVideo[],
+  profileId: string,
+  watchedVideoIds: Set<string>,
+  config: ReturnType<typeof getGretelConfig>
+) {
+  const impressionCounts = getVideoImpressionCounts(profileId);
+
   return videos
     .filter((video) => !watchedVideoIds.has(video.id))
+    .map((video, index) => {
+      const impressionCount = impressionCounts.get(video.id) || 0;
+      const baseScore = videos.length - index;
+      const penalty = impressionCount * config.serving.fastLaneImpressionPenaltyFactor;
+
+      return {
+        video,
+        score: penalty === 0 ? baseScore : baseScore / (1 + penalty),
+        impressionCount
+      };
+    })
+    .sort((left, right) => right.score - left.score)
     .slice(0, config.feed.subscriptionFastLanePerSession)
-    .map((video) => ({
+    .map(({ video, impressionCount }) => ({
       ...video,
+      impressionCount,
       sourceNodeId: "channelVideos" as const,
       sourceNodeLabel: "Subscription fast lane"
     }));
@@ -411,8 +448,16 @@ function scorePoolVideos(profileId: string, poolKey: string, videos: FeedVideo[]
   const config = getGretelConfig();
   const centroid = getCentroid(profileId, poolKey)?.current || [];
   const interactions = getVideoInteractions(profileId);
+  const impressionCounts = getVideoImpressionCounts(profileId);
   const rescored = rescoreCachedVideos(profileId, videos, centroid).map((video) =>
-    applyEngagement(video, interactions, config)
+    applyEngagement(
+      {
+        ...video,
+        impressionCount: impressionCounts.get(video.id) || video.impressionCount || 0
+      },
+      interactions,
+      config
+    )
   );
 
   updatePoolSimilarities(profileId, poolKey, rescored);
@@ -466,6 +511,7 @@ function logTopServingItems(
       readyQueueTargetSize: config.feed.readyQueueTargetSize,
       warmSemanticWeight: config.serving.warmSemanticWeight,
       servedPenaltyFactor: config.serving.servedPenaltyFactor,
+      fastLaneImpressionPenaltyFactor: config.serving.fastLaneImpressionPenaltyFactor,
       coldStartParentEngagementWeight: config.feed.coldStartParentEngagementWeight
     },
     topItems: videos.slice(0, 10).map((video, index) => {
@@ -484,7 +530,7 @@ function logTopServingItems(
         engagementScore: score.engagementScore,
         engagementContribution: score.engagementContribution,
         parentEngagementScore: score.parentEngagementScore,
-        servedCount: score.servedCount,
+        impressionCount: score.impressionCount,
         servedPenalty: score.servedPenalty,
         weights: score.weights,
         mode: score.mode

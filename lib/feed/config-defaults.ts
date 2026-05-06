@@ -1,6 +1,7 @@
 export type GretelConfig = {
   serving: {
     servedPenaltyFactor: number;
+    fastLaneImpressionPenaltyFactor: number;
     warmSemanticWeight: number;
   };
   expansion: {
@@ -67,10 +68,11 @@ export type GretelConfig = {
 export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
   serving: {
     servedPenaltyFactor: 0.2,
+    fastLaneImpressionPenaltyFactor: 0.08,
     warmSemanticWeight: 0.25
   },
   expansion: {
-    initialFetchSize: 96,
+    initialFetchSize: 160,
     minDelayBetweenFetchesMs: 500,
     maxFetchCallsPerCycle: 4,
     cycleCooldownMs: 120000,
@@ -83,7 +85,7 @@ export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
   feed: {
     maxQueries: 5,
     maxVideos: 48,
-    poolSizeCap: 120,
+    poolSizeCap: 240,
     subscriptionRefreshMinutes: 45,
     recommendationSeeds: 4,
     minVideosPerQuery: 3,
@@ -92,9 +94,9 @@ export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
     coldStartInteractionThreshold: 12,
     expansionSeedCount: 4,
     minRelatedVideosPerSeed: 1,
-    maxRelatedVideosPerSeed: 8,
-    readyQueueTargetSize: 48,
-    readyQueueLowWaterMark: 16,
+    maxRelatedVideosPerSeed: 12,
+    readyQueueTargetSize: 96,
+    readyQueueLowWaterMark: 72,
     subscriptionFastLanePerSession: 6,
     coldStartParentEngagementWeight: 0.15
   },
