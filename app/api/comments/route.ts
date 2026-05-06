@@ -126,13 +126,14 @@ function extractComments(page: any) {
     const comment = thread.comment;
     if (!comment) continue;
 
-    const authorAvatarUrl = comment.author?.thumbnails && Array.isArray(comment.author.thumbnails) && comment.author.thumbnails.length > 0
-      ? String(comment.author.thumbnails[0].url ?? "")
+    const authorThumbnails = comment.author?.thumbnails ?? comment.author_thumbnails;
+    const authorAvatarUrl = authorThumbnails && Array.isArray(authorThumbnails) && authorThumbnails.length > 0
+      ? String(authorThumbnails[0].url ?? "")
       : undefined;
 
     results.push({
       author: comment.author?.name?.toString() ?? "Unknown",
-      authorAvatarUrl: authorAvatarUrl || comment.creator_thumbnail_url || undefined,
+      authorAvatarUrl,
       content: comment.content?.toString() ?? "",
       published: comment.published_time ?? "",
       likes: comment.like_count ?? "0",
