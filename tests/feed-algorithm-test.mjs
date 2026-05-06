@@ -552,6 +552,101 @@ test("scoring computes engagement, nonlinear ignore decay, accumulated interacti
   );
 });
 
+test("logs the top serving items with score breakdown and serving parameters", async () => {
+  const modules = loadRuntimeModules({
+    youtubeClient: createFakeYoutubeClient({
+      searchVideos: [
+        rawVideo("root-a", "alpha one", "Search"),
+        rawVideo("root-b", "alpha two", "Search"),
+        rawVideo("root-c", "alpha three", "Search")
+      ]
+    }),
+    embeddingForText: () => [1, 0]
+  });
+  const profile = modules.profileStore.createProfile("Top Serving Items");
+  profileStoreForCleanup = modules.profileStore;
+
+  try {
+    process.env.GRETEL_CONFIG = writeConfig("top-serving-items.json", {
+      serving: {
+        servedPenaltyFactor: 0.2,
+        warmSemanticWeight: 0.25
+      },
+      expansion: {
+        initialFetchSize: 3,
+        minDelayBetweenFetchesMs: 0,
+        maxFetchCallsPerCycle: 1,
+        cycleCooldownMs: 0,
+        servedMajorityThreshold: 1
+      },
+      feed: {
+        maxQueries: 1,
+        maxVideos: 1,
+        readyQueueTargetSize: 10,
+        coldStartInteractionThreshold: 1,
+        similarityThreshold: 0.1,
+        subscriptionFastLanePerSession: 0
+      },
+      embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
+    });
+
+    modules.profileStore.saveWatchedVideo({
+      profileId: profile.id,
+      video: video("root-a"),
+      watchedSeconds: 30,
+      durationSeconds: 60
+    });
+    modules.profileStore.likeVideo(profile.id, video("root-a"));
+    modules.profileStore.saveWatchedVideo({
+      profileId: profile.id,
+      video: video("root-b"),
+      watchedSeconds: 48,
+      durationSeconds: 60
+    });
+    modules.profileStore.saveWatchedVideo({
+      profileId: profile.id,
+      video: video("root-c"),
+      watchedSeconds: 12,
+      durationSeconds: 60
+    });
+    modules.profileStore.saveWatchedVideo({
+      profileId: profile.id,
+      video: video("warmup"),
+      watchedSeconds: 60,
+      durationSeconds: 60
+    });
+
+    await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
+      servingOnly: true
+    });
+
+    const logs = await captureConsoleLogs(async () => {
+      await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
+        servingOnly: true
+      });
+    });
+    const topItemsLog = logs.find((log) => log.line.event === "feed.top_items")?.line;
+
+    assert.ok(topItemsLog);
+    assert.equal(topItemsLog.coldStart, false);
+    assert.equal(topItemsLog.parameters.warmSemanticWeight, 0.25);
+    assert.equal(topItemsLog.parameters.servedPenaltyFactor, 0.2);
+    assert.equal(topItemsLog.parameters.coldStartInteractionThreshold, 1);
+    assert.equal(topItemsLog.topItems.length, 3);
+    assert.equal(topItemsLog.topItems[0].id, "root-a");
+    assert.equal(topItemsLog.topItems[0].servedCount, 1);
+    assert.equal(topItemsLog.topItems[0].semanticScore, 1);
+    assert.equal(topItemsLog.topItems[0].engagementScore, 0.55);
+    assert.equal(topItemsLog.topItems[0].baseScore, 0.8);
+    assert.ok(Math.abs(topItemsLog.topItems[0].score - (0.8 / 1.2)) < 1e-9);
+    assert.equal(topItemsLog.topItems[0].weights.semanticWeight, 0.25);
+    assert.equal(topItemsLog.topItems[0].weights.servedPenaltyFactor, 0.2);
+    assert.equal(topItemsLog.topItems[0].mode, "warm");
+  } finally {
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});
+
 test("centroid drift is bounded and pool similarities can be recomputed after a valid update", async () => {
   const modules = loadRuntimeModules({
     youtubeClient: createFakeYoutubeClient(),
@@ -1105,6 +1200,30 @@ function video(id, fields = {}) {
 
 function observation() {
   return { requestId: crypto.randomUUID(), startedAt: Date.now(), operations: [] };
+}
+
+async function captureConsoleLogs(work) {
+  const originalInfo = console.info;
+  const originalWarn = console.warn;
+  const originalError = console.error;
+  const logs = [];
+
+  const capture = (stream) => (line) => {
+    logs.push({ stream, line: JSON.parse(String(line)) });
+  };
+
+  console.info = capture("info");
+  console.warn = capture("warn");
+  console.error = capture("error");
+
+  try {
+    await work();
+    return logs;
+  } finally {
+    console.info = originalInfo;
+    console.warn = originalWarn;
+    console.error = originalError;
+  }
 }
 
 function magnitude(vector) {

@@ -109,22 +109,50 @@ function expansionScore(video: FeedVideo, config: GretelConfig, warmStart: boole
 }
 
 function servingScore(video: FeedVideo, config: GretelConfig, isColdStart: boolean) {
-  const baseScore = isColdStart
-    ? coldStartExpansionScore(video, config)
-    : warmServingScore(video, config);
-  const penalty = (video.servedCount || 0) * config.serving.servedPenaltyFactor;
-
-  if (penalty === 0) {
-    return baseScore;
-  }
-
-  return baseScore >= 0 ? baseScore / (1 + penalty) : baseScore * (1 + penalty);
+  return describeServingScore(video, config, isColdStart).score;
 }
 
 function warmServingScore(video: FeedVideo, config: GretelConfig) {
   const engagementScore = video.engagementScore || video.parentEngagementScore || 0;
 
   return engagementScore + (video.similarityScore || 0) * config.serving.warmSemanticWeight;
+}
+
+export function describeServingScore(video: FeedVideo, config: GretelConfig, isColdStart: boolean) {
+  const semanticScore = video.similarityScore || 0;
+  const engagementScore = video.engagementScore || video.parentEngagementScore || 0;
+  const parentEngagementScore = video.parentEngagementScore || 0;
+  const servedCount = video.servedCount || 0;
+  const semanticWeight = config.serving.warmSemanticWeight;
+  const servedPenaltyFactor = config.serving.servedPenaltyFactor;
+  const coldStartParentEngagementWeight = config.feed.coldStartParentEngagementWeight;
+  const baseScore = isColdStart
+    ? coldStartExpansionScore(video, config)
+    : warmServingScore(video, config);
+  const servedPenalty = servedCount * servedPenaltyFactor;
+  const score = servedPenalty === 0
+    ? baseScore
+    : baseScore >= 0
+      ? baseScore / (1 + servedPenalty)
+      : baseScore * (1 + servedPenalty);
+
+  return {
+    score,
+    baseScore,
+    semanticScore,
+    semanticContribution: isColdStart ? semanticScore : semanticScore * semanticWeight,
+    engagementScore,
+    engagementContribution: isColdStart ? parentEngagementScore * coldStartParentEngagementWeight : engagementScore,
+    parentEngagementScore,
+    servedCount,
+    servedPenalty,
+    mode: isColdStart ? "coldStart" : "warm",
+    weights: {
+      semanticWeight,
+      servedPenaltyFactor,
+      coldStartParentEngagementWeight
+    }
+  };
 }
 
 function similarityToCurrent(

@@ -17,6 +17,7 @@ import { createEmbeddingInputWithTranscript, fetchTranscriptIntroduction } from 
 import { applyEngagement } from "./engagement";
 import {
   createCandidatePoolFeed,
+  describeServingScore,
   relatedBudgetForSeed,
   selectExpansionSeeds,
   selectUpNextCandidates
@@ -25,6 +26,7 @@ import { recommendVideosFromSeeds } from "./recommendations";
 import type { ChannelSort, FeedObservation, FeedVideo } from "./types";
 import { fetchChannelVideos, searchVideos } from "./youtube";
 import { getProfile, getVideoInteractions } from "../profile-store";
+import { logInfo } from "../logger";
 import { observeOperation } from "./observation";
 import {
   getCentroid,
@@ -128,6 +130,8 @@ export async function createFeed(
       config
     });
   }
+
+  logTopServingItems(profileId, poolKey, readyPreview.videos, config, observation.requestId);
 
   const fastLaneVideos = await getSubscriptionFastLaneVideos(
     channels,
@@ -439,6 +443,53 @@ function recordScoringObservation(
       coldStart: interactions.size < config.feed.coldStartInteractionThreshold,
       scoredVideos: scoredVideos.length
     }
+  });
+}
+
+function logTopServingItems(
+  profileId: string,
+  poolKey: string,
+  videos: FeedVideo[],
+  config: ReturnType<typeof getGretelConfig>,
+  requestId: string
+) {
+  const interactions = getVideoInteractions(profileId);
+  const isColdStart = interactions.size < config.feed.coldStartInteractionThreshold;
+
+  logInfo("feed.top_items", {
+    profileId,
+    poolKey,
+    requestId,
+    coldStart: isColdStart,
+    parameters: {
+      coldStartInteractionThreshold: config.feed.coldStartInteractionThreshold,
+      readyQueueTargetSize: config.feed.readyQueueTargetSize,
+      warmSemanticWeight: config.serving.warmSemanticWeight,
+      servedPenaltyFactor: config.serving.servedPenaltyFactor,
+      coldStartParentEngagementWeight: config.feed.coldStartParentEngagementWeight
+    },
+    topItems: videos.slice(0, 10).map((video, index) => {
+      const score = describeServingScore(video, config, isColdStart);
+
+      return {
+        rank: index + 1,
+        id: video.id,
+        title: video.title,
+        author: video.author,
+        sourceNodeId: video.sourceNodeId,
+        score: score.score,
+        baseScore: score.baseScore,
+        semanticScore: score.semanticScore,
+        semanticContribution: score.semanticContribution,
+        engagementScore: score.engagementScore,
+        engagementContribution: score.engagementContribution,
+        parentEngagementScore: score.parentEngagementScore,
+        servedCount: score.servedCount,
+        servedPenalty: score.servedPenalty,
+        weights: score.weights,
+        mode: score.mode
+      };
+    })
   });
 }
 
