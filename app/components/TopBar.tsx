@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Bookmark, ChevronDown, History, Home, Settings } from "lucide-react";
 
 import type { Profile } from "../types";
@@ -16,6 +17,15 @@ type TopBarProps = {
 };
 
 export function TopBar(props: TopBarProps) {
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    // Only render full UI on client to prevent hydration errors.
+    setIsReady(true);
+  }, []);
+
+  if (!isReady) return null;
+
   return (
     <header className="topbar">
       <button type="button" className="brand-button" onClick={props.onHome}>

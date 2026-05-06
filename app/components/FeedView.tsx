@@ -119,33 +119,6 @@ export function FeedView(props: FeedViewProps) {
       </div>
 
       <div ref={loaderRef} className="feed-loader">
-        {visibleVideos.length > 0 && (
-          <div className="feed-pagination" aria-label="Feed pagination">
-            <button type="button" aria-label="Previous page" onClick={() => setVisibleCount(Math.max(batchSize, visibleCount - batchSize))}>‹</button>
-            {[1, 2, 3].filter((page) => page <= pageCount).map((page) => (
-              <button
-                type="button"
-                key={page}
-                className={currentPage === page ? "active" : ""}
-                onClick={() => setVisibleCount(Math.min(page * batchSize, props.videos.length))}
-              >
-                {page}
-              </button>
-            ))}
-            {pageCount > 4 && <span>...</span>}
-            {pageCount > 3 && (
-              <button
-                type="button"
-                className={currentPage === pageCount ? "active" : ""}
-                onClick={() => setVisibleCount(props.videos.length)}
-              >
-                {pageCount}
-              </button>
-            )}
-            <button type="button" aria-label="Next page" onClick={() => setVisibleCount(Math.min(props.videos.length, visibleCount + batchSize))}>›</button>
-            <span className="feed-count">Showing 1-{Math.min(visibleVideos.length, props.videos.length)} of {props.videos.length} videos</span>
-          </div>
-        )}
         <span className="loader-copy">
           {props.loading ? "Loading more videos..." : visibleVideos.length < props.videos.length ? "Loading..." : ""}
         </span>
