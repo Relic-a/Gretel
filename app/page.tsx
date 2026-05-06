@@ -263,6 +263,9 @@ export default function Home() {
       return;
     }
 
+    const createdTags = newProfileTags;
+    const createdChannels = newProfileChannels;
+
     setError("");
     setLoading(true);
 
@@ -281,8 +284,8 @@ export default function Home() {
       setProfiles(data.profiles || []);
       setProfileId(data.profileId || "");
       setProfileName("");
-      setTags(newProfileTags);
-      setChannels(newProfileChannels);
+      setTags(createdTags);
+      setChannels(createdChannels);
       setNewProfileTags(starterTags);
       setNewProfileChannels([]);
       setFeed(null);
@@ -298,8 +301,8 @@ export default function Home() {
 
       await requestFeed({
         nextProfileId: data.profileId || "",
-        nextTags: tags,
-        nextChannels: channels,
+        nextTags: createdTags,
+        nextChannels: createdChannels,
         forceExpansion: true
       });
     } catch (caught) {
