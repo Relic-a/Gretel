@@ -64,6 +64,7 @@ export async function searchVideos(
             channelAvatarUrl: getAuthorAvatarUrl(video),
             duration,
             query,
+            originTag: query,
             thumbnailUrl: getThumbnailUrl(video) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
             thumbnailCacheUrl: `/api/thumbnails/${profileId}/${id}`,
             publishedText: getPublishedText(video),

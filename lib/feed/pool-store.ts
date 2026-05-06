@@ -45,6 +45,7 @@ export function ensureFeedPoolTables() {
       node_id TEXT NOT NULL,
       video_json TEXT NOT NULL,
       parent_video_id TEXT,
+      origin_tag TEXT,
       similarity_score REAL NOT NULL,
       parent_engagement_score REAL NOT NULL DEFAULT 0,
       first_seen_at INTEGER NOT NULL,
@@ -65,6 +66,12 @@ export function ensureFeedPoolTables() {
       FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
     );
   `);
+
+  try {
+    getDatabase().exec(`ALTER TABLE feed_pool_nodes ADD COLUMN origin_tag TEXT;`);
+  } catch {
+    // Column already exists
+  }
 }
 
 export function getFeedPoolState(profileId: string, poolKey: string): FeedPoolState | null {
@@ -117,9 +124,9 @@ export function addPoolNodes(
   ensureFeedPoolTables();
   const statement = getDatabase().prepare(
     `INSERT INTO feed_pool_nodes (
-      profile_id, pool_key, video_id, node_id, video_json, parent_video_id,
+      profile_id, pool_key, video_id, node_id, video_json, parent_video_id, origin_tag,
       similarity_score, parent_engagement_score, first_seen_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(profile_id, pool_key, video_id) DO NOTHING`
   );
   const visitedStatement = getDatabase().prepare(
@@ -137,6 +144,7 @@ export function addPoolNodes(
       nodeId,
       JSON.stringify({ ...video, sourceNodeId: nodeId }),
       video.parent_video_id || null,
+      video.originTag || null,
       video.similarityScore || 0,
       video.parentEngagementScore || 0,
       timestamp,

@@ -591,15 +591,16 @@ export default function Home() {
 
       {booted && (visibleVideos.length > 0 || (loading && section === "home")) && !activeVideo && (
         <FeedView
-          title={section === "home" ? "Your Feed" : section === "saved" ? "Saved" : "History"}
+          title={section === "saved" ? "Saved" : section === "history" ? "History" : ""}
           subtitle={
-            section === "home"
-              ? "AI-curated picks, personalized for your interests."
-              : section === "saved"
-                ? "Videos you saved for later."
-                : "Videos that crossed your watch threshold."
+            section === "saved"
+              ? "Videos you saved for later."
+              : section === "history"
+              ? "Videos that crossed your watch threshold."
+              : ""
           }
           videos={visibleVideos}
+          tags={tags}
           subscriptions={subscriptions}
           savedVideoIds={savedVideoIds}
           likedVideoIds={likedVideoIds}
