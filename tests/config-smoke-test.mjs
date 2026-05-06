@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import Module from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -10,6 +10,9 @@ import { after, test } from "node:test";
 const root = process.cwd();
 const buildDir = path.join(root, ".tmp", "config-smoke-test");
 const configDir = path.join(os.tmpdir(), `gretel-config-smoke-${process.pid}`);
+const originalLogFile = process.env.GRETEL_LOG_FILE;
+
+process.env.GRETEL_LOG_FILE = path.join(configDir, "gretel-test.log");
 
 function compileConfigModules() {
   rmSync(buildDir, { force: true, recursive: true });
@@ -111,6 +114,13 @@ async function captureLogs(work) {
 function loadConfigModule() {
   const require = createRequire(import.meta.url);
   const modulePath = path.join(buildDir, "lib", "feed", "config.js");
+  delete require.cache[require.resolve(modulePath)];
+  return require(modulePath);
+}
+
+function loadLoggerModule() {
+  const require = createRequire(import.meta.url);
+  const modulePath = path.join(buildDir, "lib", "logger.js");
   delete require.cache[require.resolve(modulePath)];
   return require(modulePath);
 }
@@ -295,8 +305,49 @@ function slug(value) {
 compileConfigModules();
 
 after(() => {
+  if (originalLogFile === undefined) {
+    delete process.env.GRETEL_LOG_FILE;
+  } else {
+    process.env.GRETEL_LOG_FILE = originalLogFile;
+  }
+
   rmSync(buildDir, { force: true, recursive: true });
   rmSync(configDir, { force: true, recursive: true });
+});
+
+test("writes structured logs to the configured log file", () => {
+  const logFilePath = path.join(configDir, "logs", "structured.log");
+  const previousLogFile = process.env.GRETEL_LOG_FILE;
+  process.env.GRETEL_LOG_FILE = logFilePath;
+  const { logError, logInfo, logWarn } = loadLoggerModule();
+
+  try {
+    captureConfigLogs(() => {
+      logInfo("logger.info", { requestId: "req-1" });
+      logWarn("logger.warn", { attempts: 2 });
+      logError("logger.error", { reason: "failed" });
+    });
+
+    const lines = readFileSync(logFilePath, "utf8")
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+
+    assert.deepEqual(
+      lines.map((line) => line.level),
+      ["info", "warn", "error"]
+    );
+    assert.deepEqual(
+      lines.map((line) => line.event),
+      ["logger.info", "logger.warn", "logger.error"]
+    );
+    assert.equal(lines[0].requestId, "req-1");
+    assert.equal(lines[1].attempts, 2);
+    assert.equal(lines[2].reason, "failed");
+    assert.ok(lines.every((line) => typeof line.at === "string"));
+  } finally {
+    process.env.GRETEL_LOG_FILE = previousLogFile;
+  }
 });
 
 test("logs every active config path even when two paths resolve to default values", () => {
