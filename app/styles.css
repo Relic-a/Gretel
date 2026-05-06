@@ -217,9 +217,8 @@ button:disabled {
 
 .feed-heading {
   display: grid;
-  grid-template-columns: minmax(220px, 1fr) auto;
-  align-items: end;
-  gap: 24px;
+  grid-template-columns: 1fr;
+  align-items: start;
   margin-bottom: 30px;
 }
 
@@ -236,48 +235,6 @@ button:disabled {
 .feed-heading p {
   margin: 0;
   color: var(--color-muted);
-}
-
-.feed-filters {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-  gap: 14px;
-}
-
-.chip {
-  min-height: 36px;
-  min-width: 48px;
-  padding: 0 18px;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-surface);
-  color: var(--color-muted);
-  font-weight: 700;
-}
-
-.chip.active {
-  border-color: var(--color-brand);
-  background: var(--color-brand);
-  color: #fff;
-}
-
-.filter-button {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
-  min-height: 38px;
-  padding: 0 18px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-control);
-  background: var(--color-surface);
-  color: var(--color-text);
-  font-weight: 800;
-}
-
-.filter-button span {
-  transform: rotate(180deg);
-  font-weight: 900;
 }
 
 .video-grid,
@@ -1264,13 +1221,6 @@ select:focus {
   .feed-heading {
     grid-template-columns: 1fr;
     align-items: start;
-  }
-
-  .feed-filters {
-    justify-content: flex-start;
-    overflow-x: auto;
-    flex-wrap: nowrap;
-    padding-bottom: 4px;
   }
 
   .feed-pagination {

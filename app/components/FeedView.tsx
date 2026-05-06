@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { FeedVideo } from "../types";
 import { normalize } from "./video-utils";
@@ -8,7 +8,6 @@ type FeedViewProps = {
   title: string;
   subtitle: string;
   videos: FeedVideo[];
-  tags: string[];
   subscriptions: Set<string>;
   savedVideoIds: Set<string>;
   likedVideoIds: Set<string>;
@@ -28,13 +27,7 @@ export function FeedView(props: FeedViewProps) {
   const [visibleCount, setVisibleCount] = useState(batchSize);
   const loaderRef = useRef<HTMLDivElement | null>(null);
   const feedKeyRef = useRef("");
-  const [activeTag, setActiveTag] = useState<string>("All");
-  const visibleVideos = useMemo(
-    () => props.videos.filter(v => activeTag === "All" || v.originTag === activeTag).slice(0, visibleCount),
-    [props.videos, activeTag, visibleCount]
-  );
-  const currentPage = Math.max(1, Math.ceil(visibleVideos.length / batchSize));
-  const pageCount = Math.max(1, Math.ceil(props.videos.filter(v => activeTag === "All" || v.originTag === activeTag).length / batchSize));
+  const visibleVideos = props.videos.slice(0, visibleCount);
 
   useEffect(() => {
     const feedKey = props.videos[0]?.id || "";
@@ -83,15 +76,6 @@ export function FeedView(props: FeedViewProps) {
             <p>{props.subtitle}</p>
           </div>
         )}
-        <div className="feed-filters" aria-label="Feed filters">
-          <button type="button" className={`chip ${activeTag === "All" ? "active" : ""}`} onClick={() => { setActiveTag("All"); setVisibleCount(batchSize); }}>All</button>
-          {props.tags.map(tag => (
-            <button key={tag} type="button" className={`chip ${activeTag === tag ? "active" : ""}`} onClick={() => { setActiveTag(tag); setVisibleCount(batchSize); }}>{tag}</button>
-          ))}
-          <button type="button" className="filter-button" aria-label="Open filters">
-            <span aria-hidden="true">≡</span> Filters
-          </button>
-        </div>
       </div>
 
       <div className="video-grid">

@@ -535,16 +535,6 @@ export default function Home() {
     setNewProfileChannels(newProfileChannels.filter((channel) => normalize(channel) !== normalize(value)));
   }
 
-  function addTag(value: string) {
-    const cleaned = value.replace(/\s+/g, " ").trim();
-
-    if (cleaned.length > 1 && !tags.some((tag) => normalize(tag) === normalize(cleaned))) {
-      setTags([...tags, cleaned]);
-    }
-
-    setTagDraft("");
-  }
-
   function addChannel(value: string) {
     const cleaned = value.replace(/\s+/g, " ").trim();
 
@@ -631,7 +621,6 @@ export default function Home() {
               : ""
           }
           videos={visibleVideos}
-          tags={tags}
           subscriptions={subscriptions}
           savedVideoIds={savedVideoIds}
           likedVideoIds={likedVideoIds}

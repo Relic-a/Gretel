@@ -14,7 +14,6 @@ export type FeedVideo = {
   parent_title?: string;
   parent_author?: string;
   recommendation_depth?: number;
-  originTag?: string;
   liked?: boolean;
   clicked?: boolean;
   ignoreCount?: number;
