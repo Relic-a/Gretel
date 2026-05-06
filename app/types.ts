@@ -38,6 +38,21 @@ export type FeedResponse = {
 };
 
 export type PublicGretelConfig = {
+  serving: {
+    servedPenaltyFactor: number;
+    warmSemanticWeight: number;
+  };
+  expansion: {
+    initialFetchSize: number;
+    minDelayBetweenFetchesMs: number;
+    maxFetchCallsPerCycle: number;
+    cycleCooldownMs: number;
+    servedMajorityThreshold: number;
+  };
+  transcription: {
+    introductionPercentage: number;
+    maxCharacters: number;
+  };
   feed: {
     maxVideos: number;
     readyQueueTargetSize: number;

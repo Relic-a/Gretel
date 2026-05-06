@@ -179,6 +179,220 @@ test("pool expansion budgets by score, skips visited videos, enforces threshold,
   }
 });
 
+test("initial pool build uses configurable fetch size instead of serving page size", async () => {
+  const modules = loadRuntimeModules({
+    youtubeClient: createFakeYoutubeClient({
+      searchVideos: Array.from({ length: 10 }, (_, index) =>
+        rawVideo(`root-alpha-${index}`, `alpha root ${index}`, "Search")
+      )
+    }),
+    embeddingForText: () => [1, 0]
+  });
+  const profile = modules.profileStore.createProfile("Initial Fetch Size");
+  profileStoreForCleanup = modules.profileStore;
+
+  try {
+    process.env.GRETEL_CONFIG = writeConfig("initial-fetch-size.json", {
+      expansion: {
+        initialFetchSize: 5,
+        servedMajorityThreshold: 1
+      },
+      feed: {
+        maxQueries: 1,
+        maxVideos: 2,
+        minVideosPerQuery: 1,
+        readyQueueLowWaterMark: 0,
+        subscriptionFastLanePerSession: 0
+      },
+      embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
+    });
+
+    const feed = await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
+      servingOnly: true
+    });
+    const poolKey = modules.poolStore.createFeedPoolKey({
+      tags: feed.queries,
+      channels: [],
+      channelSort: "mixed"
+    });
+    const roots = modules.poolStore
+      .listPoolNodes(profile.id, poolKey)
+      .filter((node) => node.sourceNodeId === "tagSearch");
+
+    assert.equal(roots.length, 5);
+  } finally {
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});
+
+test("reactive expansion fires when served majority threshold is crossed", async () => {
+  const infoSeeds = [];
+  const modules = loadRuntimeModules({
+    youtubeClient: createFakeYoutubeClient({
+      searchVideos: Array.from({ length: 4 }, (_, index) =>
+        rawVideo(`root-alpha-${index}`, `alpha root ${index}`, "Search")
+      ),
+      infoForSeed(seedId) {
+        infoSeeds.push(seedId);
+        return [rawVideo(`related-${seedId}`, "related alpha", "Related")];
+      }
+    }),
+    embeddingForText: () => [1, 0]
+  });
+  const profile = modules.profileStore.createProfile("Reactive Expansion");
+  profileStoreForCleanup = modules.profileStore;
+
+  try {
+    process.env.GRETEL_CONFIG = writeConfig("reactive-expansion.json", {
+      expansion: {
+        initialFetchSize: 4,
+        minDelayBetweenFetchesMs: 0,
+        maxFetchCallsPerCycle: 1,
+        cycleCooldownMs: 0,
+        servedMajorityThreshold: 0.4
+      },
+      feed: {
+        maxQueries: 1,
+        maxVideos: 2,
+        minVideosPerQuery: 1,
+        recommendationSeeds: 1,
+        expansionSeedCount: 1,
+        readyQueueLowWaterMark: 0,
+        subscriptionFastLanePerSession: 0,
+        similarityThreshold: 0.75
+      },
+      embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
+    });
+
+    const feed = await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
+      servingOnly: true
+    });
+    const poolKey = modules.poolStore.createFeedPoolKey({
+      tags: feed.queries,
+      channels: [],
+      channelSort: "mixed"
+    });
+    const related = modules.poolStore
+      .listPoolNodes(profile.id, poolKey)
+      .filter((node) => node.sourceNodeId === "relatedVideos");
+
+    assert.equal(feed.pool.expandedPool, true);
+    assert.equal(infoSeeds.length, 1);
+    assert.equal(related.length, 1);
+  } finally {
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});
+
+test("expansion caps fetch calls per cycle", async () => {
+  const infoSeeds = [];
+  const modules = loadRuntimeModules({
+    youtubeClient: createFakeYoutubeClient({
+      infoForSeed(seedId) {
+        infoSeeds.push(seedId);
+        return [rawVideo(`related-${seedId}`, "related alpha", "Related")];
+      }
+    }),
+    embeddingForText: () => [1, 0]
+  });
+  const profile = modules.profileStore.createProfile("Expansion Fetch Cap");
+  profileStoreForCleanup = modules.profileStore;
+  const poolKey = modules.poolStore.createFeedPoolKey({
+    tags: [],
+    channels: [],
+    channelSort: "mixed"
+  });
+
+  try {
+    process.env.GRETEL_CONFIG = writeConfig("fetch-cap.json", {
+      expansion: {
+        minDelayBetweenFetchesMs: 0,
+        maxFetchCallsPerCycle: 2,
+        cycleCooldownMs: 0,
+        servedMajorityThreshold: 1
+      },
+      feed: {
+        maxVideos: 12,
+        recommendationSeeds: 4,
+        expansionSeedCount: 4,
+        readyQueueLowWaterMark: 20,
+        subscriptionFastLanePerSession: 0,
+        similarityThreshold: 0.75
+      },
+      embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
+    });
+    modules.poolStore.markRootDiscovered(profile.id, poolKey, Date.now());
+    modules.algorithmStore.saveCentroid(profile.id, poolKey, [1, 0], [1, 0]);
+    modules.poolStore.addPoolNodes(
+      profile.id,
+      poolKey,
+      "tagSearch",
+      [
+        video("seed-1", { similarityScore: 1, engagementScore: 1 }),
+        video("seed-2", { similarityScore: 1, engagementScore: 0.9 }),
+        video("seed-3", { similarityScore: 1, engagementScore: 0.8 }),
+        video("seed-4", { similarityScore: 1, engagementScore: 0.7 })
+      ],
+      Date.now()
+    );
+
+    await modules.service.createFeed(profile.id, [], [], "mixed", observation(), {
+      forceExpansion: true
+    });
+
+    assert.deepEqual(infoSeeds, ["seed-1", "seed-2"]);
+  } finally {
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});
+
+test("embedding input includes configured transcript introduction when available", async () => {
+  const embeddedTexts = [];
+  const modules = loadRuntimeModules({
+    youtubeClient: createFakeYoutubeClient({
+      searchVideos: [rawVideo("root-alpha", "alpha root", "Search")],
+      transcriptForVideo() {
+        return "intro context should influence embedding ignored tail";
+      }
+    }),
+    embeddingForText(text) {
+      embeddedTexts.push(text);
+      return text.includes("intro context") ? [1, 0] : [0, 1];
+    }
+  });
+  const profile = modules.profileStore.createProfile("Transcript Embedding");
+  profileStoreForCleanup = modules.profileStore;
+
+  try {
+    process.env.GRETEL_CONFIG = writeConfig("transcript-embedding.json", {
+      transcription: {
+        introductionPercentage: 0.5,
+        maxCharacters: 30
+      },
+      expansion: {
+        servedMajorityThreshold: 1
+      },
+      feed: {
+        maxQueries: 1,
+        maxVideos: 1,
+        minVideosPerQuery: 1,
+        readyQueueLowWaterMark: 0,
+        subscriptionFastLanePerSession: 0
+      },
+      embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
+    });
+
+    await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
+      servingOnly: true
+    });
+
+    assert.equal(embeddedTexts.some((text) => text.includes("intro context")), true);
+    assert.deepEqual(modules.algorithmStore.getRetainedEmbedding(profile.id, "root-alpha"), [1, 0]);
+  } finally {
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});
+
 test("scoring computes engagement, nonlinear ignore decay, accumulated interactions, and cold/warm ordering", () => {
   const { computeEngagementScore, applyEngagement } = require(path.join(
     buildDir,
@@ -261,6 +475,35 @@ test("scoring computes engagement, nonlinear ignore decay, accumulated interacti
     config
   });
   assert.deepEqual(feed.videos.map((node) => node.id), ["centroid-best", "engagement-best"]);
+
+  const warmFeed = createCandidatePoolFeed({
+    rootVideos: [
+      video("already-served", { similarityScore: 1, parentEngagementScore: 1, servedCount: 1 }),
+      video("semantic-boost", { similarityScore: 1, parentEngagementScore: 0.5 }),
+      video("low-semantic", { similarityScore: 0, parentEngagementScore: 0.6 })
+    ],
+    channelVideos: [],
+    relatedVideos: [],
+    watchedVideoIds: new Set(),
+    interactions: new Map([
+      ["a", { videoId: "a", watchTimeRatio: 1, liked: false, clicked: false, ignoreCount: 0 }],
+      ["b", { videoId: "b", watchTimeRatio: 1, liked: false, clicked: false, ignoreCount: 0 }]
+    ]),
+    config: testConfig({
+      serving: {
+        servedPenaltyFactor: 1,
+        warmSemanticWeight: 0.5
+      },
+      feed: {
+        coldStartInteractionThreshold: 2,
+        readyQueueTargetSize: 10
+      }
+    })
+  });
+  assert.deepEqual(
+    warmFeed.videos.map((node) => node.id),
+    ["semantic-boost", "already-served", "low-semantic"]
+  );
 });
 
 test("centroid drift is bounded and pool similarities can be recomputed after a valid update", async () => {
@@ -706,7 +949,13 @@ function loadRuntimeModules({ youtubeClient, embeddingForText = () => [1, 0] } =
   };
 }
 
-function createFakeYoutubeClient({ searchVideos = [], searchResults = null, channelVideos = [], infoForSeed = () => [] } = {}) {
+function createFakeYoutubeClient({
+  searchVideos = [],
+  searchResults = null,
+  channelVideos = [],
+  infoForSeed = () => [],
+  transcriptForVideo = () => ""
+} = {}) {
   return {
     async search(_query, options = {}) {
       if (options.type === "channel") {
@@ -726,8 +975,27 @@ function createFakeYoutubeClient({ searchVideos = [], searchResults = null, chan
         }
       };
     },
-    async getInfo(seedId) {
-      return { watch_next_feed: infoForSeed(seedId) };
+    async getInfo(videoId) {
+      return {
+        get watch_next_feed() {
+          return infoForSeed(videoId);
+        },
+        async getTranscript() {
+          const transcript = transcriptForVideo(videoId);
+
+          return {
+            transcript: {
+              content: {
+                body: {
+                  initial_segments: transcript
+                    ? transcript.split(/\s+/).map((word) => ({ snippet: word }))
+                    : []
+                }
+              }
+            }
+          };
+        }
+      };
     }
   };
 }
@@ -744,6 +1012,9 @@ function testConfig(overrides = {}) {
 
   return {
     ...DEFAULT_GRETEL_CONFIG,
+    serving: { ...DEFAULT_GRETEL_CONFIG.serving, ...(overrides.serving || {}) },
+    expansion: { ...DEFAULT_GRETEL_CONFIG.expansion, ...(overrides.expansion || {}) },
+    transcription: { ...DEFAULT_GRETEL_CONFIG.transcription, ...(overrides.transcription || {}) },
     feed: { ...DEFAULT_GRETEL_CONFIG.feed, ...(overrides.feed || {}) },
     learning: { ...DEFAULT_GRETEL_CONFIG.learning, ...(overrides.learning || {}) },
     embeddings: { ...DEFAULT_GRETEL_CONFIG.embeddings, ...(overrides.embeddings || {}) },

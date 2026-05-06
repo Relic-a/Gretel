@@ -20,25 +20,17 @@ export function createCandidatePoolFeed(input: {
   const isColdStart = interactionCount < input.config.feed.coldStartInteractionThreshold;
   const allPoolVideos = [...input.rootVideos, ...input.channelVideos, ...input.relatedVideos]
     .map((video) => applyEngagement(video, input.interactions, input.config));
-  const servedVideos = allPoolVideos
-    .filter((video) => input.interactions.has(video.id))
+  const poolVideos = allPoolVideos
     .filter((video) => (video.watchTimeRatio || 0) < input.config.learning.watchCompletionThreshold)
-    .sort((left, right) => (right.engagementScore || 0) - (left.engagementScore || 0));
-  const unservedVideos = allPoolVideos
-    .filter((video) => !input.interactions.has(video.id) && !input.watchedVideoIds.has(video.id))
-    .sort((left, right) => {
-      if (isColdStart) {
-        return coldStartExpansionScore(right, input.config) -
-          coldStartExpansionScore(left, input.config);
-      }
-
-      return (right.parentEngagementScore || 0) - (left.parentEngagementScore || 0) ||
-        (right.similarityScore || 0) - (left.similarityScore || 0);
-    });
-  const poolVideos = [...servedVideos, ...unservedVideos].slice(
-    0,
-    input.config.feed.readyQueueTargetSize
-  );
+    .filter((video) => input.interactions.has(video.id) || !input.watchedVideoIds.has(video.id))
+    .sort((left, right) =>
+      servingScore(right, input.config, isColdStart) - servingScore(left, input.config, isColdStart) ||
+      (right.similarityScore || 0) - (left.similarityScore || 0)
+    )
+    .slice(
+      0,
+      input.config.feed.readyQueueTargetSize
+    );
 
   return {
     videos: poolVideos,
@@ -114,6 +106,25 @@ export function selectUpNextCandidates(input: {
 
 function expansionScore(video: FeedVideo, config: GretelConfig, warmStart: boolean) {
   return warmStart ? video.engagementScore || 0 : coldStartExpansionScore(video, config);
+}
+
+function servingScore(video: FeedVideo, config: GretelConfig, isColdStart: boolean) {
+  const baseScore = isColdStart
+    ? coldStartExpansionScore(video, config)
+    : warmServingScore(video, config);
+  const penalty = (video.servedCount || 0) * config.serving.servedPenaltyFactor;
+
+  if (penalty === 0) {
+    return baseScore;
+  }
+
+  return baseScore >= 0 ? baseScore / (1 + penalty) : baseScore * (1 + penalty);
+}
+
+function warmServingScore(video: FeedVideo, config: GretelConfig) {
+  const engagementScore = video.engagementScore || video.parentEngagementScore || 0;
+
+  return engagementScore + (video.similarityScore || 0) * config.serving.warmSemanticWeight;
 }
 
 function similarityToCurrent(

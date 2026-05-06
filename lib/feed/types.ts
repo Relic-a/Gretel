@@ -22,6 +22,8 @@ export type FeedVideo = {
   similarityScore?: number;
   engagementScore?: number;
   parentEngagementScore?: number;
+  servedCount?: number;
+  lastServedAt?: number;
   watchTimeRatio?: number;
   liked?: boolean;
   clicked?: boolean;

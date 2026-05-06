@@ -24,7 +24,8 @@ import {
 export async function searchVideos(
   queries: string[],
   observation: FeedObservation,
-  profileId: string
+  profileId: string,
+  maxVideos = getGretelConfig().feed.maxVideos
 ) {
   return observeOperation(
     observation,
@@ -37,7 +38,7 @@ export async function searchVideos(
       const config = getGretelConfig();
       const perQueryLimit = Math.max(
         config.feed.minVideosPerQuery,
-        Math.ceil(config.feed.maxVideos / queries.length)
+        Math.ceil(maxVideos / queries.length)
       );
 
       for (const query of queries) {
@@ -90,7 +91,7 @@ export async function searchVideos(
         });
       }
 
-      const mixed = mixVideoBuckets(videosByQuery);
+      const mixed = mixVideoBuckets(videosByQuery, maxVideos);
 
       return {
         value: mixed,
@@ -121,7 +122,8 @@ export async function fetchChannelVideos(
   channels: string[],
   sort: ChannelSort,
   observation: FeedObservation,
-  profileId: string
+  profileId: string,
+  maxVideos = getGretelConfig().feed.maxVideos
 ) {
   return observeOperation(
     observation,
@@ -134,7 +136,7 @@ export async function fetchChannelVideos(
       const config = getGretelConfig();
       const perChannelLimit = Math.max(
         config.feed.minVideosPerChannel,
-        Math.ceil(config.feed.maxVideos / channels.length)
+        Math.ceil(maxVideos / channels.length)
       );
 
       for (const channelName of channels) {
@@ -205,7 +207,7 @@ export async function fetchChannelVideos(
         }
       }
 
-      const mixed = mixVideoBuckets(videosByChannel);
+      const mixed = mixVideoBuckets(videosByChannel, maxVideos);
 
       return {
         value: mixed,

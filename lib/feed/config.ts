@@ -5,6 +5,9 @@ import { DEFAULT_GRETEL_CONFIG, type GretelConfig } from "./config-defaults";
 import { errorFields, logInfo, logWarn } from "../logger";
 
 type ConfigInput = Partial<{
+  serving: Partial<GretelConfig["serving"]>;
+  expansion: Partial<GretelConfig["expansion"]>;
+  transcription: Partial<GretelConfig["transcription"]>;
   feed: Partial<GretelConfig["feed"]>;
   learning: Partial<GretelConfig["learning"]>;
   embeddings: Partial<GretelConfig["embeddings"]>;
@@ -35,6 +38,9 @@ export function getPublicGretelConfig() {
   const config = getGretelConfig();
 
   return {
+    serving: config.serving,
+    expansion: config.expansion,
+    transcription: config.transcription,
     feed: {
       maxVideos: config.feed.maxVideos,
       readyQueueTargetSize: config.feed.readyQueueTargetSize
@@ -98,6 +104,9 @@ function logConfigIfChanged(config: GretelConfig) {
   lastConfigLogSignature = signature;
   logInfo("config.applied", {
     path: configPath,
+    serving: config.serving,
+    expansion: config.expansion,
+    transcription: config.transcription,
     feed: config.feed,
     learning: config.learning,
     embeddings: {
@@ -113,6 +122,9 @@ function logConfigIfChanged(config: GretelConfig) {
 }
 
 function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
+  const serving = input.serving || {};
+  const expansion = input.expansion || {};
+  const transcription = input.transcription || {};
   const feed = input.feed || {};
   const learning = input.learning || {};
   const embeddings = input.embeddings || {};
@@ -120,6 +132,62 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
   const youtube = input.youtube || {};
 
   return {
+    serving: {
+      servedPenaltyFactor: numberInRange(
+        serving.servedPenaltyFactor,
+        defaults.serving.servedPenaltyFactor,
+        0,
+        100
+      ),
+      warmSemanticWeight: numberInRange(
+        serving.warmSemanticWeight,
+        defaults.serving.warmSemanticWeight,
+        0,
+        100
+      )
+    },
+    expansion: {
+      initialFetchSize: integer(
+        expansion.initialFetchSize,
+        defaults.expansion.initialFetchSize,
+        1,
+        1000
+      ),
+      minDelayBetweenFetchesMs: integer(
+        expansion.minDelayBetweenFetchesMs,
+        defaults.expansion.minDelayBetweenFetchesMs,
+        0,
+        600000
+      ),
+      maxFetchCallsPerCycle: integer(
+        expansion.maxFetchCallsPerCycle,
+        defaults.expansion.maxFetchCallsPerCycle,
+        1,
+        100
+      ),
+      cycleCooldownMs: integer(
+        expansion.cycleCooldownMs,
+        defaults.expansion.cycleCooldownMs,
+        0,
+        24 * 60 * 60 * 1000
+      ),
+      servedMajorityThreshold: share(
+        expansion.servedMajorityThreshold,
+        defaults.expansion.servedMajorityThreshold
+      )
+    },
+    transcription: {
+      introductionPercentage: share(
+        transcription.introductionPercentage,
+        defaults.transcription.introductionPercentage
+      ),
+      maxCharacters: integer(
+        transcription.maxCharacters,
+        defaults.transcription.maxCharacters,
+        0,
+        100000
+      )
+    },
     feed: {
       maxQueries: integer(feed.maxQueries, defaults.feed.maxQueries, 1, 50),
       maxVideos: integer(feed.maxVideos, defaults.feed.maxVideos, 1, 200),

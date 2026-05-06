@@ -180,6 +180,12 @@ function writeRuntimeConfig(name, overrides = {}) {
         watchSaveThreshold: 0.25,
         ...overrides.learning
       },
+      expansion: {
+        minDelayBetweenFetchesMs: 0,
+        cycleCooldownMs: 0,
+        servedMajorityThreshold: 1,
+        ...overrides.expansion
+      },
       client: {
         watchProgressPollMs: 250,
         ...overrides.client
@@ -236,12 +242,25 @@ function createFakeYoutubeClient() {
       calls.getInfo += 1;
 
       return {
-        watch_next_feed: Array.from({ length: 4 }, (_, index) =>
-          fakeVideo(
-            `related-${seedId}-${index}`,
-            index % 2 === 0 ? "Related One" : "Related Two"
-          )
-        )
+        get watch_next_feed() {
+          return Array.from({ length: 4 }, (_, index) =>
+            fakeVideo(
+              `related-${seedId}-${index}`,
+              index % 2 === 0 ? "Related One" : "Related Two"
+            )
+          );
+        },
+        async getTranscript() {
+          return {
+            transcript: {
+              content: {
+                body: {
+                  initial_segments: []
+                }
+              }
+            }
+          };
+        }
       };
     }
   };

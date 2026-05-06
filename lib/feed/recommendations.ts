@@ -25,13 +25,14 @@ export async function recommendVideosFromSeeds(
     { sourceVideos: sourceVideos.length },
     async () => {
       const seedVideos = sourceVideos.slice(0, getGretelConfig().feed.recommendationSeeds);
+      const limitedSeedVideos = seedVideos.slice(0, getGretelConfig().expansion.maxFetchCallsPerCycle);
 
-      if (seedVideos.length === 0) {
+      if (limitedSeedVideos.length === 0) {
         return { value: [], output: { recommendationVideos: 0 } };
       }
 
       const recommendationVideos = await recommendVideosFromLinks(
-        seedVideos,
+        limitedSeedVideos,
         observation,
         profileId,
         sourceLabel,
@@ -58,9 +59,11 @@ async function recommendVideosFromLinks(
     { seedLinks: seedVideos.length },
     async () => {
       const youtube = await getYoutubeClient(profileId);
-      const maxVideos = getGretelConfig().feed.maxVideos;
+      const config = getGretelConfig();
+      const maxVideos = config.feed.maxVideos;
       const seen = new Set<string>();
       const recommendations: FeedVideo[] = [];
+      let lastFetchAt = 0;
 
       for (const seedVideo of seedVideos) {
         const seedId = seedVideo.id;
@@ -70,7 +73,14 @@ async function recommendVideosFromLinks(
         }
 
         try {
+          const elapsedMs = Date.now() - lastFetchAt;
+
+          if (lastFetchAt > 0 && elapsedMs < config.expansion.minDelayBetweenFetchesMs) {
+            await delay(config.expansion.minDelayBetweenFetchesMs - elapsedMs);
+          }
+
           const info = await youtube.getInfo(seedId);
+          lastFetchAt = Date.now();
           let seedRecommendations = 0;
           const maxVideosPerSeed = budgetForSeed(seedVideo, seedVideos);
 
@@ -124,4 +134,8 @@ async function recommendVideosFromLinks(
       };
     }
   );
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

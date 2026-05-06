@@ -1,5 +1,6 @@
 import { getGretelConfig } from "./config";
 import { createEmbeddingInput, getEmbeddingProvider } from "./embeddings";
+import { createEmbeddingInputWithTranscript, fetchTranscriptIntroduction } from "./transcription";
 import { getVideoInteractions } from "../profile-store";
 import type { FeedVideo } from "./types";
 import { cosineSimilarity, driftCentroid } from "./vector-math";
@@ -38,7 +39,11 @@ export async function updateCentroidsForPositiveEngagement(profileId: string, vi
   let embedding = getRetainedEmbedding(profileId, video.id);
 
   if (!embedding) {
-    const vectors = await getEmbeddingProvider(config).embedTexts([createEmbeddingInput(video)]);
+    const transcriptIntroduction = await fetchTranscriptIntroduction(profileId, video.id, config);
+    const input = transcriptIntroduction
+      ? createEmbeddingInputWithTranscript(video, transcriptIntroduction)
+      : createEmbeddingInput(video);
+    const vectors = await getEmbeddingProvider(config).embedTexts([input]);
     embedding = vectors[0] || null;
 
     if (embedding) {

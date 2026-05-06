@@ -5,6 +5,7 @@ import {
   getFeedPoolState,
   getVisitedVideoIds,
   listPoolNodes,
+  markPoolExpanded,
   markPoolNodesServed,
   markRootDiscovered,
   prunePool,
@@ -12,6 +13,7 @@ import {
 } from "./pool-store";
 import { getGretelConfig } from "./config";
 import { createEmbeddingInput, getEmbeddingProvider } from "./embeddings";
+import { createEmbeddingInputWithTranscript, fetchTranscriptIntroduction } from "./transcription";
 import { applyEngagement } from "./engagement";
 import {
   createCandidatePoolFeed,
@@ -69,12 +71,12 @@ export async function createFeed(
     interactions: getVideoInteractions(profileId),
     config
   });
-  const expandedPool =
+  let expandedPool =
     !options.servingOnly &&
     (options.forceExpansion || readyPreview.videos.length <= config.feed.readyQueueLowWaterMark);
 
   if (expandedPool) {
-    await expandPool(profileId, poolKey, poolVideos, observation);
+    expandedPool = await expandPool(profileId, poolKey, poolVideos, observation);
     poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
     recordScoringObservation(observation, profileId, poolVideos, "afterExpansion");
     readyPreview = createCandidatePoolFeed({
@@ -122,7 +124,13 @@ export async function createFeed(
 
   await retainReadyQueueEmbeddings(profileId, videos, observation);
   const upNextByVideoId = buildUpNextByVideoId(profileId, videos);
-  markPoolNodesServed(profileId, poolKey, poolRecommendations);
+  const servedStats = markPoolNodesServed(profileId, poolKey, poolRecommendations);
+
+  if (servedStats && shouldTriggerReactiveExpansion(servedStats, config)) {
+    const currentPoolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
+    expandedPool = await expandPool(profileId, poolKey, currentPoolVideos, observation) || expandedPool;
+  }
+
   observation.operations.push({
     name: "feed.phase5.serving",
     durationMs: 0,
@@ -179,8 +187,11 @@ async function initializePoolOnce(
   }
 
   const timestamp = Date.now();
-  const discoveredRootVideos = queries.length > 0 ? await searchVideos(queries, observation, profileId) : [];
-  const discoveredRootEmbeddings = await embedVideos(discoveredRootVideos);
+  const config = getGretelConfig();
+  const discoveredRootVideos = queries.length > 0
+    ? await searchVideos(queries, observation, profileId, config.expansion.initialFetchSize)
+    : [];
+  const discoveredRootEmbeddings = await embedVideos(profileId, discoveredRootVideos);
   const rootFilter = filterEmbeddingOutliers(discoveredRootVideos, discoveredRootEmbeddings);
   const rootVideos = rootFilter.videos;
   const rootEmbeddings = rootFilter.embeddings;
@@ -212,9 +223,9 @@ async function initializePoolOnce(
   addPoolNodes(profileId, poolKey, "tagSearch", scoredRoots, timestamp);
 
   const channelCandidates = channels.length > 0
-    ? await fetchChannelVideos(channels, channelSort, observation, profileId)
+    ? await fetchChannelVideos(channels, channelSort, observation, profileId, config.expansion.initialFetchSize)
     : [];
-  const channelEmbeddings = await embedVideos(channelCandidates);
+  const channelEmbeddings = await embedVideos(profileId, channelCandidates);
   const channelPoolVideos = scoreByCentroid(
     persistentChannelCandidates(channelCandidates),
     channelEmbeddings,
@@ -257,13 +268,30 @@ async function expandPool(
   observation: FeedObservation
 ) {
   const config = getGretelConfig();
+  const poolState = getFeedPoolState(profileId, poolKey);
+  const now = Date.now();
+
+  if (poolState && now - poolState.lastExpandedAt < config.expansion.cycleCooldownMs) {
+    observation.operations.push({
+      name: "feed.phase2.expansion_skipped",
+      durationMs: 0,
+      status: "ok",
+      input: {
+        poolVideos: poolVideos.length,
+        cycleCooldownMs: config.expansion.cycleCooldownMs
+      },
+      output: { reason: "cooldown" }
+    });
+    return false;
+  }
+
   const interactions = getVideoInteractions(profileId);
   const centroid = getCentroid(profileId, poolKey)?.current || [];
   const scoredPool = poolVideos.map((video) => applyEngagement(video, interactions, config));
   const seeds = selectExpansionSeeds({ videos: scoredPool, interactions, config });
 
   if (seeds.length === 0) {
-    return;
+    return false;
   }
 
   await observeOperation(
@@ -290,7 +318,7 @@ async function expandPool(
       );
       const visitedVideoIds = getVisitedVideoIds(profileId, poolKey);
       const newCandidates = rawRelatedVideos.filter((video) => !visitedVideoIds.has(video.id));
-      const embeddings = await embedVideos(newCandidates);
+      const embeddings = await embedVideos(profileId, newCandidates);
       const parentScores = new Map(seeds.map((seed) => [seed.id, seed.engagementScore || 0]));
       const relatedVideos = scoreByCentroid(newCandidates, embeddings, centroid, "relatedVideos")
         .map((video) => ({
@@ -301,6 +329,7 @@ async function expandPool(
 
       retainVideoEmbeddings(profileId, relatedVideos, embeddings);
       addPoolNodes(profileId, poolKey, "relatedVideos", relatedVideos, Date.now());
+      markPoolExpanded(profileId, poolKey, Date.now());
 
       return {
         value: undefined,
@@ -315,6 +344,8 @@ async function expandPool(
       };
     }
   );
+
+  return true;
 }
 
 async function getSubscriptionFastLaneVideos(
@@ -381,14 +412,30 @@ function recordScoringObservation(
   });
 }
 
-async function embedVideos(videos: FeedVideo[]) {
+function shouldTriggerReactiveExpansion(
+  servedStats: NonNullable<ReturnType<typeof markPoolNodesServed>>,
+  config: ReturnType<typeof getGretelConfig>
+) {
+  return servedStats.before.ratio <= config.expansion.servedMajorityThreshold &&
+    servedStats.after.ratio > config.expansion.servedMajorityThreshold;
+}
+
+async function embedVideos(profileId: string, videos: FeedVideo[]) {
   const config = getGretelConfig();
   const provider = getEmbeddingProvider(config);
   const embeddings = new Map<string, number[]>();
 
   for (let index = 0; index < videos.length; index += config.embeddings.batchSize) {
     const batch = videos.slice(index, index + config.embeddings.batchSize);
-    const vectors = await provider.embedTexts(batch.map(createEmbeddingInput));
+    const texts = await Promise.all(
+      batch.map(async (video) => {
+        const transcriptIntroduction = await fetchTranscriptIntroduction(profileId, video.id, config);
+        return transcriptIntroduction
+          ? createEmbeddingInputWithTranscript(video, transcriptIntroduction)
+          : createEmbeddingInput(video);
+      })
+    );
+    const vectors = await provider.embedTexts(texts);
 
     for (let vectorIndex = 0; vectorIndex < batch.length; vectorIndex += 1) {
       const vector = vectors[vectorIndex];
@@ -493,7 +540,7 @@ async function retainReadyQueueEmbeddings(
     return;
   }
 
-  const embeddings = await embedVideos(missingVideos);
+  const embeddings = await embedVideos(profileId, missingVideos);
   retainVideoEmbeddings(profileId, missingVideos, embeddings);
   observation.operations.push({
     name: "feed.phase5.ready_embeddings",

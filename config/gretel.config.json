@@ -1,4 +1,19 @@
 {
+  "serving": {
+    "servedPenaltyFactor": 0.2,
+    "warmSemanticWeight": 0.25
+  },
+  "expansion": {
+    "initialFetchSize": 96,
+    "minDelayBetweenFetchesMs": 500,
+    "maxFetchCallsPerCycle": 4,
+    "cycleCooldownMs": 120000,
+    "servedMajorityThreshold": 0.6
+  },
+  "transcription": {
+    "introductionPercentage": 0.15,
+    "maxCharacters": 2000
+  },
   "feed": {
     "maxQueries": 5,
     "maxVideos": 48,
@@ -7,15 +22,15 @@
     "recommendationSeeds": 4,
     "minVideosPerQuery": 3,
     "minVideosPerChannel": 3,
-    "similarityThreshold": 0.45,
-    "coldStartInteractionThreshold": 12,
+    "similarityThreshold": 0.55,
+    "coldStartInteractionThreshold": 8,
     "expansionSeedCount": 4,
     "minRelatedVideosPerSeed": 1,
-    "maxRelatedVideosPerSeed": 8,
+    "maxRelatedVideosPerSeed": 6,
     "readyQueueTargetSize": 48,
     "readyQueueLowWaterMark": 16,
-    "subscriptionFastLanePerSession": 6,
-    "coldStartParentEngagementWeight": 0.15
+    "subscriptionFastLanePerSession": 2,
+    "coldStartParentEngagementWeight": 0.05
   },
   "learning": {
     "watchSaveThreshold": 0.5,

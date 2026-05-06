@@ -18,8 +18,7 @@ export function nextUniqueVideo(videos: FeedVideo[], seen: Set<string>, startInd
   return { item: null, nextIndex: videos.length };
 }
 
-export function mixVideoBuckets(videoBuckets: FeedVideo[][]) {
-  const maxVideos = getGretelConfig().feed.maxVideos;
+export function mixVideoBuckets(videoBuckets: FeedVideo[][], maxVideos = getGretelConfig().feed.maxVideos) {
   const mixed: FeedVideo[] = [];
 
   for (let index = 0; mixed.length < maxVideos; index += 1) {

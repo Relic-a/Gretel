@@ -5,6 +5,7 @@ import type { FeedNodeId, FeedVideo } from "./types";
 export type FeedPoolState = {
   rootDiscoveredAt: number;
   updatedAt: number;
+  lastExpandedAt: number;
   poolVideos: number;
 };
 
@@ -34,6 +35,7 @@ export function ensureFeedPoolTables() {
       pool_key TEXT NOT NULL,
       root_discovered_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
+      last_expanded_at INTEGER NOT NULL DEFAULT 0,
       PRIMARY KEY (profile_id, pool_key),
       FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
     );
@@ -66,13 +68,15 @@ export function ensureFeedPoolTables() {
     );
   `);
 
+  ensureColumn("feed_pool_state", "last_expanded_at", "INTEGER NOT NULL DEFAULT 0");
 }
 
 export function getFeedPoolState(profileId: string, poolKey: string): FeedPoolState | null {
   ensureFeedPoolTables();
   const row = getDatabase()
     .prepare(
-      `SELECT state.root_discovered_at, state.updated_at, COUNT(nodes.video_id) AS pool_videos
+      `SELECT state.root_discovered_at, state.updated_at, state.last_expanded_at,
+              COUNT(nodes.video_id) AS pool_videos
        FROM feed_pool_state state
        LEFT JOIN feed_pool_nodes nodes
          ON nodes.profile_id = state.profile_id AND nodes.pool_key = state.pool_key
@@ -83,6 +87,7 @@ export function getFeedPoolState(profileId: string, poolKey: string): FeedPoolSt
     | {
         root_discovered_at: number;
         updated_at: number;
+        last_expanded_at: number;
         pool_videos: number;
       }
     | undefined;
@@ -91,6 +96,7 @@ export function getFeedPoolState(profileId: string, poolKey: string): FeedPoolSt
     ? {
         rootDiscoveredAt: row.root_discovered_at,
         updatedAt: row.updated_at,
+        lastExpandedAt: row.last_expanded_at,
         poolVideos: row.pool_videos
       }
     : null;
@@ -218,9 +224,11 @@ export function getVisitedVideoIds(profileId: string, poolKey: string) {
 
 export function markPoolNodesServed(profileId: string, poolKey: string, videos: FeedVideo[]) {
   if (videos.length === 0) {
-    return;
+    return null;
   }
 
+  ensureFeedPoolTables();
+  const before = getServedRatio(profileId, poolKey);
   const timestamp = Date.now();
   const statement = getDatabase().prepare(
     `UPDATE feed_pool_nodes
@@ -233,6 +241,22 @@ export function markPoolNodesServed(profileId: string, poolKey: string, videos: 
   for (const video of videos) {
     statement.run(timestamp, timestamp, profileId, poolKey, video.id);
   }
+
+  const after = getServedRatio(profileId, poolKey);
+
+  return { before, after };
+}
+
+export function markPoolExpanded(profileId: string, poolKey: string, timestamp: number) {
+  ensureFeedPoolTables();
+  getDatabase()
+    .prepare(
+      `UPDATE feed_pool_state
+       SET last_expanded_at = ?,
+           updated_at = ?
+       WHERE profile_id = ? AND pool_key = ?`
+    )
+    .run(timestamp, timestamp, profileId, poolKey);
 }
 
 export function updatePoolSimilarities(profileId: string, poolKey: string, videos: FeedVideo[]) {
@@ -310,6 +334,35 @@ function touchPool(profileId: string, poolKey: string, timestamp: number) {
        WHERE profile_id = ? AND pool_key = ?`
     )
     .run(timestamp, profileId, poolKey);
+}
+
+function getServedRatio(profileId: string, poolKey: string) {
+  const row = getDatabase()
+    .prepare(
+      `SELECT COUNT(*) AS total_videos,
+              SUM(CASE WHEN served_count > 0 THEN 1 ELSE 0 END) AS served_videos
+       FROM feed_pool_nodes
+       WHERE profile_id = ? AND pool_key = ?`
+    )
+    .get(profileId, poolKey) as { total_videos: number; served_videos: number | null };
+  const totalVideos = row.total_videos || 0;
+  const servedVideos = row.served_videos || 0;
+
+  return {
+    totalVideos,
+    servedVideos,
+    ratio: totalVideos > 0 ? servedVideos / totalVideos : 0
+  };
+}
+
+function ensureColumn(tableName: string, columnName: string, definition: string) {
+  const columns = getDatabase().prepare(`PRAGMA table_info(${tableName})`).all() as Array<{ name: string }>;
+
+  if (columns.some((column) => column.name === columnName)) {
+    return;
+  }
+
+  getDatabase().prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`).run();
 }
 
 function normalizePoolKeyPart(value: string) {

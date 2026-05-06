@@ -1,4 +1,19 @@
 export type GretelConfig = {
+  serving: {
+    servedPenaltyFactor: number;
+    warmSemanticWeight: number;
+  };
+  expansion: {
+    initialFetchSize: number;
+    minDelayBetweenFetchesMs: number;
+    maxFetchCallsPerCycle: number;
+    cycleCooldownMs: number;
+    servedMajorityThreshold: number;
+  };
+  transcription: {
+    introductionPercentage: number;
+    maxCharacters: number;
+  };
   feed: {
     maxQueries: number;
     maxVideos: number;
@@ -50,6 +65,21 @@ export type GretelConfig = {
 };
 
 export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
+  serving: {
+    servedPenaltyFactor: 0.2,
+    warmSemanticWeight: 0.25
+  },
+  expansion: {
+    initialFetchSize: 96,
+    minDelayBetweenFetchesMs: 500,
+    maxFetchCallsPerCycle: 4,
+    cycleCooldownMs: 120000,
+    servedMajorityThreshold: 0.6
+  },
+  transcription: {
+    introductionPercentage: 0.15,
+    maxCharacters: 2000
+  },
   feed: {
     maxQueries: 5,
     maxVideos: 48,
