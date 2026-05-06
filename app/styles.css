@@ -1,20 +1,20 @@
 :root {
-  color-scheme: light;
-  --color-page: #fbfbfe;
-  --color-surface: #ffffff;
-  --color-surface-soft: #f6f7fb;
-  --color-text: #111329;
-  --color-muted: #62677e;
-  --color-faint: #8a90a6;
-  --color-border: #dfe3ef;
-  --color-border-strong: #c7cce0;
-  --color-brand: #3e16d6;
-  --color-brand-strong: #2b0aa7;
-  --color-brand-soft: #f0ecff;
-  --color-danger: #d52643;
-  --color-danger-soft: #fff0f2;
-  --shadow-popover: 0 22px 70px rgb(29 27 60 / 0.18);
-  --shadow-card: 0 1px 0 rgb(18 22 48 / 0.05), 0 12px 30px rgb(18 22 48 / 0.03);
+  color-scheme: dark;
+  --color-page: #0f111a;
+  --color-surface: #1a1d29;
+  --color-surface-soft: #232736;
+  --color-text: #f0f2f8;
+  --color-muted: #9aa1bc;
+  --color-faint: #6c7391;
+  --color-border: #2d3142;
+  --color-border-strong: #41475e;
+  --color-brand: #6b4cfa;
+  --color-brand-strong: #8a71fc;
+  --color-brand-soft: #241c4f;
+  --color-danger: #f65874;
+  --color-danger-soft: #3a161f;
+  --shadow-popover: 0 22px 70px rgb(0 0 0 / 0.4);
+  --shadow-card: 0 1px 0 rgb(0 0 0 / 0.1), 0 12px 30px rgb(0 0 0 / 0.15);
   --radius-card: 8px;
   --radius-control: 7px;
   --topbar-height: 84px;
@@ -65,7 +65,7 @@ button:disabled {
   height: var(--topbar-height);
   gap: 24px;
   padding: 0 42px;
-  background: rgb(255 255 255 / 0.94);
+  background: rgb(26 29 41 / 0.94);
   border-bottom: 1px solid var(--color-border);
   backdrop-filter: blur(16px);
 }
@@ -75,7 +75,7 @@ button:disabled {
   justify-self: start;
   padding: 0;
   background: transparent;
-  color: #1c0a68;
+  color: #e0e4f5;
   font-family: Georgia, "Times New Roman", serif;
   font-size: 2.25rem;
   font-weight: 800;
@@ -96,7 +96,7 @@ button:disabled {
   min-width: 92px;
   padding: 0 4px;
   background: transparent;
-  color: #494e68;
+  color: var(--color-muted);
   font-weight: 750;
 }
 
@@ -242,7 +242,7 @@ button:disabled {
   border: 1px solid var(--color-border);
   border-radius: 999px;
   background: var(--color-surface);
-  color: #4f5469;
+  color: var(--color-muted);
   font-weight: 700;
 }
 
@@ -261,7 +261,7 @@ button:disabled {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
   background: var(--color-surface);
-  color: #4f5469;
+  color: var(--color-text);
   font-weight: 800;
 }
 
@@ -554,7 +554,7 @@ img.avatar {
   position: relative;
   overflow: hidden;
   border-radius: 6px;
-  background: #eef1f7;
+  background: var(--color-surface-soft);
 }
 
 .skeleton::after {
@@ -562,7 +562,7 @@ img.avatar {
   position: absolute;
   inset: 0;
   transform: translateX(-100%);
-  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.68), transparent);
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.08), transparent);
   animation: skeleton-shimmer 1.35s infinite;
 }
 
@@ -1018,13 +1018,13 @@ select {
   padding: 0 12px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
-  background: #fff;
+  background: var(--color-surface);
   color: var(--color-text);
 }
 
 input:focus,
 select:focus {
-  outline: 3px solid rgb(62 22 214 / 0.15);
+  outline: 3px solid rgb(107 76 250 / 0.15);
   border-color: var(--color-brand);
 }
 
@@ -1043,7 +1043,7 @@ select:focus {
   padding: 7px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
-  background: #fff;
+  background: var(--color-surface);
 }
 
 .tag-input button {
@@ -1076,7 +1076,7 @@ select:focus {
   min-height: 48px;
   padding: 8px 10px;
   border-bottom: 1px solid var(--color-border);
-  background: #fff;
+  background: var(--color-surface);
   color: var(--color-text);
   text-align: left;
   font-weight: 750;
