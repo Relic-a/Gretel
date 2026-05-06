@@ -1,23 +1,23 @@
 :root {
   color-scheme: dark;
-  --color-page: #0f111a;
-  --color-surface: #1a1d29;
-  --color-surface-soft: #232736;
-  --color-text: #f0f2f8;
-  --color-muted: #9aa1bc;
-  --color-faint: #6c7391;
-  --color-border: #2d3142;
-  --color-border-strong: #41475e;
-  --color-brand: #6b4cfa;
-  --color-brand-strong: #8a71fc;
-  --color-brand-soft: #241c4f;
+  --color-page: #0a0a0c;
+  --color-surface: #141416;
+  --color-surface-soft: #1d1d20;
+  --color-text: #e0e0e0;
+  --color-muted: #888888;
+  --color-faint: #555555;
+  --color-border: #2a2a2a;
+  --color-border-strong: #444444;
+  --color-brand: #e44232;
+  --color-brand-strong: #ff5242;
+  --color-brand-soft: #421a15;
   --color-danger: #f65874;
   --color-danger-soft: #3a161f;
-  --shadow-popover: 0 22px 70px rgb(0 0 0 / 0.4);
-  --shadow-card: 0 1px 0 rgb(0 0 0 / 0.1), 0 12px 30px rgb(0 0 0 / 0.15);
-  --radius-card: 8px;
-  --radius-control: 7px;
-  --topbar-height: 84px;
+  --shadow-popover: 0 30px 80px rgb(0 0 0 / 0.8);
+  --shadow-card: 0 4px 20px rgb(0 0 0 / 0.4);
+  --radius-card: 0px;
+  --radius-control: 0px;
+  --topbar-height: 90px;
 }
 
 * {
@@ -28,9 +28,10 @@ body {
   margin: 0;
   background: var(--color-page);
   color: var(--color-text);
-  font-family:
-    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
-    sans-serif;
+  font-family: 'Space Mono', monospace, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New";
+  letter-spacing: -0.02em;
+  background-image: linear-gradient(rgba(20, 20, 22, 0.8) 1px, transparent 1px), linear-gradient(90deg, rgba(20, 20, 22, 0.8) 1px, transparent 1px);
+  background-size: 40px 40px;
 }
 
 button,
@@ -65,9 +66,9 @@ button:disabled {
   height: var(--topbar-height);
   gap: 24px;
   padding: 0 42px;
-  background: rgb(26 29 41 / 0.94);
-  border-bottom: 1px solid var(--color-border);
-  backdrop-filter: blur(16px);
+  background: var(--color-surface);
+  border-bottom: 2px solid var(--color-border);
+  box-shadow: 0 4px 20px rgb(0 0 0 / 0.5);
 }
 
 .brand-button {
@@ -75,10 +76,13 @@ button:disabled {
   justify-self: start;
   padding: 0;
   background: transparent;
-  color: #e0e4f5;
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 2.25rem;
-  font-weight: 800;
+  color: var(--color-brand);
+  font-family: 'Space Mono', monospace;
+  font-size: 2rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  text-shadow: 2px 2px 0px var(--color-brand-soft);
 }
 
 .section-tabs {
@@ -129,19 +133,25 @@ button:disabled {
   min-width: 244px;
   padding: 0 16px;
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: var(--radius-card);
   background: var(--color-surface);
   color: var(--color-text);
   font-weight: 800;
+  box-shadow: 2px 2px 0px var(--color-border);
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.profile-button:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0px var(--color-brand);
+  border-color: var(--color-brand);
 }
 
 .profile-avatar {
   width: 34px;
   height: 34px;
-  border-radius: 50%;
-  background:
-    radial-gradient(circle at 65% 35%, #fdedff 0 16%, transparent 17%),
-    linear-gradient(145deg, #60c5ff, #3e16d6 55%, #120047);
+  border-radius: 0;
+  background: var(--color-brand);
 }
 
 .profile-avatar.small {
@@ -283,12 +293,14 @@ button:disabled {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
   background: var(--color-surface);
-  box-shadow: var(--shadow-card);
+  box-shadow: 4px 4px 0px var(--color-border);
+  transition: transform 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94), box-shadow 0.2s cubic-bezier(0.25, 0.46, 0.45, 0.94);
 }
 
 .video-card:hover {
-  border-color: var(--color-border-strong);
-  box-shadow: 0 14px 36px rgb(18 22 48 / 0.08);
+  transform: translate(-4px, -4px);
+  border-color: var(--color-brand);
+  box-shadow: 8px 8px 0px var(--color-brand-soft);
 }
 
 .video-card.compact {
@@ -472,13 +484,31 @@ img.avatar {
 .subscribe-button {
   background: var(--color-brand);
   color: #fff;
+  border: 1px solid var(--color-brand-strong);
+  box-shadow: 2px 2px 0px var(--color-brand-soft);
+  transition: all 0.1s;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.subscribe-button:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0px var(--color-brand-strong);
 }
 
 .subscribe-button.ghost,
 .action-button {
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-brand);
   background: var(--color-surface);
   color: var(--color-brand);
+  box-shadow: 2px 2px 0px var(--color-brand-soft);
+  transition: all 0.1s;
+}
+
+.action-button:hover,
+.subscribe-button.ghost:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0px var(--color-brand);
 }
 
 .action-button.active {
