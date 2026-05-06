@@ -24,7 +24,7 @@ import {
 import { recommendVideosFromSeeds } from "./recommendations";
 import type { ChannelSort, FeedObservation, FeedVideo } from "./types";
 import { fetchChannelVideos, searchVideos } from "./youtube";
-import { getVideoInteractions } from "../profile-store";
+import { getProfile, getVideoInteractions } from "../profile-store";
 import { observeOperation } from "./observation";
 import {
   getCentroid,
@@ -36,9 +36,17 @@ import { averageNormalizedVectors, cosineSimilarity } from "./vector-math";
 
 export type CreateFeedOptions = {
   forceExpansion?: boolean;
+  expectedProfileUpdatedAt?: number;
   servingOnly?: boolean;
   watchedVideoIds?: string[];
 };
+
+export class FeedProfileStaleError extends Error {
+  constructor() {
+    super("The active profile changed before feed generation finished.");
+    this.name = "FeedProfileStaleError";
+  }
+}
 
 export async function createFeed(
   profileId: string,
@@ -48,6 +56,8 @@ export async function createFeed(
   observation: FeedObservation,
   options: CreateFeedOptions = {}
 ) {
+  ensureProfileCurrent(profileId, options.expectedProfileUpdatedAt);
+
   const queries = createQueries(tags);
   const config = getGretelConfig();
   const poolKey = createFeedPoolKey({ tags: queries, channels, channelSort });
@@ -58,7 +68,8 @@ export async function createFeed(
     queries,
     channels,
     channelSort,
-    observation
+    observation,
+    options.expectedProfileUpdatedAt
   );
 
   let poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
@@ -76,7 +87,13 @@ export async function createFeed(
     (options.forceExpansion || readyPreview.videos.length <= config.feed.readyQueueLowWaterMark);
 
   if (expandedPool) {
-    expandedPool = await expandPool(profileId, poolKey, poolVideos, observation);
+    expandedPool = await expandPool(
+      profileId,
+      poolKey,
+      poolVideos,
+      observation,
+      options.expectedProfileUpdatedAt
+    );
     poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
     recordScoringObservation(observation, profileId, poolVideos, "afterExpansion");
     readyPreview = createCandidatePoolFeed({
@@ -122,13 +139,21 @@ export async function createFeed(
   const poolRecommendations = readyPreview.videos.slice(0, config.feed.maxVideos);
   const videos = [...fastLaneVideos, ...poolRecommendations].slice(0, config.feed.maxVideos);
 
-  await retainReadyQueueEmbeddings(profileId, videos, observation);
+  await retainReadyQueueEmbeddings(profileId, videos, observation, options.expectedProfileUpdatedAt);
+  ensureProfileCurrent(profileId, options.expectedProfileUpdatedAt);
   const upNextByVideoId = buildUpNextByVideoId(profileId, videos);
   const servedStats = markPoolNodesServed(profileId, poolKey, poolRecommendations);
 
   if (servedStats && shouldTriggerReactiveExpansion(servedStats, config)) {
     const currentPoolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
-    expandedPool = await expandPool(profileId, poolKey, currentPoolVideos, observation) || expandedPool;
+    expandedPool =
+      await expandPool(
+        profileId,
+        poolKey,
+        currentPoolVideos,
+        observation,
+        options.expectedProfileUpdatedAt
+      ) || expandedPool;
   }
 
   observation.operations.push({
@@ -177,7 +202,8 @@ async function initializePoolOnce(
   queries: string[],
   channels: string[],
   channelSort: ChannelSort,
-  observation: FeedObservation
+  observation: FeedObservation,
+  expectedProfileUpdatedAt?: number
 ) {
   const existingState = getFeedPoolState(profileId, poolKey);
   const existingCentroid = getCentroid(profileId, poolKey);
@@ -217,6 +243,7 @@ async function initializePoolOnce(
     }
   });
 
+  ensureProfileCurrent(profileId, expectedProfileUpdatedAt);
   markRootDiscovered(profileId, poolKey, timestamp);
   saveCentroid(profileId, poolKey, originalCentroid, originalCentroid);
   retainVideoEmbeddings(profileId, scoredRoots, rootEmbeddings);
@@ -245,6 +272,7 @@ async function initializePoolOnce(
     }
   });
 
+  ensureProfileCurrent(profileId, expectedProfileUpdatedAt);
   addPoolNodes(profileId, poolKey, "channelVideos", channelPoolVideos, timestamp);
 
   return true;
@@ -265,7 +293,8 @@ async function expandPool(
   profileId: string,
   poolKey: string,
   poolVideos: FeedVideo[],
-  observation: FeedObservation
+  observation: FeedObservation,
+  expectedProfileUpdatedAt?: number
 ) {
   const config = getGretelConfig();
   const poolState = getFeedPoolState(profileId, poolKey);
@@ -327,6 +356,7 @@ async function expandPool(
         }))
         .filter((video) => (video.similarityScore || 0) >= config.feed.similarityThreshold);
 
+      ensureProfileCurrent(profileId, expectedProfileUpdatedAt);
       retainVideoEmbeddings(profileId, relatedVideos, embeddings);
       addPoolNodes(profileId, poolKey, "relatedVideos", relatedVideos, Date.now());
       markPoolExpanded(profileId, poolKey, Date.now());
@@ -525,7 +555,8 @@ function rescoreCachedVideos(profileId: string, videos: FeedVideo[], centroid: n
 async function retainReadyQueueEmbeddings(
   profileId: string,
   videos: FeedVideo[],
-  observation: FeedObservation
+  observation: FeedObservation,
+  expectedProfileUpdatedAt?: number
 ) {
   const missingVideos = videos.filter((video) => !getRetainedEmbedding(profileId, video.id));
 
@@ -541,6 +572,7 @@ async function retainReadyQueueEmbeddings(
   }
 
   const embeddings = await embedVideos(profileId, missingVideos);
+  ensureProfileCurrent(profileId, expectedProfileUpdatedAt);
   retainVideoEmbeddings(profileId, missingVideos, embeddings);
   observation.operations.push({
     name: "feed.phase5.ready_embeddings",
@@ -572,4 +604,12 @@ function buildUpNextByVideoId(profileId: string, videos: FeedVideo[]) {
       }).map((candidate) => candidate.id)
     ])
   );
+}
+
+function ensureProfileCurrent(profileId: string, expectedUpdatedAt?: number) {
+  const profile = getProfile(profileId);
+
+  if (!profile || (expectedUpdatedAt !== undefined && profile.updatedAt !== expectedUpdatedAt)) {
+    throw new FeedProfileStaleError();
+  }
 }

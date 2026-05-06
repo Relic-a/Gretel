@@ -41,6 +41,7 @@ export default function Home() {
   const [manageProfiles, setManageProfiles] = useState(false);
   const videoRef = useRef<HTMLIFrameElement | null>(null);
   const pendingVideoIdRef = useRef<string | null>(null);
+  const feedRequestIdRef = useRef(0);
   const subscriptions = useMemo(
     () => new Set(channels.map((channel) => normalize(channel))),
     [channels]
@@ -312,6 +313,9 @@ export default function Home() {
   }
 
   async function deleteProfile(id: string) {
+    feedRequestIdRef.current += 1;
+    setLoading(false);
+
     const response = await fetch("/api/profiles", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -468,6 +472,8 @@ export default function Home() {
     const nextTags = input.nextTags || tags;
     const nextChannels = input.nextChannels || channels;
     const nextProfileId = input.nextProfileId || profileId;
+    const requestId = feedRequestIdRef.current + 1;
+    feedRequestIdRef.current = requestId;
 
     setError("");
     setLoading(true);
@@ -490,6 +496,10 @@ export default function Home() {
         throw new Error(data.error || "Could not build this feed.");
       }
 
+      if (requestId !== feedRequestIdRef.current) {
+        return;
+      }
+
       setFeed((current) => {
         if (!input.forceExpansion && current?.videos?.length) {
           const seen = new Set(current.videos.map((video) => video.id));
@@ -507,9 +517,15 @@ export default function Home() {
       });
       setActiveVideo(null);
     } catch (caught) {
+      if (requestId !== feedRequestIdRef.current) {
+        return;
+      }
+
       setError(caught instanceof Error ? caught.message : "Could not build this feed.");
     } finally {
-      setLoading(false);
+      if (requestId === feedRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }
 
@@ -571,6 +587,8 @@ export default function Home() {
         onHistory={openHistory}
         onToggleProfileMenu={() => setShowProfileMenu(!showProfileMenu)}
         onSelectProfile={(nextProfileId) => {
+          feedRequestIdRef.current += 1;
+          setLoading(false);
           setProfileId(nextProfileId);
           setFeed(readCachedFeed(nextProfileId));
           setActiveVideo(null);

@@ -179,6 +179,52 @@ test("pool expansion budgets by score, skips visited videos, enforces threshold,
   }
 });
 
+test("stale expansion stops when the profile is deleted before related videos are stored", async () => {
+  let modules;
+  let profile;
+  const client = createFakeYoutubeClient({
+    searchVideos: [rawVideo("root-alpha", "alpha root", "Search")],
+    infoForSeed(seedId) {
+      if (seedId === "root-alpha") {
+        modules.profileStore.deleteProfile(profile.id);
+        return [rawVideo("related-alpha", "related alpha", "Related")];
+      }
+
+      return [];
+    }
+  });
+  modules = loadRuntimeModules({
+    youtubeClient: client,
+    embeddingForText: () => [1, 0]
+  });
+  profile = modules.profileStore.createProfile("Deleted During Expansion");
+  profileStoreForCleanup = modules.profileStore;
+
+  process.env.GRETEL_CONFIG = writeConfig("deleted-during-expansion.json", {
+    feed: {
+      maxQueries: 1,
+      maxVideos: 8,
+      minVideosPerQuery: 1,
+      similarityThreshold: 0.75,
+      readyQueueLowWaterMark: 20,
+      recommendationSeeds: 1,
+      expansionSeedCount: 1,
+      minRelatedVideosPerSeed: 1,
+      maxRelatedVideosPerSeed: 1,
+      subscriptionFastLanePerSession: 0
+    },
+    embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
+  });
+
+  await assert.rejects(
+    modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
+      forceExpansion: true
+    }),
+    modules.service.FeedProfileStaleError
+  );
+  assert.equal(modules.profileStore.getProfile(profile.id), null);
+});
+
 test("initial pool build uses configurable fetch size instead of serving page size", async () => {
   const modules = loadRuntimeModules({
     youtubeClient: createFakeYoutubeClient({

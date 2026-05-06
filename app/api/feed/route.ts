@@ -1,6 +1,6 @@
 import { parseChannelSort, parseTags } from "../../../lib/feed/input";
 import { createFeedObservation, logFeedObservation } from "../../../lib/feed/observation";
-import { createFeed } from "../../../lib/feed/service";
+import { createFeed, FeedProfileStaleError } from "../../../lib/feed/service";
 import { errorFields } from "../../../lib/logger";
 import {
   getProfile,
@@ -40,7 +40,12 @@ export async function POST(request: Request) {
       channels,
       channelSort,
       observation,
-      { forceExpansion, servingOnly, watchedVideoIds }
+      {
+        forceExpansion,
+        servingOnly,
+        watchedVideoIds,
+        expectedProfileUpdatedAt: profile.updatedAt
+      }
     );
 
     logFeedObservation(observation, {
@@ -75,6 +80,13 @@ export async function POST(request: Request) {
       videos: feed.videos
     });
   } catch (error) {
+    if (error instanceof FeedProfileStaleError || isForeignKeyConstraintError(error)) {
+      return Response.json(
+        { error: "The active profile changed before feed generation finished." },
+        { status: 409 }
+      );
+    }
+
     logFeedObservation(observation, {
       ...errorFields(error, { stack: true })
     });
@@ -83,4 +95,8 @@ export async function POST(request: Request) {
       { status: 500 }
     );
   }
+}
+
+function isForeignKeyConstraintError(error: unknown) {
+  return error instanceof Error && error.message.includes("FOREIGN KEY constraint failed");
 }
