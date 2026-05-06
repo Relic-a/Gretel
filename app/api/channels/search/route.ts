@@ -7,7 +7,13 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const query = (url.searchParams.get("q") || "").replace(/\s+/g, " ").trim();
   const requestedProfileId = url.searchParams.get("profileId") || "";
-  const profile = getProfile(requestedProfileId) || listProfiles()[0];
+  let profile;
+  if (requestedProfileId) {
+     profile = getProfile(requestedProfileId);
+  }
+  if (!profile) {
+     profile = listProfiles()[0];
+  }
 
   if (query.length < 2) {
     return Response.json({ channels: [] });

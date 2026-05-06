@@ -144,7 +144,6 @@ export function addPoolNodes(
       nodeId,
       JSON.stringify({ ...video, sourceNodeId: nodeId }),
       video.parent_video_id || null,
-      video.originTag || null,
       video.similarityScore || 0,
       video.parentEngagementScore || 0,
       timestamp,

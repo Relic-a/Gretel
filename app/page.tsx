@@ -20,6 +20,8 @@ export default function Home() {
   const [profileName, setProfileName] = useState("");
   const [tags, setTags] = useState<string[]>(starterTags);
   const [channels, setChannels] = useState<string[]>([]);
+  const [newProfileTags, setNewProfileTags] = useState<string[]>(starterTags);
+  const [newProfileChannels, setNewProfileChannels] = useState<string[]>([]);
   const [tagDraft, setTagDraft] = useState("");
   const [channelDraft, setChannelDraft] = useState("");
   const [channelResults, setChannelResults] = useState<ChannelResult[]>([]);
@@ -279,6 +281,10 @@ export default function Home() {
       setProfiles(data.profiles || []);
       setProfileId(data.profileId || "");
       setProfileName("");
+      setTags(newProfileTags);
+      setChannels(newProfileChannels);
+      setNewProfileTags(starterTags);
+      setNewProfileChannels([]);
       setFeed(null);
       setActiveVideo(null);
       setManageProfiles(false);
@@ -504,6 +510,31 @@ export default function Home() {
     }
   }
 
+  function addNewProfileTag(value: string) {
+    const cleaned = value.replace(/\s+/g, " ").trim();
+
+    if (cleaned.length > 1 && !newProfileTags.some((tag) => normalize(tag) === normalize(cleaned))) {
+      setNewProfileTags([...newProfileTags, cleaned]);
+    }
+
+    setTagDraft("");
+  }
+
+  function addNewProfileChannel(value: string) {
+    const cleaned = value.replace(/\s+/g, " ").trim();
+
+    if (cleaned.length > 1 && !newProfileChannels.some((channel) => normalize(channel) === normalize(cleaned))) {
+      setNewProfileChannels([...newProfileChannels, cleaned]);
+    }
+
+    setChannelDraft("");
+    setChannelResults([]);
+  }
+
+  function removeNewProfileChannel(value: string) {
+    setNewProfileChannels(newProfileChannels.filter((channel) => normalize(channel) !== normalize(value)));
+  }
+
   function addTag(value: string) {
     const cleaned = value.replace(/\s+/g, " ").trim();
 
@@ -625,8 +656,8 @@ export default function Home() {
           feedOpen={Boolean(feed)}
           profiles={profiles}
           profileName={profileName}
-          tags={tags}
-          channels={channels}
+          tags={newProfileTags}
+          channels={newProfileChannels}
           tagDraft={tagDraft}
           channelDraft={channelDraft}
           channelResults={channelResults}
@@ -637,10 +668,10 @@ export default function Home() {
           onProfileNameChange={setProfileName}
           onTagDraftChange={setTagDraft}
           onChannelDraftChange={setChannelDraft}
-          onAddTag={addTag}
-          onRemoveTag={(value) => setTags(tags.filter((tag) => tag !== value))}
-          onAddChannel={addChannel}
-          onRemoveChannel={removeChannel}
+          onAddTag={addNewProfileTag}
+          onRemoveTag={(value) => setNewProfileTags(newProfileTags.filter((tag) => tag !== value))}
+          onAddChannel={addNewProfileChannel}
+          onRemoveChannel={removeNewProfileChannel}
           onDeleteProfile={deleteProfile}
         />
       )}

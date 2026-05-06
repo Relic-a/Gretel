@@ -94,7 +94,6 @@ async function recommendVideosFromLinks(
               parent_video_id: seedVideo.id,
               parent_title: seedVideo.title,
               parent_author: seedVideo.author,
-              originTag: seedVideo.originTag,
               recommendation_depth: (seedVideo.recommendation_depth || 0) + 1
             });
             seedRecommendations += 1;
