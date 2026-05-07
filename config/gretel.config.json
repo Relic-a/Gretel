@@ -1,7 +1,6 @@
 {
   "serving": {
-    "servedPenaltyFactor": 0.2,
-    "servedCountPenaltyFactor": 0.08,
+    "impressionPenaltyFactor": 0.35,
     "fastLaneImpressionPenaltyFactor": 0.08,
     "warmSemanticWeight": 0.25
   },
@@ -10,7 +9,6 @@
     "minDelayBetweenFetchesMs": 500,
     "maxFetchCallsPerCycle": 4,
     "cycleCooldownMs": 120000,
-    "servedMajorityThreshold": 0.6,
     "minFreshVideos": 24,
     "minFreshRatio": 0.25,
     "minExpansionYield": 1

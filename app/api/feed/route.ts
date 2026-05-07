@@ -17,7 +17,7 @@ export async function POST(request: Request) {
     const tags = parseTags(body.tags);
     const channels = parseTags(body.channels);
     const channelSort = parseChannelSort(body.channelSort);
-    const forceExpansion = body.forceExpansion === true;
+    const resetFeed = body.resetFeed === true;
     const servingOnly = body.servingOnly === true;
     const excludeVideoIds = Array.isArray(body.excludeVideoIds)
       ? body.excludeVideoIds.filter((videoId: unknown) => typeof videoId === "string")
@@ -44,7 +44,6 @@ export async function POST(request: Request) {
       channelSort,
       observation,
       {
-        forceExpansion,
         servingOnly,
         watchedVideoIds,
         excludeVideoIds,
@@ -69,7 +68,7 @@ export async function POST(request: Request) {
       initializedRoot: feed.pool.initializedRoot,
       expandedPool: feed.pool.expandedPool,
       configuredMaxVideos: feed.pool.maxVideos,
-      forceExpansion,
+      resetFeed,
       servingOnly
     });
 

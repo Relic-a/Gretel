@@ -6,7 +6,6 @@ import {
   getVisitedVideoIds,
   listPoolNodes,
   markPoolExpanded,
-  markPoolNodesServed,
   markRootDiscovered,
   prunePool,
   updatePoolSimilarities
@@ -43,7 +42,6 @@ import {
 import { averageNormalizedVectors, cosineSimilarity } from "./vector-math";
 
 export type CreateFeedOptions = {
-  forceExpansion?: boolean;
   expectedProfileUpdatedAt?: number;
   servingOnly?: boolean;
   watchedVideoIds?: string[];
@@ -100,13 +98,7 @@ export async function createFeed(
     interactions: getVideoInteractions(profileId),
     config
   });
-  const shouldUseInventoryExpansion = excludeVideoIds.size > 0;
-  let expandedPool =
-    options.forceExpansion ||
-    (!initializedRoot && (
-      (!options.servingOnly && readyPreview.videos.length <= config.feed.readyQueueLowWaterMark) ||
-      (shouldUseInventoryExpansion && poolHealth.needsExpansion)
-    ));
+  let expandedPool = poolHealth.needsExpansion;
 
   if (expandedPool) {
     expandedPool = await expandPool(
@@ -114,7 +106,8 @@ export async function createFeed(
       poolKey,
       poolVideos,
       observation,
-      options.expectedProfileUpdatedAt
+      options.expectedProfileUpdatedAt,
+      { bypassCooldown: true }
     );
     poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
     recordScoringObservation(observation, profileId, poolVideos, "afterExpansion");
@@ -182,33 +175,6 @@ export async function createFeed(
   await retainReadyQueueEmbeddings(profileId, videos, observation, options.expectedProfileUpdatedAt);
   ensureProfileCurrent(profileId, options.expectedProfileUpdatedAt);
   const upNextByVideoId = buildUpNextByVideoId(profileId, videos);
-  const servedStats = markPoolNodesServed(profileId, poolKey, poolRecommendations);
-
-  if (servedStats && (
-    shouldTriggerReactiveExpansion(servedStats, config) ||
-    (shouldUseInventoryExpansion && !initializedRoot && poolHealth.needsExpansion)
-  )) {
-    const currentPoolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
-    const reactivelyExpanded = await expandPool(
-      profileId,
-      poolKey,
-      currentPoolVideos,
-      observation,
-      options.expectedProfileUpdatedAt
-    );
-    expandedPool = reactivelyExpanded || expandedPool;
-
-    if (reactivelyExpanded) {
-      poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
-      poolHealth = describePoolHealth({
-        videos: poolVideos,
-        watchedVideoIds,
-        excludeVideoIds,
-        interactions: getVideoInteractions(profileId),
-        config
-      });
-    }
-  }
 
   observation.operations.push({
     name: "feed.phase5.serving",
@@ -359,13 +325,14 @@ async function expandPool(
   poolKey: string,
   poolVideos: FeedVideo[],
   observation: FeedObservation,
-  expectedProfileUpdatedAt?: number
+  expectedProfileUpdatedAt?: number,
+  options: { bypassCooldown?: boolean } = {}
 ) {
   const config = getGretelConfig();
   const poolState = getFeedPoolState(profileId, poolKey);
   const now = Date.now();
 
-  if (poolState && now - poolState.lastExpandedAt < config.expansion.cycleCooldownMs) {
+  if (!options.bypassCooldown && poolState && now - poolState.lastExpandedAt < config.expansion.cycleCooldownMs) {
     observation.operations.push({
       name: "feed.phase2.expansion_skipped",
       durationMs: 0,
@@ -560,8 +527,7 @@ function logTopServingItems(
       coldStartInteractionThreshold: config.feed.coldStartInteractionThreshold,
       readyQueueTargetSize: config.feed.readyQueueTargetSize,
       warmSemanticWeight: config.serving.warmSemanticWeight,
-      servedPenaltyFactor: config.serving.servedPenaltyFactor,
-      servedCountPenaltyFactor: config.serving.servedCountPenaltyFactor,
+      impressionPenaltyFactor: config.serving.impressionPenaltyFactor,
       fastLaneImpressionPenaltyFactor: config.serving.fastLaneImpressionPenaltyFactor,
       coldStartParentEngagementWeight: config.feed.coldStartParentEngagementWeight
     },
@@ -582,21 +548,12 @@ function logTopServingItems(
         engagementContribution: score.engagementContribution,
         parentEngagementScore: score.parentEngagementScore,
         impressionCount: score.impressionCount,
-        servedCount: score.servedCount,
-        servedPenalty: score.servedPenalty,
+        impressionDecay: score.impressionDecay,
         weights: score.weights,
         mode: score.mode
       };
     })
   });
-}
-
-function shouldTriggerReactiveExpansion(
-  servedStats: NonNullable<ReturnType<typeof markPoolNodesServed>>,
-  config: ReturnType<typeof getGretelConfig>
-) {
-  return servedStats.before.ratio <= config.expansion.servedMajorityThreshold &&
-    servedStats.after.ratio > config.expansion.servedMajorityThreshold;
 }
 
 async function embedVideos(profileId: string, videos: FeedVideo[]) {

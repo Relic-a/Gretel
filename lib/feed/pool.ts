@@ -66,22 +66,12 @@ export function describePoolHealth(input: {
   );
   const excludedClientVideos = eligibleVideos.filter((video) => input.excludeVideoIds.has(video.id)).length;
   const servableVideos = eligibleVideos.filter((video) => !input.excludeVideoIds.has(video.id));
-  const freshVideos = servableVideos.filter((video) =>
-    (video.impressionCount || 0) === 0 && (video.servedCount || 0) === 0
-  ).length;
+  const freshVideos = servableVideos.filter((video) => (video.impressionCount || 0) === 0).length;
   const freshRatio = servableVideos.length > 0 ? freshVideos / servableVideos.length : 0;
   const reasons: string[] = [];
 
-  if (freshVideos < input.config.expansion.minFreshVideos) {
-    reasons.push("fresh_count");
-  }
-
   if (freshRatio < input.config.expansion.minFreshRatio) {
     reasons.push("fresh_ratio");
-  }
-
-  if (servableVideos.length < input.config.feed.maxVideos) {
-    reasons.push("servable_count");
   }
 
   return {
@@ -177,20 +167,20 @@ export function describeServingScore(video: FeedVideo, config: GretelConfig, isC
   const engagementScore = video.engagementScore || video.parentEngagementScore || 0;
   const parentEngagementScore = video.parentEngagementScore || 0;
   const impressionCount = video.impressionCount || 0;
-  const servedCount = video.servedCount || 0;
   const semanticWeight = config.serving.warmSemanticWeight;
-  const servedPenaltyFactor = config.serving.servedPenaltyFactor;
-  const servedCountPenaltyFactor = config.serving.servedCountPenaltyFactor;
+  const impressionPenaltyFactor = config.serving.impressionPenaltyFactor;
   const coldStartParentEngagementWeight = config.feed.coldStartParentEngagementWeight;
   const baseScore = isColdStart
     ? coldStartExpansionScore(video, config)
     : warmServingScore(video, config);
-  const servedPenalty = impressionCount * servedPenaltyFactor + servedCount * servedCountPenaltyFactor;
-  const score = servedPenalty === 0
+  const impressionDecay = impressionCount === 0
+    ? 1
+    : Math.pow(1 - impressionPenaltyFactor, impressionCount);
+  const score = impressionDecay === 1
     ? baseScore
     : baseScore >= 0
-      ? baseScore / (1 + servedPenalty)
-      : baseScore * (1 + servedPenalty);
+      ? baseScore * impressionDecay
+      : baseScore / Math.max(impressionDecay, Number.EPSILON);
 
   return {
     score,
@@ -201,13 +191,11 @@ export function describeServingScore(video: FeedVideo, config: GretelConfig, isC
     engagementContribution: isColdStart ? parentEngagementScore * coldStartParentEngagementWeight : engagementScore,
     parentEngagementScore,
     impressionCount,
-    servedCount,
-    servedPenalty,
+    impressionDecay,
     mode: isColdStart ? "coldStart" : "warm",
     weights: {
       semanticWeight,
-      servedPenaltyFactor,
-      servedCountPenaltyFactor,
+      impressionPenaltyFactor,
       coldStartParentEngagementWeight
     }
   };

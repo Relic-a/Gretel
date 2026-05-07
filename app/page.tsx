@@ -97,7 +97,7 @@ export default function Home() {
           nextProfileId: selectedProfileId,
           nextTags: saved?.tags?.length ? saved.tags : starterTags,
           nextChannels: saved?.channels || [],
-          forceExpansion: true
+          resetFeed: true
         });
       }
     }
@@ -314,7 +314,7 @@ export default function Home() {
         nextProfileId: data.profileId || "",
         nextTags: createdTags,
         nextChannels: createdChannels,
-        forceExpansion: true
+        resetFeed: true
       });
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not add this profile.");
@@ -349,7 +349,7 @@ export default function Home() {
     setActiveVideo(null);
     writeRoute("home");
     setFeedEnd(false);
-    await requestFeed({ forceExpansion: true });
+    await requestFeed({ resetFeed: true });
   }
 
   async function openSaved() {
@@ -508,17 +508,22 @@ export default function Home() {
     nextProfileId?: string;
     nextTags?: string[];
     nextChannels?: string[];
-    forceExpansion?: boolean;
+    resetFeed?: boolean;
   } = {}) {
     const nextTags = input.nextTags || tags;
     const nextChannels = input.nextChannels || channels;
     const nextProfileId = input.nextProfileId || profileId;
-    const excludeVideoIds = input.forceExpansion === true ? [] : feed?.videos.map((video) => video.id) || [];
+    const resetFeed = input.resetFeed === true;
+    const excludeVideoIds = resetFeed ? [] : feed?.videos.map((video) => video.id) || [];
     const requestId = feedRequestIdRef.current + 1;
     feedRequestIdRef.current = requestId;
 
     setError("");
     setLoading(true);
+    if (resetFeed) {
+      setFeed(null);
+      setFeedEnd(false);
+    }
 
     try {
       const response = await fetch("/api/feed", {
@@ -528,8 +533,8 @@ export default function Home() {
           tags: nextTags,
           channels: nextChannels,
           profileId: nextProfileId,
-          forceExpansion: input.forceExpansion === true,
-          servingOnly: input.forceExpansion !== true,
+          resetFeed,
+          servingOnly: !resetFeed,
           excludeVideoIds
         })
       });
@@ -544,7 +549,7 @@ export default function Home() {
       }
 
       setFeed((current) => {
-        if (!input.forceExpansion && current?.videos?.length) {
+        if (!resetFeed && current?.videos?.length) {
           const seen = new Set(current.videos.map((video) => video.id));
           const nextVideos = (data.videos || []).filter((video: FeedVideo) => !seen.has(video.id));
           setFeedEnd(nextVideos.length === 0);
@@ -690,7 +695,7 @@ export default function Home() {
           likedVideoIds={likedVideoIds}
           loading={loading}
           canAskForMore={canAskForMore}
-          onLoadMore={() => requestFeed({ forceExpansion: false })}
+          onLoadMore={() => requestFeed()}
           onSelectVideo={openVideo}
           onSaveVideo={saveVideo}
           onLikeVideo={likeVideo}

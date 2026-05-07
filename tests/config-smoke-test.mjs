@@ -194,7 +194,6 @@ function writeRuntimeConfig(name, overrides = {}) {
       expansion: {
         minDelayBetweenFetchesMs: 0,
         cycleCooldownMs: 0,
-        servedMajorityThreshold: 1,
         ...overrides.expansion
       },
       client: {
@@ -574,13 +573,12 @@ test("runtime feed flow initializes roots once, expands pool, serves fast lane, 
         tags: "alpha, beta",
         channels: "Creator One",
         channelSort: "latest",
-        forceExpansion: true
+        resetFeed: true
       });
       assert.equal(afterWatchFetch.status, 200);
       assert.equal(afterWatchFetch.body.pool.initializedRoot, false);
-      assert.equal(afterWatchFetch.body.pool.expandedPool, true);
+      assert.equal(afterWatchFetch.body.pool.expandedPool, false);
       assert.equal(fakeYoutubeClient.calls.videoSearch, firstCounts.videoSearch);
-      assert.equal(fakeYoutubeClient.calls.getInfo > firstCounts.getInfo, true);
 
       return {
         firstFeed: firstFeed.body,
@@ -599,7 +597,7 @@ test("runtime feed flow initializes roots once, expands pool, serves fast lane, 
     assert.equal(profileLogs.length, 0);
     assert.equal(feedLogs[0].line.summary.poolStatus, "initialized");
     assert.equal(feedLogs[1].line.summary.poolStatus, "served");
-    assert.equal(feedLogs[3].line.summary.expandedPool, true);
+    assert.equal(feedLogs[3].line.summary.expandedPool, false);
 
     assert.ok(flow.firstFeed.pool.videos <= flow.firstFeed.pool.targetVideos);
     assert.ok(flow.afterWatchFetch.pool.videos <= flow.afterWatchFetch.pool.targetVideos);

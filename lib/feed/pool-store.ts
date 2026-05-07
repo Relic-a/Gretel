@@ -13,7 +13,6 @@ export type StoredPoolNode = FeedVideo & {
   poolNodeId: FeedNodeId;
   firstSeenAt: number;
   lastServedAt: number;
-  servedCount: number;
   impressionCount: number;
 };
 
@@ -173,7 +172,7 @@ export function listPoolNodes(profileId: string, poolKey: string) {
     .prepare(
       `SELECT node_id, video_json, similarity_score, parent_engagement_score,
               first_seen_at, COALESCE(last_served_at, 0) AS last_served_at,
-              served_count, impression_count
+              impression_count
        FROM feed_pool_nodes
        WHERE profile_id = ? AND pool_key = ?
        ORDER BY first_seen_at ASC`
@@ -185,7 +184,6 @@ export function listPoolNodes(profileId: string, poolKey: string) {
       parent_engagement_score: number;
       first_seen_at: number;
       last_served_at: number;
-      served_count: number;
       impression_count: number;
     }>;
 
@@ -201,7 +199,6 @@ export function listPoolNodes(profileId: string, poolKey: string) {
         poolNodeId: row.node_id,
         firstSeenAt: row.first_seen_at,
         lastServedAt: row.last_served_at,
-        servedCount: row.served_count || 0,
         impressionCount: row.impression_count || 0
       }];
     } catch {
@@ -235,33 +232,6 @@ export function getVisitedVideoIds(profileId: string, poolKey: string) {
   }
 
   return videoIds;
-}
-
-export function markPoolNodesServed(profileId: string, poolKey: string, videos: FeedVideo[]) {
-  if (videos.length === 0) {
-    return null;
-  }
-
-  ensureFeedPoolTables();
-  const before = getServedRatio(profileId, poolKey);
-  const timestamp = Date.now();
-  const statement = getDatabase().prepare(
-    `UPDATE feed_pool_nodes
-     SET served_count = served_count + 1,
-         last_served_at = ?,
-         updated_at = ?
-     WHERE profile_id = ? AND pool_key = ? AND video_id = ?`
-  );
-
-  runTransaction(() => {
-    for (const video of videos) {
-      statement.run(timestamp, timestamp, profileId, poolKey, video.id);
-    }
-  });
-
-  const after = getServedRatio(profileId, poolKey);
-
-  return { before, after };
 }
 
 export function markPoolExpanded(profileId: string, poolKey: string, timestamp: number) {
@@ -355,25 +325,6 @@ function touchPool(profileId: string, poolKey: string, timestamp: number) {
        WHERE profile_id = ? AND pool_key = ?`
     )
     .run(timestamp, profileId, poolKey);
-}
-
-function getServedRatio(profileId: string, poolKey: string) {
-  const row = getDatabase()
-    .prepare(
-      `SELECT COUNT(*) AS total_videos,
-              SUM(CASE WHEN served_count > 0 THEN 1 ELSE 0 END) AS served_videos
-       FROM feed_pool_nodes
-       WHERE profile_id = ? AND pool_key = ?`
-    )
-    .get(profileId, poolKey) as { total_videos: number; served_videos: number | null };
-  const totalVideos = row.total_videos || 0;
-  const servedVideos = row.served_videos || 0;
-
-  return {
-    totalVideos,
-    servedVideos,
-    ratio: totalVideos > 0 ? servedVideos / totalVideos : 0
-  };
 }
 
 function ensureColumn(tableName: string, columnName: string, definition: string) {

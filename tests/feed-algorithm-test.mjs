@@ -157,7 +157,11 @@ test("pool expansion budgets by score, skips visited videos, enforces threshold,
     });
 
     const feed = await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
-      forceExpansion: true
+      servingOnly: true
+    });
+    modules.profileStore.recordVideoImpressions(profile.id, ["root-alpha"]);
+    await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
+      servingOnly: true
     });
     const poolKey = modules.poolStore.createFeedPoolKey({
       tags: feed.queries,
@@ -216,9 +220,14 @@ test("stale expansion stops when the profile is deleted before related videos ar
     embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
   });
 
+  await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
+    servingOnly: true
+  });
+  modules.profileStore.recordVideoImpressions(profile.id, ["root-alpha"]);
+
   await assert.rejects(
     modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
-      forceExpansion: true
+      servingOnly: true
     }),
     modules.service.FeedProfileStaleError
   );
@@ -240,8 +249,7 @@ test("initial pool build uses configurable fetch size instead of serving page si
   try {
     process.env.GRETEL_CONFIG = writeConfig("initial-fetch-size.json", {
       expansion: {
-        initialFetchSize: 5,
-        servedMajorityThreshold: 1
+        initialFetchSize: 5
       },
       feed: {
         maxQueries: 1,
@@ -287,8 +295,7 @@ test("serving excludes client-visible videos before ranking the next page", asyn
     process.env.GRETEL_CONFIG = writeConfig("exclude-visible.json", {
       expansion: {
         minFreshVideos: 0,
-        minFreshRatio: 0,
-        servedMajorityThreshold: 1
+        minFreshRatio: 0
       },
       feed: {
         maxQueries: 1,
@@ -316,7 +323,7 @@ test("serving excludes client-visible videos before ranking the next page", asyn
   }
 });
 
-test("reactive expansion fires when served majority threshold is crossed", async () => {
+test("impression-triggered expansion bypasses cooldown", async () => {
   const infoSeeds = [];
   const modules = loadRuntimeModules({
     youtubeClient: createFakeYoutubeClient({
@@ -339,8 +346,8 @@ test("reactive expansion fires when served majority threshold is crossed", async
         initialFetchSize: 4,
         minDelayBetweenFetchesMs: 0,
         maxFetchCallsPerCycle: 1,
-        cycleCooldownMs: 0,
-        servedMajorityThreshold: 0.4
+        cycleCooldownMs: 600000,
+        minFreshRatio: 0.75
       },
       feed: {
         maxQueries: 1,
@@ -363,11 +370,18 @@ test("reactive expansion fires when served majority threshold is crossed", async
       channels: [],
       channelSort: "mixed"
     });
+    modules.poolStore.markPoolExpanded(profile.id, poolKey, Date.now());
+    modules.profileStore.recordVideoImpressions(profile.id, ["root-alpha-0", "root-alpha-1"]);
+
+    const expandedFeed = await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
+      servingOnly: true
+    });
     const related = modules.poolStore
       .listPoolNodes(profile.id, poolKey)
       .filter((node) => node.sourceNodeId === "relatedVideos");
 
-    assert.equal(feed.pool.expandedPool, true);
+    assert.equal(feed.pool.expandedPool, false);
+    assert.equal(expandedFeed.pool.expandedPool, true);
     assert.equal(infoSeeds.length, 1);
     assert.equal(related.length, 1);
   } finally {
@@ -412,9 +426,14 @@ test("expansion is not reported as successful when no usable videos are admitted
       embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
     });
 
+    await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
+      servingOnly: true
+    });
+    modules.profileStore.recordVideoImpressions(profile.id, ["root-alpha"]);
+
     const runObservation = observation();
     const feed = await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", runObservation, {
-      forceExpansion: true
+      servingOnly: true
     });
     const expansionLog = runObservation.operations.find((operation) => operation.name === "feed.phase2.expansion");
 
@@ -451,7 +470,7 @@ test("expansion caps fetch calls per cycle", async () => {
         minDelayBetweenFetchesMs: 0,
         maxFetchCallsPerCycle: 2,
         cycleCooldownMs: 0,
-        servedMajorityThreshold: 1
+        minFreshRatio: 0.75
       },
       feed: {
         maxVideos: 12,
@@ -478,8 +497,10 @@ test("expansion caps fetch calls per cycle", async () => {
       Date.now()
     );
 
+    modules.profileStore.recordVideoImpressions(profile.id, ["seed-1", "seed-2"]);
+
     await modules.service.createFeed(profile.id, [], [], "mixed", observation(), {
-      forceExpansion: true
+      servingOnly: true
     });
 
     assert.deepEqual(infoSeeds, ["seed-1", "seed-2"]);
@@ -510,9 +531,6 @@ test("embedding input includes configured transcript introduction when available
       transcription: {
         introductionPercentage: 0.5,
         maxCharacters: 30
-      },
-      expansion: {
-        servedMajorityThreshold: 1
       },
       feed: {
         maxQueries: 1,
@@ -633,7 +651,7 @@ test("scoring computes engagement, nonlinear ignore decay, accumulated interacti
     ]),
     config: testConfig({
       serving: {
-        servedPenaltyFactor: 1,
+        impressionPenaltyFactor: 0.5,
         warmSemanticWeight: 0.5
       },
       feed: {
@@ -665,15 +683,14 @@ test("logs the top serving items with score breakdown and serving parameters", a
   try {
     process.env.GRETEL_CONFIG = writeConfig("top-serving-items.json", {
       serving: {
-        servedPenaltyFactor: 0.2,
+        impressionPenaltyFactor: 0.2,
         warmSemanticWeight: 0.25
       },
       expansion: {
         initialFetchSize: 3,
         minDelayBetweenFetchesMs: 0,
         maxFetchCallsPerCycle: 1,
-        cycleCooldownMs: 0,
-        servedMajorityThreshold: 1
+        cycleCooldownMs: 0
       },
       feed: {
         maxQueries: 1,
@@ -727,24 +744,21 @@ test("logs the top serving items with score breakdown and serving parameters", a
     assert.ok(topItemsLog);
     assert.equal(topItemsLog.coldStart, false);
     assert.equal(topItemsLog.parameters.warmSemanticWeight, 0.25);
-  assert.equal(topItemsLog.parameters.servedPenaltyFactor, 0.2);
-  assert.equal(topItemsLog.parameters.servedCountPenaltyFactor, 0.08);
-  assert.equal(topItemsLog.parameters.fastLaneImpressionPenaltyFactor, 0.08);
-  assert.equal(topItemsLog.parameters.coldStartInteractionThreshold, 1);
-  assert.equal(topItemsLog.topItems.length, 3);
-  assert.equal(topItemsLog.topItems[0].id, "root-b");
-  const rootALog = topItemsLog.topItems.find((item) => item.id === "root-a");
-  assert.equal(rootALog.impressionCount, 1);
-  assert.equal(rootALog.servedCount, 1);
-  assert.equal(rootALog.semanticScore, 1);
-  assert.equal(rootALog.engagementScore, 0.55);
-  assert.equal(rootALog.baseScore, 0.8);
-  assert.equal(rootALog.servedPenalty, 0.28);
-  assert.ok(Math.abs(rootALog.score - (0.8 / 1.28)) < 1e-9);
-  assert.equal(rootALog.weights.semanticWeight, 0.25);
-  assert.equal(rootALog.weights.servedPenaltyFactor, 0.2);
-  assert.equal(rootALog.weights.servedCountPenaltyFactor, 0.08);
-  assert.equal(rootALog.mode, "warm");
+    assert.equal(topItemsLog.parameters.impressionPenaltyFactor, 0.2);
+    assert.equal(topItemsLog.parameters.fastLaneImpressionPenaltyFactor, 0.08);
+    assert.equal(topItemsLog.parameters.coldStartInteractionThreshold, 1);
+    assert.equal(topItemsLog.topItems.length, 3);
+    assert.equal(topItemsLog.topItems[0].id, "root-b");
+    const rootALog = topItemsLog.topItems.find((item) => item.id === "root-a");
+    assert.equal(rootALog.impressionCount, 1);
+    assert.equal(rootALog.semanticScore, 1);
+    assert.equal(rootALog.engagementScore, 0.55);
+    assert.equal(rootALog.baseScore, 0.8);
+    assert.equal(rootALog.impressionDecay, 0.8);
+    assert.ok(Math.abs(rootALog.score - 0.64) < 1e-9);
+    assert.equal(rootALog.weights.semanticWeight, 0.25);
+    assert.equal(rootALog.weights.impressionPenaltyFactor, 0.2);
+    assert.equal(rootALog.mode, "warm");
   } finally {
     modules.profileStore.deleteProfile(profile.id);
   }
@@ -1034,8 +1048,10 @@ test("pruning cleans non-engaged embeddings and pruned videos are not re-admitte
 
     assert.equal(modules.algorithmStore.getRetainedEmbedding(profile.id, "stale-related"), null);
 
+    modules.profileStore.recordVideoImpressions(profile.id, ["seed"]);
+
     await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
-      forceExpansion: true
+      servingOnly: true
     });
     const relatedIds = modules.poolStore
       .listPoolNodes(profile.id, poolKey)
@@ -1095,7 +1111,7 @@ test("subscription fast lane is served up to cap, never pooled, and never used a
       ["Creator One"],
       "mixed",
       observation(),
-      { forceExpansion: true }
+      { servingOnly: true }
     );
     const poolKey = modules.poolStore.createFeedPoolKey({
       tags: feed.queries,

@@ -163,21 +163,13 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
 
   return {
     serving: {
-      servedPenaltyFactor: numberInRange(
-        serving.servedPenaltyFactor,
-        defaults.serving.servedPenaltyFactor,
-        0,
-        100
+      impressionPenaltyFactor: share(
+        legacyNumber(serving, "impressionPenaltyFactor", "servedPenaltyFactor"),
+        defaults.serving.impressionPenaltyFactor
       ),
       fastLaneImpressionPenaltyFactor: numberInRange(
         serving.fastLaneImpressionPenaltyFactor,
         defaults.serving.fastLaneImpressionPenaltyFactor,
-        0,
-        100
-      ),
-      servedCountPenaltyFactor: numberInRange(
-        serving.servedCountPenaltyFactor,
-        defaults.serving.servedCountPenaltyFactor,
         0,
         100
       ),
@@ -212,10 +204,6 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
         defaults.expansion.cycleCooldownMs,
         0,
         24 * 60 * 60 * 1000
-      ),
-      servedMajorityThreshold: share(
-        expansion.servedMajorityThreshold,
-        defaults.expansion.servedMajorityThreshold
       ),
       minFreshVideos: integer(
         expansion.minFreshVideos,
@@ -393,6 +381,12 @@ function numberInRange(value: unknown, fallback: number, min: number, max: numbe
   }
 
   return Math.min(max, Math.max(min, numeric));
+}
+
+function legacyNumber(source: object, currentKey: string, legacyKey: string) {
+  const values = source as Record<string, unknown>;
+
+  return values[currentKey] ?? values[legacyKey];
 }
 
 function nonEmptyString(value: unknown, fallback: string) {
