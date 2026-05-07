@@ -724,7 +724,7 @@ test("centroid drift is bounded and pool similarities can be recomputed after a 
   }
 });
 
-test("embedding tables are isolated by provider, model, and dimensions", () => {
+test("embedding rows are isolated by provider, model, and dimensions", () => {
   const modules = loadRuntimeModules({ youtubeClient: createFakeYoutubeClient() });
   const profile = modules.profileStore.createProfile("Embedding Stores");
   profileStoreForCleanup = modules.profileStore;
@@ -764,16 +764,21 @@ test("embedding tables are isolated by provider, model, and dimensions", () => {
 
     assert.deepEqual(modules.algorithmStore.getCentroid(profile.id, "pool").current, [0, 1]);
     assert.deepEqual(modules.algorithmStore.getRetainedEmbedding(profile.id, "video"), [0, 1]);
-    assert.ok(
-      modules.algorithmStore
-        .listFeedAlgorithmTableNames()
-        .includes("feed_video_embeddings_openrouter_qwen_qwen3_embedding_8b_4096")
+    assert.deepEqual(
+      modules.algorithmStore.listFeedAlgorithmTableNames(),
+      ["feed_centroids", "feed_video_embeddings"]
     );
-    assert.ok(
-      modules.algorithmStore
-        .listFeedAlgorithmTableNames()
-        .includes("feed_video_embeddings_openrouter_qwen_qwen3_embedding_8b_1024")
-    );
+
+    const storeKeys = modules.profileStore
+      .getDatabase()
+      .prepare("SELECT DISTINCT store_key FROM feed_video_embeddings ORDER BY store_key ASC")
+      .all()
+      .map((row) => row.store_key);
+
+    assert.deepEqual(storeKeys, [
+      "openrouter_qwen_qwen3_embedding_8b_1024",
+      "openrouter_qwen_qwen3_embedding_8b_4096"
+    ]);
   } finally {
     modules.profileStore.deleteProfile(profile.id);
   }

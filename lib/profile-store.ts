@@ -24,6 +24,8 @@ export type WatchEventInput = {
 const dataDir = path.join(process.cwd(), "data");
 const dbPath = path.join(dataDir, "gretel.sqlite");
 let db: DatabaseSync | null = null;
+let likedVideoTableReady = false;
+let videoImpressionsTableReady = false;
 
 export function getDatabase() {
   if (!db) {
@@ -171,15 +173,19 @@ export function resetProfile(profileId: string) {
   ensureLikedVideoTable();
   ensureVideoImpressionsTable();
   const database = getDatabase();
-  database.prepare("DELETE FROM watched_videos WHERE profile_id = ?").run(profileId);
-  database.prepare("DELETE FROM saved_videos WHERE profile_id = ?").run(profileId);
-  database.prepare("DELETE FROM liked_videos WHERE profile_id = ?").run(profileId);
-  database.prepare("DELETE FROM video_impressions WHERE profile_id = ?").run(profileId);
-  deleteFeedAlgorithmRows(profileId);
-  database.prepare("DELETE FROM feed_pool_state WHERE profile_id = ?").run(profileId);
-  database.prepare("DELETE FROM feed_pool_nodes WHERE profile_id = ?").run(profileId);
-  database.prepare("DELETE FROM feed_visited_videos WHERE profile_id = ?").run(profileId);
-  database.prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(Date.now(), profileId);
+
+  runTransaction(() => {
+    database.prepare("DELETE FROM watched_videos WHERE profile_id = ?").run(profileId);
+    database.prepare("DELETE FROM saved_videos WHERE profile_id = ?").run(profileId);
+    database.prepare("DELETE FROM liked_videos WHERE profile_id = ?").run(profileId);
+    database.prepare("DELETE FROM video_impressions WHERE profile_id = ?").run(profileId);
+    deleteFeedAlgorithmRows(profileId);
+    database.prepare("DELETE FROM feed_pool_state WHERE profile_id = ?").run(profileId);
+    database.prepare("DELETE FROM feed_pool_nodes WHERE profile_id = ?").run(profileId);
+    database.prepare("DELETE FROM feed_visited_videos WHERE profile_id = ?").run(profileId);
+    database.prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(Date.now(), profileId);
+  });
+
   resetYoutubeProfileCache(profileId);
 }
 
@@ -282,9 +288,11 @@ export function recordVideoImpressions(profileId: string, videoIds: string[]) {
       last_seen_at = excluded.last_seen_at`
   );
 
-  for (const videoId of uniqueVideoIds) {
-    statement.run(profileId, videoId, timestamp, timestamp);
-  }
+  runTransaction(() => {
+    for (const videoId of uniqueVideoIds) {
+      statement.run(profileId, videoId, timestamp, timestamp);
+    }
+  });
 
   return uniqueVideoIds.length;
 }
@@ -444,6 +452,10 @@ export function unsaveVideo(profileId: string, videoId: string) {
 }
 
 function ensureLikedVideoTable() {
+  if (likedVideoTableReady) {
+    return;
+  }
+
   getDatabase().exec(`
     CREATE TABLE IF NOT EXISTS liked_videos (
       profile_id TEXT NOT NULL,
@@ -454,9 +466,14 @@ function ensureLikedVideoTable() {
       FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
     );
   `);
+  likedVideoTableReady = true;
 }
 
 function ensureVideoImpressionsTable() {
+  if (videoImpressionsTableReady) {
+    return;
+  }
+
   getDatabase().exec(`
     CREATE TABLE IF NOT EXISTS video_impressions (
       profile_id TEXT NOT NULL,
@@ -468,6 +485,21 @@ function ensureVideoImpressionsTable() {
       FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
     );
   `);
+  videoImpressionsTableReady = true;
+}
+
+function runTransaction(work: () => void) {
+  const database = getDatabase();
+
+  database.exec("BEGIN");
+
+  try {
+    work();
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 export function normalizeChannelKey(value: string) {

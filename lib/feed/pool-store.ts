@@ -17,6 +17,8 @@ export type StoredPoolNode = FeedVideo & {
   impressionCount: number;
 };
 
+let feedPoolTablesReady = false;
+
 export function createFeedPoolKey(input: {
   tags: string[];
   channels: string[];
@@ -30,6 +32,10 @@ export function createFeedPoolKey(input: {
 }
 
 export function ensureFeedPoolTables() {
+  if (feedPoolTablesReady) {
+    return;
+  }
+
   getDatabase().exec(`
     CREATE TABLE IF NOT EXISTS feed_pool_state (
       profile_id TEXT NOT NULL,
@@ -72,6 +78,7 @@ export function ensureFeedPoolTables() {
 
   ensureColumn("feed_pool_state", "last_expanded_at", "INTEGER NOT NULL DEFAULT 0");
   ensureColumn("feed_pool_nodes", "impression_count", "INTEGER NOT NULL DEFAULT 0");
+  feedPoolTablesReady = true;
 }
 
 export function getFeedPoolState(profileId: string, poolKey: string): FeedPoolState | null {
@@ -139,23 +146,25 @@ export function addPoolNodes(
        last_seen_at = excluded.last_seen_at`
   );
 
-  for (const video of videos) {
-    statement.run(
-      profileId,
-      poolKey,
-      video.id,
-      nodeId,
-      JSON.stringify({ ...video, sourceNodeId: nodeId }),
-      video.parent_video_id || null,
-      video.similarityScore || 0,
-      video.parentEngagementScore || 0,
-      timestamp,
-      timestamp
-    );
-    visitedStatement.run(profileId, poolKey, video.id, timestamp, timestamp);
-  }
+  runTransaction(() => {
+    for (const video of videos) {
+      statement.run(
+        profileId,
+        poolKey,
+        video.id,
+        nodeId,
+        JSON.stringify({ ...video, sourceNodeId: nodeId }),
+        video.parent_video_id || null,
+        video.similarityScore || 0,
+        video.parentEngagementScore || 0,
+        timestamp,
+        timestamp
+      );
+      visitedStatement.run(profileId, poolKey, video.id, timestamp, timestamp);
+    }
 
-  touchPool(profileId, poolKey, timestamp);
+    touchPool(profileId, poolKey, timestamp);
+  });
 }
 
 export function listPoolNodes(profileId: string, poolKey: string) {
@@ -244,9 +253,11 @@ export function markPoolNodesServed(profileId: string, poolKey: string, videos: 
      WHERE profile_id = ? AND pool_key = ? AND video_id = ?`
   );
 
-  for (const video of videos) {
-    statement.run(timestamp, timestamp, profileId, poolKey, video.id);
-  }
+  runTransaction(() => {
+    for (const video of videos) {
+      statement.run(timestamp, timestamp, profileId, poolKey, video.id);
+    }
+  });
 
   const after = getServedRatio(profileId, poolKey);
 
@@ -277,16 +288,18 @@ export function updatePoolSimilarities(profileId: string, poolKey: string, video
      WHERE profile_id = ? AND pool_key = ? AND video_id = ?`
   );
 
-  for (const video of videos) {
-    statement.run(
-      video.similarityScore || 0,
-      JSON.stringify(video),
-      timestamp,
-      profileId,
-      poolKey,
-      video.id
-    );
-  }
+  runTransaction(() => {
+    for (const video of videos) {
+      statement.run(
+        video.similarityScore || 0,
+        JSON.stringify(video),
+        timestamp,
+        profileId,
+        poolKey,
+        video.id
+      );
+    }
+  });
 }
 
 export function prunePool(profileId: string, poolKey: string, scoredVideos: FeedVideo[], maxPoolVideos: number) {
@@ -311,9 +324,11 @@ export function prunePool(profileId: string, poolKey: string, scoredVideos: Feed
     ...getLikedVideoIds(profileId)
   ]);
 
-  for (const video of prunedVideos) {
-    statement.run(profileId, poolKey, video.id);
-  }
+  runTransaction(() => {
+    for (const video of prunedVideos) {
+      statement.run(profileId, poolKey, video.id);
+    }
+  });
 
   deleteRetainedEmbeddings(
     profileId,
@@ -369,6 +384,20 @@ function ensureColumn(tableName: string, columnName: string, definition: string)
   }
 
   getDatabase().prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${definition}`).run();
+}
+
+function runTransaction(work: () => void) {
+  const database = getDatabase();
+
+  database.exec("BEGIN");
+
+  try {
+    work();
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 function normalizePoolKeyPart(value: string) {

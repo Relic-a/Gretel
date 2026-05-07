@@ -14,29 +14,45 @@ type StoredCentroidRow = {
   current: number[];
 };
 
-export function ensureFeedAlgorithmTables() {
-  const centroidsTable = quotedTableName("feed_centroids");
-  const embeddingsTable = quotedTableName("feed_video_embeddings");
+let feedAlgorithmTablesReady = false;
 
-  getDatabase().exec(`
-    CREATE TABLE IF NOT EXISTS ${centroidsTable} (
+export function ensureFeedAlgorithmTables() {
+  if (feedAlgorithmTablesReady) {
+    return;
+  }
+
+  const database = getDatabase();
+  const legacyCentroids = detachLegacyBaseTable("feed_centroids");
+  const legacyEmbeddings = detachLegacyBaseTable("feed_video_embeddings");
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS feed_centroids (
       profile_id TEXT NOT NULL,
+      store_key TEXT NOT NULL,
       cache_key TEXT NOT NULL,
       original_json TEXT NOT NULL,
       current_json TEXT NOT NULL,
       updated_at INTEGER NOT NULL,
-      PRIMARY KEY (profile_id, cache_key)
+      PRIMARY KEY (profile_id, store_key, cache_key)
     );
 
-    CREATE TABLE IF NOT EXISTS ${embeddingsTable} (
+    CREATE TABLE IF NOT EXISTS feed_video_embeddings (
       profile_id TEXT NOT NULL,
+      store_key TEXT NOT NULL,
       video_id TEXT NOT NULL,
       embedding_json TEXT NOT NULL,
       retained INTEGER NOT NULL,
       updated_at INTEGER NOT NULL,
-      PRIMARY KEY (profile_id, video_id)
+      PRIMARY KEY (profile_id, store_key, video_id)
     );
   `);
+
+  migrateDetachedBaseTable(legacyCentroids);
+  migrateDetachedBaseTable(legacyEmbeddings);
+  migrateLegacyAlgorithmTables(new Set(
+    [legacyCentroids?.tableName, legacyEmbeddings?.tableName].filter(Boolean) as string[]
+  ));
+  feedAlgorithmTablesReady = true;
 }
 
 export function createEmbeddingStoreName() {
@@ -51,29 +67,29 @@ export function createEmbeddingStoreName() {
 export function saveCentroid(profileId: string, cacheKey: string, original: number[], current: number[]) {
   ensureFeedAlgorithmTables();
   const updatedAt = Date.now();
-  const tableName = quotedTableName("feed_centroids");
+  const storeKey = createEmbeddingStoreName();
 
   getDatabase()
     .prepare(
-      `INSERT INTO ${tableName} (profile_id, cache_key, original_json, current_json, updated_at)
-       VALUES (?, ?, ?, ?, ?)
-       ON CONFLICT(profile_id, cache_key) DO UPDATE SET
+      `INSERT INTO feed_centroids (profile_id, store_key, cache_key, original_json, current_json, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(profile_id, store_key, cache_key) DO UPDATE SET
          current_json = excluded.current_json,
          updated_at = excluded.updated_at`
     )
-    .run(profileId, cacheKey, JSON.stringify(original), JSON.stringify(current), updatedAt);
+    .run(profileId, storeKey, cacheKey, JSON.stringify(original), JSON.stringify(current), updatedAt);
 }
 
 export function getCentroid(profileId: string, cacheKey: string): StoredCentroid | null {
   ensureFeedAlgorithmTables();
-  const tableName = quotedTableName("feed_centroids");
+  const storeKey = createEmbeddingStoreName();
   const row = getDatabase()
     .prepare(
       `SELECT original_json, current_json, updated_at
-       FROM ${tableName}
-       WHERE profile_id = ? AND cache_key = ?`
+       FROM feed_centroids
+       WHERE profile_id = ? AND store_key = ? AND cache_key = ?`
     )
-    .get(profileId, cacheKey) as
+    .get(profileId, storeKey, cacheKey) as
     | {
         original_json: string;
         current_json: string;
@@ -94,14 +110,14 @@ export function getCentroid(profileId: string, cacheKey: string): StoredCentroid
 
 export function listCentroids(profileId: string): StoredCentroidRow[] {
   ensureFeedAlgorithmTables();
-  const tableName = quotedTableName("feed_centroids");
+  const storeKey = createEmbeddingStoreName();
   const rows = getDatabase()
     .prepare(
       `SELECT cache_key, original_json, current_json
-       FROM ${tableName}
-       WHERE profile_id = ?`
+       FROM feed_centroids
+       WHERE profile_id = ? AND store_key = ?`
     )
-    .all(profileId) as Array<{
+    .all(profileId, storeKey) as Array<{
       cache_key: string;
       original_json: string;
       current_json: string;
@@ -116,43 +132,43 @@ export function listCentroids(profileId: string): StoredCentroidRow[] {
 
 export function updateCentroid(profileId: string, cacheKey: string, current: number[], updatedAt: number) {
   ensureFeedAlgorithmTables();
-  const tableName = quotedTableName("feed_centroids");
+  const storeKey = createEmbeddingStoreName();
 
   getDatabase()
     .prepare(
-      `UPDATE ${tableName}
+      `UPDATE feed_centroids
        SET current_json = ?, updated_at = ?
-       WHERE profile_id = ? AND cache_key = ?`
+       WHERE profile_id = ? AND store_key = ? AND cache_key = ?`
     )
-    .run(JSON.stringify(current), updatedAt, profileId, cacheKey);
+    .run(JSON.stringify(current), updatedAt, profileId, storeKey, cacheKey);
 }
 
 export function retainEmbedding(profileId: string, videoId: string, embedding: number[]) {
   ensureFeedAlgorithmTables();
-  const tableName = quotedTableName("feed_video_embeddings");
+  const storeKey = createEmbeddingStoreName();
 
   getDatabase()
     .prepare(
-      `INSERT INTO ${tableName} (profile_id, video_id, embedding_json, retained, updated_at)
-       VALUES (?, ?, ?, 1, ?)
-       ON CONFLICT(profile_id, video_id) DO UPDATE SET
+      `INSERT INTO feed_video_embeddings (profile_id, store_key, video_id, embedding_json, retained, updated_at)
+       VALUES (?, ?, ?, ?, 1, ?)
+       ON CONFLICT(profile_id, store_key, video_id) DO UPDATE SET
          embedding_json = excluded.embedding_json,
          retained = 1,
          updated_at = excluded.updated_at`
     )
-    .run(profileId, videoId, JSON.stringify(embedding), Date.now());
+    .run(profileId, storeKey, videoId, JSON.stringify(embedding), Date.now());
 }
 
 export function getRetainedEmbedding(profileId: string, videoId: string) {
   ensureFeedAlgorithmTables();
-  const tableName = quotedTableName("feed_video_embeddings");
+  const storeKey = createEmbeddingStoreName();
   const row = getDatabase()
     .prepare(
       `SELECT embedding_json
-       FROM ${tableName}
-       WHERE profile_id = ? AND video_id = ? AND retained = 1`
+       FROM feed_video_embeddings
+       WHERE profile_id = ? AND store_key = ? AND video_id = ? AND retained = 1`
     )
-    .get(profileId, videoId) as { embedding_json: string } | undefined;
+    .get(profileId, storeKey, videoId) as { embedding_json: string } | undefined;
 
   return row ? JSON.parse(row.embedding_json) as number[] : null;
 }
@@ -163,21 +179,30 @@ export function deleteRetainedEmbeddings(profileId: string, videoIds: string[]) 
   }
 
   ensureFeedAlgorithmTables();
-  const tableName = quotedTableName("feed_video_embeddings");
+  const storeKey = createEmbeddingStoreName();
   const statement = getDatabase().prepare(
-    `DELETE FROM ${tableName} WHERE profile_id = ? AND video_id = ?`
+    "DELETE FROM feed_video_embeddings WHERE profile_id = ? AND store_key = ? AND video_id = ?"
   );
 
-  for (const videoId of videoIds) {
-    statement.run(profileId, videoId);
-  }
+  runInTransaction(() => {
+    for (const videoId of videoIds) {
+      statement.run(profileId, storeKey, videoId);
+    }
+  });
 }
 
 export function deleteFeedAlgorithmData(profileId: string) {
   ensureFeedAlgorithmTables();
-  for (const tableName of listFeedAlgorithmTableNames()) {
-    getDatabase().prepare(`DELETE FROM ${quoteIdentifier(tableName)} WHERE profile_id = ?`).run(profileId);
-  }
+  const database = getDatabase();
+
+  runInTransaction(() => {
+    database.prepare("DELETE FROM feed_centroids WHERE profile_id = ?").run(profileId);
+    database.prepare("DELETE FROM feed_video_embeddings WHERE profile_id = ?").run(profileId);
+
+    for (const tableName of listLegacyFeedAlgorithmTableNames()) {
+      database.prepare(`DELETE FROM ${quoteIdentifier(tableName)} WHERE profile_id = ?`).run(profileId);
+    }
+  });
 }
 
 export function retainVideoEmbeddings(
@@ -185,24 +210,114 @@ export function retainVideoEmbeddings(
   videos: FeedVideo[],
   embeddings: Map<string, number[]>
 ) {
-  for (const video of videos) {
-    const embedding = embeddings.get(video.id);
+  ensureFeedAlgorithmTables();
+  const storeKey = createEmbeddingStoreName();
+  const statement = getDatabase().prepare(
+    `INSERT INTO feed_video_embeddings (profile_id, store_key, video_id, embedding_json, retained, updated_at)
+     VALUES (?, ?, ?, ?, 1, ?)
+     ON CONFLICT(profile_id, store_key, video_id) DO UPDATE SET
+       embedding_json = excluded.embedding_json,
+       retained = 1,
+       updated_at = excluded.updated_at`
+  );
+  const updatedAt = Date.now();
 
-    if (embedding) {
-      retainEmbedding(profileId, video.id, embedding);
+  runInTransaction(() => {
+    for (const video of videos) {
+      const embedding = embeddings.get(video.id);
+
+      if (embedding) {
+        statement.run(profileId, storeKey, video.id, JSON.stringify(embedding), updatedAt);
+      }
+    }
+  });
+}
+
+export function listFeedAlgorithmTableNames() {
+  return ["feed_centroids", "feed_video_embeddings"];
+}
+
+function migrateDetachedBaseTable(legacyTable: LegacyBaseTable | null) {
+  if (!legacyTable) {
+    return;
+  }
+
+  const database = getDatabase();
+
+  if (legacyTable.baseName === "feed_centroids") {
+    database
+      .prepare(
+        `INSERT OR IGNORE INTO feed_centroids (
+           profile_id, store_key, cache_key, original_json, current_json, updated_at
+         )
+         SELECT profile_id, ?, cache_key, original_json, current_json, updated_at
+         FROM ${quoteIdentifier(legacyTable.tableName)}`
+      )
+      .run(legacyTable.storeKey);
+    database.exec(`DROP TABLE ${quoteIdentifier(legacyTable.tableName)}`);
+    return;
+  }
+
+  database
+    .prepare(
+      `INSERT OR IGNORE INTO feed_video_embeddings (
+         profile_id, store_key, video_id, embedding_json, retained, updated_at
+       )
+       SELECT profile_id, ?, video_id, embedding_json, retained, updated_at
+       FROM ${quoteIdentifier(legacyTable.tableName)}`
+    )
+    .run(legacyTable.storeKey);
+  database.exec(`DROP TABLE ${quoteIdentifier(legacyTable.tableName)}`);
+}
+
+function migrateLegacyAlgorithmTables(skipTables: Set<string>) {
+  const database = getDatabase();
+
+  for (const tableName of listLegacyFeedAlgorithmTableNames()) {
+    if (skipTables.has(tableName)) {
+      continue;
+    }
+
+    if (tableName.startsWith("feed_centroids_")) {
+      const storeKey = tableName.slice("feed_centroids_".length);
+
+      database
+        .prepare(
+          `INSERT OR IGNORE INTO feed_centroids (
+             profile_id, store_key, cache_key, original_json, current_json, updated_at
+           )
+           SELECT profile_id, ?, cache_key, original_json, current_json, updated_at
+           FROM ${quoteIdentifier(tableName)}`
+        )
+        .run(storeKey);
+      database.exec(`DROP TABLE ${quoteIdentifier(tableName)}`);
+      continue;
+    }
+
+    if (tableName.startsWith("feed_video_embeddings_")) {
+      const storeKey = tableName.slice("feed_video_embeddings_".length);
+
+      database
+        .prepare(
+          `INSERT OR IGNORE INTO feed_video_embeddings (
+             profile_id, store_key, video_id, embedding_json, retained, updated_at
+           )
+           SELECT profile_id, ?, video_id, embedding_json, retained, updated_at
+           FROM ${quoteIdentifier(tableName)}`
+        )
+        .run(storeKey);
+      database.exec(`DROP TABLE ${quoteIdentifier(tableName)}`);
     }
   }
 }
 
-export function listFeedAlgorithmTableNames() {
+function listLegacyFeedAlgorithmTableNames() {
   const rows = getDatabase()
     .prepare(
       `SELECT name
        FROM sqlite_master
        WHERE type = 'table'
-         AND (name = 'feed_centroids'
-           OR name = 'feed_video_embeddings'
-           OR name LIKE 'feed_centroids_%'
+         AND (name LIKE 'feed_centroids_%'
            OR name LIKE 'feed_video_embeddings_%')`
     )
     .all() as Array<{ name: string }>;
@@ -210,8 +325,55 @@ export function listFeedAlgorithmTableNames() {
   return rows.map((row) => row.name);
 }
 
-function quotedTableName(baseName: "feed_centroids" | "feed_video_embeddings") {
-  return quoteIdentifier(`${baseName}_${createEmbeddingStoreName()}`);
+type LegacyBaseTable = {
+  baseName: "feed_centroids" | "feed_video_embeddings";
+  tableName: string;
+  storeKey: string;
+};
+
+function detachLegacyBaseTable(baseName: LegacyBaseTable["baseName"]): LegacyBaseTable | null {
+  if (!tableExists(baseName) || tableHasColumn(baseName, "store_key")) {
+    return null;
+  }
+
+  const tableName = `${baseName}_legacy_${Date.now()}`;
+  getDatabase().exec(`ALTER TABLE ${quoteIdentifier(baseName)} RENAME TO ${quoteIdentifier(tableName)}`);
+
+  return {
+    baseName,
+    tableName,
+    storeKey: createEmbeddingStoreName()
+  };
+}
+
+function tableExists(tableName: string) {
+  const row = getDatabase()
+    .prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(tableName);
+
+  return Boolean(row);
+}
+
+function tableHasColumn(tableName: string, columnName: string) {
+  const columns = getDatabase()
+    .prepare(`PRAGMA table_info(${quoteIdentifier(tableName)})`)
+    .all() as Array<{ name: string }>;
+
+  return columns.some((column) => column.name === columnName);
+}
+
+function runInTransaction(work: () => void) {
+  const database = getDatabase();
+
+  database.exec("BEGIN");
+
+  try {
+    work();
+    database.exec("COMMIT");
+  } catch (error) {
+    database.exec("ROLLBACK");
+    throw error;
+  }
 }
 
 function quoteIdentifier(identifier: string) {

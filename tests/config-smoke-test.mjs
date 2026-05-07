@@ -305,7 +305,11 @@ function slug(value) {
 
 compileConfigModules();
 
-after(() => {
+after(async () => {
+  try {
+    await loadLoggerModule().flushLogFileWrites();
+  } catch {}
+
   if (originalLogFile === undefined) {
     delete process.env.GRETEL_LOG_FILE;
   } else {
@@ -316,11 +320,11 @@ after(() => {
   rmSync(configDir, { force: true, recursive: true });
 });
 
-test("writes structured logs to the configured log file", () => {
+test("writes structured logs to the configured log file", async () => {
   const logFilePath = path.join(configDir, "logs", "structured.log");
   const previousLogFile = process.env.GRETEL_LOG_FILE;
   process.env.GRETEL_LOG_FILE = logFilePath;
-  const { logError, logInfo, logWarn } = loadLoggerModule();
+  const { flushLogFileWrites, logError, logInfo, logWarn } = loadLoggerModule();
 
   try {
     captureConfigLogs(() => {
@@ -328,6 +332,7 @@ test("writes structured logs to the configured log file", () => {
       logWarn("logger.warn", { attempts: 2 });
       logError("logger.error", { reason: "failed" });
     });
+    await flushLogFileWrites();
 
     const lines = readFileSync(logFilePath, "utf8")
       .trim()

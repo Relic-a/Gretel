@@ -1,11 +1,24 @@
 import path from "node:path";
 
 const dataDir = path.join(process.cwd(), "data");
+const thumbnailDir = path.join(dataDir, "thumbnails");
 
 export function getCachedThumbnailPath(profileId: string, videoId: string) {
-  return path.join(dataDir, "thumbnails", cleanFilePart(profileId), `${cleanFilePart(videoId)}.jpg`);
+  const thumbnailPath = path.resolve(
+    thumbnailDir,
+    cleanFilePart(profileId),
+    `${cleanFilePart(videoId)}.jpg`
+  );
+  const thumbnailRoot = `${path.resolve(thumbnailDir)}${path.sep}`;
+
+  if (!thumbnailPath.startsWith(thumbnailRoot)) {
+    throw new Error("Invalid thumbnail cache path");
+  }
+
+  return thumbnailPath;
 }
 
 function cleanFilePart(value: string) {
-  return value.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
+  const cleaned = value.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 120);
+  return cleaned || "unknown";
 }

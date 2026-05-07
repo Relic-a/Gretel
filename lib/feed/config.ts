@@ -1,4 +1,4 @@
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 import { DEFAULT_GRETEL_CONFIG, type GretelConfig } from "./config-defaults";
@@ -24,6 +24,11 @@ const DEFAULT_CONFIG_PATH = path.join(
 
 let lastConfigWarning = "";
 let lastConfigLogSignature = "";
+const configInputCache = new Map<string, {
+  input: ConfigInput;
+  mtimeMs: number;
+  size: number;
+}>();
 
 export function getGretelConfig() {
   const input = readConfigInput();
@@ -71,12 +76,28 @@ function readConfigInput(): ConfigInput {
   const configPath = getConfigPath();
 
   if (!existsSync(/*turbopackIgnore: true*/ configPath)) {
+    configInputCache.delete(configPath);
     return {};
   }
 
   try {
+    const stats = statSync(/*turbopackIgnore: true*/ configPath);
+    const cached = configInputCache.get(configPath);
+
+    if (cached && cached.mtimeMs === stats.mtimeMs && cached.size === stats.size) {
+      return cached.input;
+    }
+
     const parsed = JSON.parse(readFileSync(/*turbopackIgnore: true*/ configPath, "utf8"));
-    return parsed && typeof parsed === "object" ? parsed : {};
+    const input = parsed && typeof parsed === "object" ? parsed : {};
+
+    configInputCache.set(configPath, {
+      input,
+      mtimeMs: stats.mtimeMs,
+      size: stats.size
+    });
+
+    return input;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     const warningSignature = JSON.stringify({ path: configPath, message });
@@ -88,6 +109,15 @@ function readConfigInput(): ConfigInput {
       });
       lastConfigWarning = warningSignature;
     }
+
+    try {
+      const stats = statSync(/*turbopackIgnore: true*/ configPath);
+      configInputCache.set(configPath, {
+        input: {},
+        mtimeMs: stats.mtimeMs,
+        size: stats.size
+      });
+    } catch {}
 
     return {};
   }
