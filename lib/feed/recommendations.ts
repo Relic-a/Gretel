@@ -5,8 +5,13 @@ import { normalizeChannelKey } from "../profile-store";
 import { errorFields, logWarn } from "../logger";
 import {
   getAuthor,
+  getAuthorAvatarUrl,
   getDuration,
+  getPublishedAt,
+  getPublishedText,
+  getThumbnailUrl,
   getTitle,
+  getViewCount,
   getVideoId,
   shouldKeepVideo
 } from "./video-utils";
@@ -98,8 +103,14 @@ async function recommendVideosFromLinks(
               id,
               title: getTitle(video),
               author,
+              channelAvatarUrl: getAuthorAvatarUrl(video),
               duration,
               query: sourceLabel,
+              thumbnailUrl: getThumbnailUrl(video) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+              thumbnailCacheUrl: `/api/thumbnails/${profileId}/${id}`,
+              publishedText: getPublishedText(video),
+              publishedAt: getPublishedAt(video),
+              viewCount: getViewCount(video),
               channelKey: normalizeChannelKey(author),
               parent_video_id: seedVideo.id,
               parent_title: seedVideo.title,
