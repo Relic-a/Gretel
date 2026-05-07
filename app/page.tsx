@@ -513,6 +513,7 @@ export default function Home() {
     const nextTags = input.nextTags || tags;
     const nextChannels = input.nextChannels || channels;
     const nextProfileId = input.nextProfileId || profileId;
+    const excludeVideoIds = input.forceExpansion === true ? [] : feed?.videos.map((video) => video.id) || [];
     const requestId = feedRequestIdRef.current + 1;
     feedRequestIdRef.current = requestId;
 
@@ -528,7 +529,8 @@ export default function Home() {
           channels: nextChannels,
           profileId: nextProfileId,
           forceExpansion: input.forceExpansion === true,
-          servingOnly: input.forceExpansion !== true
+          servingOnly: input.forceExpansion !== true,
+          excludeVideoIds
         })
       });
       const data = await response.json();

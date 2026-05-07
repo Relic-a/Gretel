@@ -271,6 +271,51 @@ test("initial pool build uses configurable fetch size instead of serving page si
   }
 });
 
+test("serving excludes client-visible videos before ranking the next page", async () => {
+  const modules = loadRuntimeModules({
+    youtubeClient: createFakeYoutubeClient({
+      searchVideos: Array.from({ length: 5 }, (_, index) =>
+        rawVideo(`root-alpha-${index}`, `alpha root ${index}`, "Search")
+      )
+    }),
+    embeddingForText: () => [1, 0]
+  });
+  const profile = modules.profileStore.createProfile("Exclude Visible");
+  profileStoreForCleanup = modules.profileStore;
+
+  try {
+    process.env.GRETEL_CONFIG = writeConfig("exclude-visible.json", {
+      expansion: {
+        minFreshVideos: 0,
+        minFreshRatio: 0,
+        servedMajorityThreshold: 1
+      },
+      feed: {
+        maxQueries: 1,
+        maxVideos: 2,
+        minVideosPerQuery: 1,
+        readyQueueLowWaterMark: 0,
+        subscriptionFastLanePerSession: 0
+      },
+      embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
+    });
+
+    const firstFeed = await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
+      servingOnly: true
+    });
+    const nextFeed = await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
+      servingOnly: true,
+      excludeVideoIds: firstFeed.videos.map((node) => node.id)
+    });
+
+    assert.deepEqual(firstFeed.videos.map((node) => node.id), ["root-alpha-0", "root-alpha-1"]);
+    assert.deepEqual(nextFeed.videos.map((node) => node.id), ["root-alpha-2", "root-alpha-3"]);
+    assert.equal(nextFeed.pool.health.excludedClientVideos, 2);
+  } finally {
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});
+
 test("reactive expansion fires when served majority threshold is crossed", async () => {
   const infoSeeds = [];
   const modules = loadRuntimeModules({
@@ -325,6 +370,57 @@ test("reactive expansion fires when served majority threshold is crossed", async
     assert.equal(feed.pool.expandedPool, true);
     assert.equal(infoSeeds.length, 1);
     assert.equal(related.length, 1);
+  } finally {
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});
+
+test("expansion is not reported as successful when no usable videos are admitted", async () => {
+  const modules = loadRuntimeModules({
+    youtubeClient: createFakeYoutubeClient({
+      searchVideos: [rawVideo("root-alpha", "alpha root", "Search")],
+      infoForSeed() {
+        return [rawVideo("related-below", "related below", "Related")];
+      }
+    }),
+    embeddingForText(text) {
+      return /below/i.test(text) ? [0, 1] : [1, 0];
+    }
+  });
+  const profile = modules.profileStore.createProfile("Zero Yield Expansion");
+  profileStoreForCleanup = modules.profileStore;
+
+  try {
+    process.env.GRETEL_CONFIG = writeConfig("zero-yield-expansion.json", {
+      expansion: {
+        minDelayBetweenFetchesMs: 0,
+        maxFetchCallsPerCycle: 1,
+        cycleCooldownMs: 0,
+        minExpansionYield: 1
+      },
+      feed: {
+        maxQueries: 1,
+        maxVideos: 4,
+        minVideosPerQuery: 1,
+        recommendationSeeds: 1,
+        expansionSeedCount: 1,
+        minRelatedVideosPerSeed: 1,
+        maxRelatedVideosPerSeed: 1,
+        similarityThreshold: 0.75,
+        subscriptionFastLanePerSession: 0
+      },
+      embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
+    });
+
+    const runObservation = observation();
+    const feed = await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", runObservation, {
+      forceExpansion: true
+    });
+    const expansionLog = runObservation.operations.find((operation) => operation.name === "feed.phase2.expansion");
+
+    assert.equal(feed.pool.expandedPool, false);
+    assert.equal(expansionLog.output.admittedVideos, 0);
+    assert.equal(expansionLog.output.filteredByCentroid, 1);
   } finally {
     modules.profileStore.deleteProfile(profile.id);
   }
@@ -631,20 +727,24 @@ test("logs the top serving items with score breakdown and serving parameters", a
     assert.ok(topItemsLog);
     assert.equal(topItemsLog.coldStart, false);
     assert.equal(topItemsLog.parameters.warmSemanticWeight, 0.25);
-    assert.equal(topItemsLog.parameters.servedPenaltyFactor, 0.2);
-    assert.equal(topItemsLog.parameters.fastLaneImpressionPenaltyFactor, 0.08);
-    assert.equal(topItemsLog.parameters.coldStartInteractionThreshold, 1);
-    assert.equal(topItemsLog.topItems.length, 3);
-    assert.equal(topItemsLog.topItems[0].id, "root-a");
-    assert.equal(topItemsLog.topItems[0].impressionCount, 1);
-    assert.equal(topItemsLog.topItems[0].semanticScore, 1);
-    assert.equal(topItemsLog.topItems[0].engagementScore, 0.55);
-    assert.equal(topItemsLog.topItems[0].baseScore, 0.8);
-    assert.equal(topItemsLog.topItems[0].servedPenalty, 0.2);
-    assert.ok(Math.abs(topItemsLog.topItems[0].score - (0.8 / 1.2)) < 1e-9);
-    assert.equal(topItemsLog.topItems[0].weights.semanticWeight, 0.25);
-    assert.equal(topItemsLog.topItems[0].weights.servedPenaltyFactor, 0.2);
-    assert.equal(topItemsLog.topItems[0].mode, "warm");
+  assert.equal(topItemsLog.parameters.servedPenaltyFactor, 0.2);
+  assert.equal(topItemsLog.parameters.servedCountPenaltyFactor, 0.08);
+  assert.equal(topItemsLog.parameters.fastLaneImpressionPenaltyFactor, 0.08);
+  assert.equal(topItemsLog.parameters.coldStartInteractionThreshold, 1);
+  assert.equal(topItemsLog.topItems.length, 3);
+  assert.equal(topItemsLog.topItems[0].id, "root-b");
+  const rootALog = topItemsLog.topItems.find((item) => item.id === "root-a");
+  assert.equal(rootALog.impressionCount, 1);
+  assert.equal(rootALog.servedCount, 1);
+  assert.equal(rootALog.semanticScore, 1);
+  assert.equal(rootALog.engagementScore, 0.55);
+  assert.equal(rootALog.baseScore, 0.8);
+  assert.equal(rootALog.servedPenalty, 0.28);
+  assert.ok(Math.abs(rootALog.score - (0.8 / 1.28)) < 1e-9);
+  assert.equal(rootALog.weights.semanticWeight, 0.25);
+  assert.equal(rootALog.weights.servedPenaltyFactor, 0.2);
+  assert.equal(rootALog.weights.servedCountPenaltyFactor, 0.08);
+  assert.equal(rootALog.mode, "warm");
   } finally {
     modules.profileStore.deleteProfile(profile.id);
   }

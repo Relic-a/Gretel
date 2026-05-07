@@ -17,6 +17,7 @@ export type FeedVideo = {
   sourceNodeId?: "tagSearch" | "channelVideos" | "relatedVideos";
   sourceNodeLabel?: string;
   impressionCount?: number;
+  servedCount?: number;
   liked?: boolean;
   clicked?: boolean;
   ignoreCount?: number;
@@ -43,6 +44,8 @@ export type FeedResponse = {
 export type PublicGretelConfig = {
   serving: {
     servedPenaltyFactor: number;
+    servedCountPenaltyFactor: number;
+    fastLaneImpressionPenaltyFactor: number;
     warmSemanticWeight: number;
   };
   expansion: {
@@ -51,6 +54,9 @@ export type PublicGretelConfig = {
     maxFetchCallsPerCycle: number;
     cycleCooldownMs: number;
     servedMajorityThreshold: number;
+    minFreshVideos: number;
+    minFreshRatio: number;
+    minExpansionYield: number;
   };
   transcription: {
     introductionPercentage: number;

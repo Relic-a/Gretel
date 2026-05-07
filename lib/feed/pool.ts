@@ -8,11 +8,23 @@ export type CandidatePoolResult = {
   nodes: FeedNodeSummary[];
 };
 
+export type PoolHealth = {
+  totalVideos: number;
+  eligibleVideos: number;
+  excludedClientVideos: number;
+  servableVideos: number;
+  freshVideos: number;
+  freshRatio: number;
+  needsExpansion: boolean;
+  reasons: string[];
+};
+
 export function createCandidatePoolFeed(input: {
   rootVideos: FeedVideo[];
   channelVideos: FeedVideo[];
   relatedVideos: FeedVideo[];
   watchedVideoIds: Set<string>;
+  excludeVideoIds?: Set<string>;
   interactions: Map<string, VideoInteraction>;
   config: GretelConfig;
 }) {
@@ -21,8 +33,8 @@ export function createCandidatePoolFeed(input: {
   const allPoolVideos = [...input.rootVideos, ...input.channelVideos, ...input.relatedVideos]
     .map((video) => applyEngagement(video, input.interactions, input.config));
   const poolVideos = allPoolVideos
-    .filter((video) => (video.watchTimeRatio || 0) < input.config.learning.watchCompletionThreshold)
-    .filter((video) => input.interactions.has(video.id) || !input.watchedVideoIds.has(video.id))
+    .filter((video) => isEligibleForServing(video, input.watchedVideoIds, input.interactions, input.config))
+    .filter((video) => !input.excludeVideoIds?.has(video.id))
     .sort((left, right) =>
       servingScore(right, input.config, isColdStart) - servingScore(left, input.config, isColdStart) ||
       (right.similarityScore || 0) - (left.similarityScore || 0)
@@ -40,6 +52,48 @@ export function createCandidatePoolFeed(input: {
       summarizeNode("relatedVideos", "Related videos", input.relatedVideos, poolVideos)
     ]
   } satisfies CandidatePoolResult;
+}
+
+export function describePoolHealth(input: {
+  videos: FeedVideo[];
+  watchedVideoIds: Set<string>;
+  excludeVideoIds: Set<string>;
+  interactions: Map<string, VideoInteraction>;
+  config: GretelConfig;
+}): PoolHealth {
+  const eligibleVideos = input.videos.filter((video) =>
+    isEligibleForServing(video, input.watchedVideoIds, input.interactions, input.config)
+  );
+  const excludedClientVideos = eligibleVideos.filter((video) => input.excludeVideoIds.has(video.id)).length;
+  const servableVideos = eligibleVideos.filter((video) => !input.excludeVideoIds.has(video.id));
+  const freshVideos = servableVideos.filter((video) =>
+    (video.impressionCount || 0) === 0 && (video.servedCount || 0) === 0
+  ).length;
+  const freshRatio = servableVideos.length > 0 ? freshVideos / servableVideos.length : 0;
+  const reasons: string[] = [];
+
+  if (freshVideos < input.config.expansion.minFreshVideos) {
+    reasons.push("fresh_count");
+  }
+
+  if (freshRatio < input.config.expansion.minFreshRatio) {
+    reasons.push("fresh_ratio");
+  }
+
+  if (servableVideos.length < input.config.feed.maxVideos) {
+    reasons.push("servable_count");
+  }
+
+  return {
+    totalVideos: input.videos.length,
+    eligibleVideos: eligibleVideos.length,
+    excludedClientVideos,
+    servableVideos: servableVideos.length,
+    freshVideos,
+    freshRatio,
+    needsExpansion: reasons.length > 0,
+    reasons
+  };
 }
 
 export function selectExpansionSeeds(input: {
@@ -123,13 +177,15 @@ export function describeServingScore(video: FeedVideo, config: GretelConfig, isC
   const engagementScore = video.engagementScore || video.parentEngagementScore || 0;
   const parentEngagementScore = video.parentEngagementScore || 0;
   const impressionCount = video.impressionCount || 0;
+  const servedCount = video.servedCount || 0;
   const semanticWeight = config.serving.warmSemanticWeight;
   const servedPenaltyFactor = config.serving.servedPenaltyFactor;
+  const servedCountPenaltyFactor = config.serving.servedCountPenaltyFactor;
   const coldStartParentEngagementWeight = config.feed.coldStartParentEngagementWeight;
   const baseScore = isColdStart
     ? coldStartExpansionScore(video, config)
     : warmServingScore(video, config);
-  const servedPenalty = impressionCount * servedPenaltyFactor;
+  const servedPenalty = impressionCount * servedPenaltyFactor + servedCount * servedCountPenaltyFactor;
   const score = servedPenalty === 0
     ? baseScore
     : baseScore >= 0
@@ -145,11 +201,13 @@ export function describeServingScore(video: FeedVideo, config: GretelConfig, isC
     engagementContribution: isColdStart ? parentEngagementScore * coldStartParentEngagementWeight : engagementScore,
     parentEngagementScore,
     impressionCount,
+    servedCount,
     servedPenalty,
     mode: isColdStart ? "coldStart" : "warm",
     weights: {
       semanticWeight,
       servedPenaltyFactor,
+      servedCountPenaltyFactor,
       coldStartParentEngagementWeight
     }
   };
@@ -167,6 +225,16 @@ function similarityToCurrent(
 function coldStartExpansionScore(video: FeedVideo, config: GretelConfig) {
   return (video.similarityScore || 0) +
     (video.parentEngagementScore || 0) * config.feed.coldStartParentEngagementWeight;
+}
+
+function isEligibleForServing(
+  video: FeedVideo,
+  watchedVideoIds: Set<string>,
+  interactions: Map<string, VideoInteraction>,
+  config: GretelConfig
+) {
+  return (video.watchTimeRatio || 0) < config.learning.watchCompletionThreshold &&
+    (interactions.has(video.id) || !watchedVideoIds.has(video.id));
 }
 
 function summarizeNode(

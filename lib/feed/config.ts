@@ -175,6 +175,12 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
         0,
         100
       ),
+      servedCountPenaltyFactor: numberInRange(
+        serving.servedCountPenaltyFactor,
+        defaults.serving.servedCountPenaltyFactor,
+        0,
+        100
+      ),
       warmSemanticWeight: numberInRange(
         serving.warmSemanticWeight,
         defaults.serving.warmSemanticWeight,
@@ -210,6 +216,22 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
       servedMajorityThreshold: share(
         expansion.servedMajorityThreshold,
         defaults.expansion.servedMajorityThreshold
+      ),
+      minFreshVideos: integer(
+        expansion.minFreshVideos,
+        defaults.expansion.minFreshVideos,
+        0,
+        1000
+      ),
+      minFreshRatio: share(
+        expansion.minFreshRatio,
+        defaults.expansion.minFreshRatio
+      ),
+      minExpansionYield: integer(
+        expansion.minExpansionYield,
+        defaults.expansion.minExpansionYield,
+        0,
+        1000
       )
     },
     transcription: {

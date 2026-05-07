@@ -19,6 +19,9 @@ export async function POST(request: Request) {
     const channelSort = parseChannelSort(body.channelSort);
     const forceExpansion = body.forceExpansion === true;
     const servingOnly = body.servingOnly === true;
+    const excludeVideoIds = Array.isArray(body.excludeVideoIds)
+      ? body.excludeVideoIds.filter((videoId: unknown) => typeof videoId === "string")
+      : [];
     const requestedProfileId = typeof body.profileId === "string" ? body.profileId : "";
     const profile = requestedProfileId ? getProfile(requestedProfileId) : null;
 
@@ -44,6 +47,7 @@ export async function POST(request: Request) {
         forceExpansion,
         servingOnly,
         watchedVideoIds,
+        excludeVideoIds,
         expectedProfileUpdatedAt: profile.updatedAt
       }
     );
@@ -59,6 +63,7 @@ export async function POST(request: Request) {
       finalVideos: feed.videos.length,
       activeNodes: feed.nodes.filter((node) => node.weight > 0).length,
       watchedExcluded: watchedVideoIds.length,
+      clientExcluded: excludeVideoIds.length,
       poolVideos: feed.pool.videos,
       poolStatus: feed.pool.status,
       initializedRoot: feed.pool.initializedRoot,
