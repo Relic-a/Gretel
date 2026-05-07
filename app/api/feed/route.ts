@@ -45,6 +45,7 @@ export async function POST(request: Request) {
       observation,
       {
         servingOnly,
+        readOnlyPool: servingOnly,
         watchedVideoIds,
         excludeVideoIds,
         expectedProfileUpdatedAt: profile.updatedAt

@@ -44,6 +44,7 @@ import { averageNormalizedVectors, cosineSimilarity } from "./vector-math";
 export type CreateFeedOptions = {
   expectedProfileUpdatedAt?: number;
   servingOnly?: boolean;
+  readOnlyPool?: boolean;
   watchedVideoIds?: string[];
   excludeVideoIds?: string[];
 };
@@ -70,15 +71,17 @@ export async function createFeed(
   const poolKey = createFeedPoolKey({ tags: queries, channels, channelSort });
   const watchedVideoIds = new Set(options.watchedVideoIds || []);
   const excludeVideoIds = new Set(options.excludeVideoIds || []);
-  const initializedRoot = await initializePoolOnce(
-    profileId,
-    poolKey,
-    queries,
-    channels,
-    channelSort,
-    observation,
-    options.expectedProfileUpdatedAt
-  );
+  const initializedRoot = options.readOnlyPool
+    ? false
+    : await initializePoolOnce(
+        profileId,
+        poolKey,
+        queries,
+        channels,
+        channelSort,
+        observation,
+        options.expectedProfileUpdatedAt
+      );
 
   let poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
   recordScoringObservation(observation, profileId, poolVideos, "initial");
@@ -98,38 +101,11 @@ export async function createFeed(
     interactions: getVideoInteractions(profileId),
     config
   });
-  let expandedPool = poolHealth.needsExpansion;
+  const expandedPool = false;
 
-  if (expandedPool) {
-    expandedPool = await expandPool(
-      profileId,
-      poolKey,
-      poolVideos,
-      observation,
-      options.expectedProfileUpdatedAt,
-      { bypassCooldown: true }
-    );
-    poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
-    recordScoringObservation(observation, profileId, poolVideos, "afterExpansion");
-    readyPreview = createCandidatePoolFeed({
-      rootVideos: poolVideos.filter((video) => video.sourceNodeId === "tagSearch"),
-      channelVideos: poolVideos.filter((video) => video.sourceNodeId === "channelVideos"),
-      relatedVideos: poolVideos.filter((video) => video.sourceNodeId === "relatedVideos"),
-      watchedVideoIds,
-      excludeVideoIds,
-      interactions: getVideoInteractions(profileId),
-      config
-    });
-    poolHealth = describePoolHealth({
-      videos: poolVideos,
-      watchedVideoIds,
-      excludeVideoIds,
-      interactions: getVideoInteractions(profileId),
-      config
-    });
-  }
-
-  const prunedVideos = prunePool(profileId, poolKey, poolVideos, config.feed.poolSizeCap);
+  const prunedVideos = options.readOnlyPool
+    ? []
+    : prunePool(profileId, poolKey, poolVideos, config.feed.poolSizeCap);
 
   observation.operations.push({
     name: "feed.phase6.pruning",
@@ -162,13 +138,15 @@ export async function createFeed(
 
   logTopServingItems(profileId, poolKey, readyPreview.videos, config, observation.requestId);
 
-  const fastLaneVideos = await getSubscriptionFastLaneVideos(
-    channels,
-    channelSort,
-    observation,
-    profileId,
-    watchedVideoIds
-  );
+  const fastLaneVideos = options.readOnlyPool
+    ? []
+    : await getSubscriptionFastLaneVideos(
+        channels,
+        channelSort,
+        observation,
+        profileId,
+        watchedVideoIds
+      );
   const poolRecommendations = readyPreview.videos.slice(0, config.feed.maxVideos);
   const videos = [...fastLaneVideos, ...poolRecommendations].slice(0, config.feed.maxVideos);
 
@@ -217,6 +195,74 @@ export async function createFeed(
     pool,
     upNextByVideoId
   };
+}
+
+export async function expandFeedPoolForImpressions(
+  profileId: string,
+  tags: string[],
+  channels: string[],
+  channelSort: ChannelSort,
+  observation: FeedObservation,
+  options: Pick<CreateFeedOptions, "expectedProfileUpdatedAt" | "watchedVideoIds"> = {}
+) {
+  ensureProfileCurrent(profileId, options.expectedProfileUpdatedAt);
+
+  const queries = createQueries(tags);
+  const config = getGretelConfig();
+  const poolKey = createFeedPoolKey({ tags: queries, channels, channelSort });
+  const poolState = getFeedPoolState(profileId, poolKey);
+  const watchedVideoIds = new Set(options.watchedVideoIds || []);
+
+  if (!poolState) {
+    observation.operations.push({
+      name: "feed.phase2.expansion_skipped",
+      durationMs: 0,
+      status: "ok",
+      input: { poolVideos: 0 },
+      output: { reason: "missing_pool" }
+    });
+    return { expandedPool: false, poolKey, poolVideos: 0 };
+  }
+
+  let poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
+  recordScoringObservation(observation, profileId, poolVideos, "impressionTrigger");
+  const poolHealth = describePoolHealth({
+    videos: poolVideos,
+    watchedVideoIds,
+    excludeVideoIds: new Set(),
+    interactions: getVideoInteractions(profileId),
+    config
+  });
+
+  if (!poolHealth.needsExpansion) {
+    observation.operations.push({
+      name: "feed.phase2.expansion_skipped",
+      durationMs: 0,
+      status: "ok",
+      input: {
+        poolVideos: poolVideos.length,
+        freshRatio: poolHealth.freshRatio
+      },
+      output: { reason: "healthy_pool" }
+    });
+    return { expandedPool: false, poolKey, poolVideos: poolVideos.length };
+  }
+
+  const expandedPool = await expandPool(
+    profileId,
+    poolKey,
+    poolVideos,
+    observation,
+    options.expectedProfileUpdatedAt,
+    { bypassCooldown: true }
+  );
+
+  if (expandedPool) {
+    poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
+    prunePool(profileId, poolKey, poolVideos, config.feed.poolSizeCap);
+  }
+
+  return { expandedPool, poolKey, poolVideos: poolVideos.length };
 }
 
 async function initializePoolOnce(

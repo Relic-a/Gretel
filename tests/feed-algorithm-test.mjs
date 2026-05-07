@@ -160,9 +160,7 @@ test("pool expansion budgets by score, skips visited videos, enforces threshold,
       servingOnly: true
     });
     modules.profileStore.recordVideoImpressions(profile.id, ["root-alpha"]);
-    await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
-      servingOnly: true
-    });
+    await modules.service.expandFeedPoolForImpressions(profile.id, ["alpha"], [], "mixed", observation());
     const poolKey = modules.poolStore.createFeedPoolKey({
       tags: feed.queries,
       channels: [],
@@ -226,9 +224,7 @@ test("stale expansion stops when the profile is deleted before related videos ar
   modules.profileStore.recordVideoImpressions(profile.id, ["root-alpha"]);
 
   await assert.rejects(
-    modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
-      servingOnly: true
-    }),
+    modules.service.expandFeedPoolForImpressions(profile.id, ["alpha"], [], "mixed", observation()),
     modules.service.FeedProfileStaleError
   );
   assert.equal(modules.profileStore.getProfile(profile.id), null);
@@ -373,15 +369,19 @@ test("impression-triggered expansion bypasses cooldown", async () => {
     modules.poolStore.markPoolExpanded(profile.id, poolKey, Date.now());
     modules.profileStore.recordVideoImpressions(profile.id, ["root-alpha-0", "root-alpha-1"]);
 
-    const expandedFeed = await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
-      servingOnly: true
-    });
+    const expansion = await modules.service.expandFeedPoolForImpressions(
+      profile.id,
+      ["alpha"],
+      [],
+      "mixed",
+      observation()
+    );
     const related = modules.poolStore
       .listPoolNodes(profile.id, poolKey)
       .filter((node) => node.sourceNodeId === "relatedVideos");
 
     assert.equal(feed.pool.expandedPool, false);
-    assert.equal(expandedFeed.pool.expandedPool, true);
+    assert.equal(expansion.expandedPool, true);
     assert.equal(infoSeeds.length, 1);
     assert.equal(related.length, 1);
   } finally {
@@ -432,12 +432,16 @@ test("expansion is not reported as successful when no usable videos are admitted
     modules.profileStore.recordVideoImpressions(profile.id, ["root-alpha"]);
 
     const runObservation = observation();
-    const feed = await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", runObservation, {
-      servingOnly: true
-    });
+    const expansion = await modules.service.expandFeedPoolForImpressions(
+      profile.id,
+      ["alpha"],
+      [],
+      "mixed",
+      runObservation
+    );
     const expansionLog = runObservation.operations.find((operation) => operation.name === "feed.phase2.expansion");
 
-    assert.equal(feed.pool.expandedPool, false);
+    assert.equal(expansion.expandedPool, false);
     assert.equal(expansionLog.output.admittedVideos, 0);
     assert.equal(expansionLog.output.filteredByCentroid, 1);
   } finally {
@@ -499,9 +503,7 @@ test("expansion caps fetch calls per cycle", async () => {
 
     modules.profileStore.recordVideoImpressions(profile.id, ["seed-1", "seed-2"]);
 
-    await modules.service.createFeed(profile.id, [], [], "mixed", observation(), {
-      servingOnly: true
-    });
+    await modules.service.expandFeedPoolForImpressions(profile.id, [], [], "mixed", observation());
 
     assert.deepEqual(infoSeeds, ["seed-1", "seed-2"]);
   } finally {
@@ -729,9 +731,6 @@ test("logs the top serving items with score breakdown and serving parameters", a
       durationSeconds: 60
     });
 
-    await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
-      servingOnly: true
-    });
     modules.profileStore.recordVideoImpressions(profile.id, ["root-a"]);
 
     const logs = await captureConsoleLogs(async () => {
@@ -1050,9 +1049,7 @@ test("pruning cleans non-engaged embeddings and pruned videos are not re-admitte
 
     modules.profileStore.recordVideoImpressions(profile.id, ["seed"]);
 
-    await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
-      servingOnly: true
-    });
+    await modules.service.expandFeedPoolForImpressions(profile.id, ["alpha"], [], "mixed", observation());
     const relatedIds = modules.poolStore
       .listPoolNodes(profile.id, poolKey)
       .filter((node) => node.sourceNodeId === "relatedVideos")

@@ -97,7 +97,8 @@ export default function Home() {
           nextProfileId: selectedProfileId,
           nextTags: saved?.tags?.length ? saved.tags : starterTags,
           nextChannels: saved?.channels || [],
-          resetFeed: true
+          resetFeed: true,
+          servingOnly: true
         });
       }
     }
@@ -498,7 +499,12 @@ export default function Home() {
         await fetch("/api/impressions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ profileId: targetProfileId, videoIds })
+          body: JSON.stringify({
+            profileId: targetProfileId,
+            tags,
+            channels,
+            videoIds
+          })
         });
       } catch {}
     }, 250);
@@ -509,18 +515,20 @@ export default function Home() {
     nextTags?: string[];
     nextChannels?: string[];
     resetFeed?: boolean;
+    servingOnly?: boolean;
   } = {}) {
     const nextTags = input.nextTags || tags;
     const nextChannels = input.nextChannels || channels;
     const nextProfileId = input.nextProfileId || profileId;
     const resetFeed = input.resetFeed === true;
+    const servingOnly = input.servingOnly ?? !resetFeed;
     const excludeVideoIds = resetFeed ? [] : feed?.videos.map((video) => video.id) || [];
     const requestId = feedRequestIdRef.current + 1;
     feedRequestIdRef.current = requestId;
 
     setError("");
     setLoading(true);
-    if (resetFeed) {
+    if (resetFeed && !servingOnly) {
       setFeed(null);
       setFeedEnd(false);
     }
@@ -534,7 +542,7 @@ export default function Home() {
           channels: nextChannels,
           profileId: nextProfileId,
           resetFeed,
-          servingOnly: !resetFeed,
+          servingOnly,
           excludeVideoIds
         })
       });
