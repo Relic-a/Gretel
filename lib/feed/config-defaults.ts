@@ -45,7 +45,7 @@ export type GretelConfig = {
     watchCompletionThreshold: number;
   };
   embeddings: {
-    provider: "openrouter" | "mock";
+    provider: "openrouter" | "local" | "mock";
     store: "sqlite-vec";
     openRouterApiKeyEnv: string;
     openRouterBaseUrl: string;
@@ -112,14 +112,14 @@ export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
     watchCompletionThreshold: 0.9
   },
   embeddings: {
-    provider: "openrouter",
+    provider: "local",
     store: "sqlite-vec",
     openRouterApiKeyEnv: "OPENROUTER_API_KEY",
     openRouterBaseUrl: "https://openrouter.ai/api/v1",
     openRouterSiteUrlEnv: "OPENROUTER_SITE_URL",
     openRouterAppNameEnv: "OPENROUTER_APP_NAME",
-    model: "qwen/qwen3-embedding-8b",
-    dimensions: 4096,
+    model: "Xenova/all-MiniLM-L6-v2",
+    dimensions: 384,
     batchSize: 16,
     requestTimeoutMs: 30000,
     mockSeed: 20260503

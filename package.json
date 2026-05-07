@@ -5,12 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "next dev",
+    "electron": "electron electron/main.mjs",
+    "electron:dev": "electron electron/main.mjs",
     "build": "next build",
     "test": "node tests/config-smoke-test.mjs && node tests/feed-algorithm-test.mjs",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
+    "electron": "^42.0.0",
     "lucide-react": "^1.14.0",
     "next": "latest",
     "react": "latest",

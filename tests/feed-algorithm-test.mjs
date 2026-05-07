@@ -735,11 +735,11 @@ test("embedding rows are isolated by provider, model, and dimensions", () => {
       dimensions: 4096
     }
   });
-  const smallConfigPath = writeConfig("embedding-store-small.json", {
+  const localConfigPath = writeConfig("embedding-store-local.json", {
     embeddings: {
-      provider: "openrouter",
-      model: "qwen/qwen3-embedding-8b",
-      dimensions: 1024
+      provider: "local",
+      model: "Xenova/all-MiniLM-L6-v2",
+      dimensions: 384
     }
   });
 
@@ -755,7 +755,7 @@ test("embedding rows are isolated by provider, model, and dimensions", () => {
     assert.deepEqual(modules.algorithmStore.getCentroid(profile.id, "pool").current, [1, 0]);
     assert.deepEqual(modules.algorithmStore.getRetainedEmbedding(profile.id, "video"), [1, 0]);
 
-    process.env.GRETEL_CONFIG = smallConfigPath;
+    process.env.GRETEL_CONFIG = localConfigPath;
     assert.equal(modules.algorithmStore.getCentroid(profile.id, "pool"), null);
     assert.equal(modules.algorithmStore.getRetainedEmbedding(profile.id, "video"), null);
 
@@ -776,7 +776,7 @@ test("embedding rows are isolated by provider, model, and dimensions", () => {
       .map((row) => row.store_key);
 
     assert.deepEqual(storeKeys, [
-      "openrouter_qwen_qwen3_embedding_8b_1024",
+      "local_xenova_all_minilm_l6_v2_384",
       "openrouter_qwen_qwen3_embedding_8b_4096"
     ]);
   } finally {

@@ -201,6 +201,12 @@ function writeRuntimeConfig(name, overrides = {}) {
         watchProgressPollMs: 250,
         ...overrides.client
       },
+      embeddings: {
+        provider: "mock",
+        dimensions: 2,
+        batchSize: 8,
+        ...overrides.embeddings
+      },
       youtube: {
         language: "en",
         ...overrides.youtube
@@ -445,6 +451,40 @@ test("clamps and rounds out-of-range config values before logging applied config
   assert.equal(applied?.line.path, configPath);
   assert.equal(applied?.line.feed.maxVideos, 200);
   assert.equal(applied?.line.youtube.language, "fr");
+});
+
+test("config accepts local embeddings and falls back from invalid providers", () => {
+  const localConfigPath = writeConfig(
+    "local-embeddings.json",
+    JSON.stringify({
+      embeddings: {
+        provider: "local",
+        model: "Xenova/all-MiniLM-L6-v2",
+        dimensions: 384
+      }
+    })
+  );
+  const invalidConfigPath = writeConfig(
+    "invalid-embedding-provider.json",
+    JSON.stringify({
+      embeddings: {
+        provider: "bad-provider"
+      }
+    })
+  );
+  const { getGretelConfig, getPublicGretelConfig } = loadConfigModule();
+
+  process.env.GRETEL_CONFIG = localConfigPath;
+  const localConfig = getGretelConfig();
+  const publicConfig = getPublicGretelConfig();
+
+  assert.equal(localConfig.embeddings.provider, "local");
+  assert.equal(localConfig.embeddings.model, "Xenova/all-MiniLM-L6-v2");
+  assert.equal(localConfig.embeddings.dimensions, 384);
+  assert.equal(publicConfig.embeddings.provider, "local");
+
+  process.env.GRETEL_CONFIG = invalidConfigPath;
+  assert.equal(getGretelConfig().embeddings.provider, "local");
 });
 
 test("runtime feed flow initializes roots once, expands pool, serves fast lane, and records engagement", async () => {
