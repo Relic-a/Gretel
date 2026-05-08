@@ -841,6 +841,10 @@ img.avatar {
   gap: 24px;
 }
 
+.side-sentinel {
+  min-height: 1px;
+}
+
 .side-head {
   display: flex;
   align-items: center;

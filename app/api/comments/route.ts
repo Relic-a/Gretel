@@ -1,4 +1,5 @@
 import { getYoutubeClient } from "../../../lib/feed/youtube-client";
+import { getText } from "../../../lib/feed/video-utils";
 
 export const runtime = "nodejs";
 
@@ -127,9 +128,7 @@ function extractComments(page: any) {
     if (!comment) continue;
 
     const authorThumbnails = comment.author?.thumbnails ?? comment.author_thumbnails;
-    const authorAvatarUrl = authorThumbnails && Array.isArray(authorThumbnails) && authorThumbnails.length > 0
-      ? String(authorThumbnails[0].url ?? "")
-      : undefined;
+    const authorAvatarUrl = extractThumbnailUrl(authorThumbnails);
 
     results.push({
       author: comment.author?.name?.toString() ?? "Unknown",
@@ -143,4 +142,33 @@ function extractComments(page: any) {
   }
 
   return results;
+}
+
+function extractThumbnailUrl(thumbnails: unknown) {
+  if (!Array.isArray(thumbnails)) {
+    return undefined;
+  }
+
+  for (const thumbnail of thumbnails) {
+    if (!thumbnail || typeof thumbnail !== "object") {
+      continue;
+    }
+
+    const rawUrl = "url" in thumbnail ? getText((thumbnail as Record<string, unknown>).url) : "";
+    const normalizedUrl = normalizeThumbnailUrl(rawUrl);
+
+    if (normalizedUrl) {
+      return normalizedUrl;
+    }
+  }
+
+  return undefined;
+}
+
+function normalizeThumbnailUrl(url: string) {
+  if (!url) {
+    return "";
+  }
+
+  return url.startsWith("//") ? `https:${url}` : url;
 }

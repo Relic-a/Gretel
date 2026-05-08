@@ -11,6 +11,7 @@ import type { ChannelResult, FeedResponse, FeedVideo, Profile, PublicGretelConfi
 
 const clientStateKey = "gretel.clientState.v2";
 const feedCachePrefix = "gretel.feedCache.v1";
+const activeVideoSessionKey = "gretel.activeVideo.v1";
 const starterTags = ["AI engineering", "TypeScript", "product design"];
 type Section = "home" | "saved" | "history";
 
@@ -41,6 +42,7 @@ export default function Home() {
   const [manageProfiles, setManageProfiles] = useState(false);
   const videoRef = useRef<HTMLIFrameElement | null>(null);
   const pendingVideoIdRef = useRef<string | null>(null);
+  const pendingVideoRestoreInFlightRef = useRef<string | null>(null);
   const feedRequestIdRef = useRef(0);
   const pendingImpressionIdsRef = useRef<Set<string>>(new Set());
   const impressionTimerRef = useRef<number | null>(null);
@@ -53,7 +55,7 @@ export default function Home() {
   const homeVideos = feed?.videos || [];
   const visibleVideos =
     section === "saved" ? savedVideos : section === "history" ? historyVideos : homeVideos;
-  const sideVideos = orderedSideVideos(visibleVideos, activeVideo, feed?.upNextByVideoId).slice(0, 12);
+  const sideVideos = orderedSideVideos(visibleVideos, activeVideo, feed?.upNextByVideoId);
   const canAskForMore = section === "home" && Boolean(feed) && !loading && !feedEnd;
 
   useEffect(() => {
@@ -62,6 +64,9 @@ export default function Home() {
     async function boot() {
       const saved = readSavedState();
       const route = readRouteFromUrl();
+      const stashedActiveVideo = readStashedActiveVideo(route.videoId);
+      const nextTags = saved?.tags?.length ? saved.tags : starterTags;
+      const nextChannels = saved?.channels || [];
       const [selectedProfileId] = await Promise.all([
         loadProfiles(saved?.profileId),
         loadPublicConfig()
@@ -71,11 +76,16 @@ export default function Home() {
         return;
       }
 
-      setTags(saved?.tags?.length ? saved.tags : starterTags);
-      setChannels(saved?.channels || []);
+      setTags(nextTags);
+      setChannels(nextChannels);
       setBooted(true);
       setSection(route.section);
       pendingVideoIdRef.current = route.videoId;
+
+      if (stashedActiveVideo) {
+        setActiveVideo(stashedActiveVideo);
+        pendingVideoIdRef.current = null;
+      }
 
       if (selectedProfileId) {
         const cachedFeed = readCachedFeed(selectedProfileId);
@@ -90,16 +100,21 @@ export default function Home() {
         if (route.section === "history") {
           await loadHistoryVideos(selectedProfileId);
         }
-      }
 
-      if (selectedProfileId && (saved?.tags?.length || saved?.channels?.length)) {
-        await requestFeed({
-          nextProfileId: selectedProfileId,
-          nextTags: saved?.tags?.length ? saved.tags : starterTags,
-          nextChannels: saved?.channels || [],
-          resetFeed: true,
-          servingOnly: true
-        });
+        const shouldRequestHomeFeed =
+          route.section === "home" &&
+          !stashedActiveVideo &&
+          (nextTags.length > 0 || nextChannels.length > 0);
+
+        if (shouldRequestHomeFeed) {
+          await requestFeed({
+            nextProfileId: selectedProfileId,
+            nextTags,
+            nextChannels,
+            resetFeed: true,
+            servingOnly: Boolean(cachedFeed)
+          });
+        }
       }
     }
 
@@ -116,9 +131,18 @@ export default function Home() {
   useEffect(() => {
     function applyRoute() {
       const route = readRouteFromUrl();
+      const stashedActiveVideo = readStashedActiveVideo(route.videoId);
       pendingVideoIdRef.current = route.videoId;
-      setActiveVideo(null);
       setSection(route.section);
+
+      if (stashedActiveVideo) {
+        setActiveVideo(stashedActiveVideo);
+        pendingVideoIdRef.current = null;
+      } else if (!route.videoId) {
+        setActiveVideo(null);
+      } else {
+        setActiveVideo((current) => (current?.id === route.videoId ? current : null));
+      }
 
       if (route.section === "saved") {
         void loadSavedVideos(profileId).catch((caught) =>
@@ -144,13 +168,42 @@ export default function Home() {
       return;
     }
 
+    if (activeVideo?.id === pendingVideoId) {
+      pendingVideoIdRef.current = null;
+      return;
+    }
+
     const matchingVideo = visibleVideos.find((video) => video.id === pendingVideoId);
 
     if (matchingVideo) {
       setActiveVideo(matchingVideo);
       pendingVideoIdRef.current = null;
+      return;
     }
-  }, [booted, visibleVideos]);
+
+    if (!profileId || pendingVideoRestoreInFlightRef.current === pendingVideoId) {
+      return;
+    }
+
+    pendingVideoRestoreInFlightRef.current = pendingVideoId;
+
+    void (async () => {
+      try {
+        const restored = await fetchVideoInfo(profileId, pendingVideoId);
+
+        if (restored) {
+          setActiveVideo(restored);
+        }
+      } finally {
+        if (pendingVideoIdRef.current === pendingVideoId) {
+          pendingVideoIdRef.current = null;
+        }
+        if (pendingVideoRestoreInFlightRef.current === pendingVideoId) {
+          pendingVideoRestoreInFlightRef.current = null;
+        }
+      }
+    })();
+  }, [activeVideo, booted, profileId, visibleVideos]);
 
   useEffect(() => {
     if (!booted) {
@@ -169,6 +222,19 @@ export default function Home() {
   }, [booted, profileId, feed]);
 
   useEffect(() => {
+    if (!booted) {
+      return;
+    }
+
+    if (activeVideo) {
+      writeStashedActiveVideo(activeVideo);
+      return;
+    }
+
+    clearStashedActiveVideo();
+  }, [activeVideo, booted]);
+
+  useEffect(() => {
     return () => {
       if (impressionTimerRef.current !== null) {
         window.clearTimeout(impressionTimerRef.current);
@@ -181,39 +247,64 @@ export default function Home() {
       return;
     }
 
-    let sent = false;
+    const currentVideo = activeVideo;
+    const pollMs = config?.client.watchProgressPollMs || 2000;
+    const durationSeconds = parseDurationToSeconds(currentVideo.duration);
+    let watchedMs = 0;
+    let visible = document.visibilityState === "visible";
+    let lastSampleAt = Date.now();
+    let flushed = false;
 
-    async function reportWatch() {
-      if (sent) {
+    const tick = () => {
+      const now = Date.now();
+
+      if (visible) {
+        watchedMs += Math.max(0, now - lastSampleAt);
+      }
+
+      lastSampleAt = now;
+    };
+
+    const handleVisibilityChange = () => {
+      tick();
+      visible = document.visibilityState === "visible";
+    };
+
+    const timer = window.setInterval(tick, pollMs);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    async function flushWatchProgress() {
+      if (flushed) {
         return;
       }
 
-      sent = true;
+      flushed = true;
+      tick();
+
+      const watchedSeconds = Math.max(0, Math.round(watchedMs / 1000));
 
       try {
-        const response = await fetch("/api/watch-events", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            profileId,
-            video: activeVideo,
-            watchedSeconds: 0,
-            durationSeconds: 0
-          })
-        });
-        const data = await response.json();
-        sent = data.saved === true;
+        const saved = await reportWatchEvent(profileId, currentVideo, watchedSeconds, durationSeconds);
 
-        if (sent && section === "history") {
+        if (saved && section === "history") {
           await loadHistoryVideos(profileId);
         }
-      } catch {
-        sent = false;
-      }
+      } catch {}
     }
 
-    void reportWatch();
-  }, [activeVideo, profileId, section]);
+    const handlePageHide = () => {
+      void flushWatchProgress();
+    };
+
+    window.addEventListener("pagehide", handlePageHide);
+
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      window.removeEventListener("pagehide", handlePageHide);
+      void flushWatchProgress();
+    };
+  }, [activeVideo, config?.client.watchProgressPollMs, profileId, section]);
 
   useEffect(() => {
     if (channelDraft.trim().length < 2) {
@@ -571,7 +662,6 @@ export default function Home() {
         setFeedEnd(false);
         return data;
       });
-      setActiveVideo(null);
     } catch (caught) {
       if (requestId !== feedRequestIdRef.current) {
         return;
@@ -668,16 +758,19 @@ export default function Home() {
         }}
       />
 
-      {feed && activeVideo && (
+      {activeVideo && (
         <WatchView
           activeVideo={activeVideo}
           sideVideos={sideVideos}
+          loadingFeed={loading}
+          canLoadMoreSideVideos={canAskForMore}
           subscriptions={subscriptions}
           videoRef={videoRef}
           savedVideoIds={savedVideoIds}
           likedVideoIds={likedVideoIds}
           profileId={profileId}
           onSelectVideo={openVideo}
+          onLoadMoreSideVideos={() => requestFeed()}
           onSaveVideo={saveVideo}
           onLikeVideo={likeVideo}
           onAddChannel={addChannel}
@@ -840,6 +933,205 @@ function clearCachedFeed(profileId: string) {
   } catch {
     // Ignore storage failures.
   }
+}
+
+function readStashedActiveVideo(videoId: string | null) {
+  try {
+    if (!videoId) {
+      return null;
+    }
+
+    const raw = window.sessionStorage.getItem(activeVideoSessionKey);
+
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = JSON.parse(raw);
+    const video = parsed?.video;
+
+    if (!video || typeof video !== "object" || typeof video.id !== "string" || video.id !== videoId) {
+      return null;
+    }
+
+    return sanitizeFeedVideo(video);
+  } catch {
+    return null;
+  }
+}
+
+function writeStashedActiveVideo(video: FeedVideo) {
+  try {
+    window.sessionStorage.setItem(
+      activeVideoSessionKey,
+      JSON.stringify({
+        savedAt: Date.now(),
+        video
+      })
+    );
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+function clearStashedActiveVideo() {
+  try {
+    window.sessionStorage.removeItem(activeVideoSessionKey);
+  } catch {
+    // Ignore storage failures.
+  }
+}
+
+async function fetchVideoInfo(profileId: string, videoId: string) {
+  try {
+    const response = await fetch(
+      `/api/video-info?profileId=${encodeURIComponent(profileId)}&videoId=${encodeURIComponent(videoId)}`
+    );
+    const data = await response.json();
+
+    if (!response.ok || !data.video) {
+      return null;
+    }
+
+    return sanitizeFeedVideo(data.video);
+  } catch {
+    return null;
+  }
+}
+
+async function reportWatchEvent(
+  profileId: string,
+  video: FeedVideo,
+  watchedSeconds: number,
+  durationSeconds: number
+) {
+  const safeDurationSeconds = Math.max(1, Math.round(durationSeconds));
+  const response = await fetch("/api/watch-events", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      profileId,
+      video,
+      watchedSeconds,
+      durationSeconds: safeDurationSeconds
+    }),
+    keepalive: true
+  });
+
+  if (!response.ok) {
+    return false;
+  }
+
+  const data = await response.json();
+  return data.saved === true;
+}
+
+function sanitizeFeedVideo(video: unknown): FeedVideo | null {
+  if (!video || typeof video !== "object") {
+    return null;
+  }
+
+  const value = video as Record<string, unknown>;
+
+  if (typeof value.id !== "string" || value.id.trim() === "") {
+    return null;
+  }
+
+  return {
+    id: value.id,
+    title: typeof value.title === "string" ? value.title : "Untitled video",
+    author: typeof value.author === "string" ? value.author : "Unknown channel",
+    duration: readVideoDuration(value),
+    query: typeof value.query === "string" ? value.query : "Watch",
+    channelAvatarUrl: typeof value.channelAvatarUrl === "string" ? value.channelAvatarUrl : undefined,
+    thumbnailUrl: typeof value.thumbnailUrl === "string" ? value.thumbnailUrl : undefined,
+    thumbnailCacheUrl: typeof value.thumbnailCacheUrl === "string" ? value.thumbnailCacheUrl : undefined,
+    publishedText: typeof value.publishedText === "string" ? value.publishedText : undefined,
+    publishedAt: typeof value.publishedAt === "number" ? value.publishedAt : undefined,
+    viewCount: typeof value.viewCount === "number" ? value.viewCount : undefined,
+    channelKey: typeof value.channelKey === "string" ? value.channelKey : undefined,
+    parent_video_id: typeof value.parent_video_id === "string" ? value.parent_video_id : undefined,
+    parent_title: typeof value.parent_title === "string" ? value.parent_title : undefined,
+    parent_author: typeof value.parent_author === "string" ? value.parent_author : undefined,
+    recommendation_depth: typeof value.recommendation_depth === "number" ? value.recommendation_depth : undefined,
+    sourceNodeId:
+      value.sourceNodeId === "tagSearch" ||
+      value.sourceNodeId === "channelVideos" ||
+      value.sourceNodeId === "relatedVideos"
+        ? value.sourceNodeId
+        : undefined,
+    sourceNodeLabel: typeof value.sourceNodeLabel === "string" ? value.sourceNodeLabel : undefined,
+    impressionCount: typeof value.impressionCount === "number" ? value.impressionCount : undefined,
+    liked: typeof value.liked === "boolean" ? value.liked : undefined,
+    clicked: typeof value.clicked === "boolean" ? value.clicked : undefined,
+    ignoreCount: typeof value.ignoreCount === "number" ? value.ignoreCount : undefined,
+    watchTimeRatio: typeof value.watchTimeRatio === "number" ? value.watchTimeRatio : undefined
+  };
+}
+
+function parseDurationToSeconds(value: string) {
+  if (!value) {
+    return 0;
+  }
+
+  const parts = value
+    .split(":")
+    .map((part) => Number(part.trim()))
+    .filter((part) => Number.isFinite(part));
+
+  if (parts.length === 0) {
+    return 0;
+  }
+
+  if (parts.length === 1) {
+    return Math.max(0, Math.floor(parts[0]));
+  }
+
+  if (parts.length === 2) {
+    return Math.max(0, Math.floor(parts[0] * 60 + parts[1]));
+  }
+
+  return Math.max(0, Math.floor(parts[0] * 3600 + parts[1] * 60 + parts[2]));
+}
+
+function readVideoDuration(value: Record<string, unknown>) {
+  if (typeof value.duration === "string" && value.duration.trim() !== "") {
+    return value.duration;
+  }
+
+  return durationFromNumberishFields(value);
+}
+
+function durationFromNumberishFields(value: Record<string, unknown>) {
+  const candidates = [
+    value.durationSeconds,
+    value.duration_seconds,
+    value.lengthSeconds,
+    value.length_seconds
+  ];
+
+  for (const candidate of candidates) {
+    const seconds = typeof candidate === "number" ? candidate : Number(candidate);
+
+    if (Number.isFinite(seconds) && seconds > 0) {
+      return secondsToDuration(seconds);
+    }
+  }
+
+  return "";
+}
+
+function secondsToDuration(totalSeconds: number) {
+  const clamped = Math.max(0, Math.floor(totalSeconds));
+  const hours = Math.floor(clamped / 3600);
+  const minutes = Math.floor((clamped % 3600) / 60);
+  const seconds = clamped % 60;
+
+  if (hours > 0) {
+    return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+  }
+
+  return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
 function readRouteFromUrl(): { section: Section; videoId: string | null } {

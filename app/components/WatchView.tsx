@@ -14,12 +14,15 @@ import { formatPublished, normalize, thumbnailFor } from "./video-utils";
 type WatchViewProps = {
   activeVideo: FeedVideo;
   sideVideos: FeedVideo[];
+  loadingFeed: boolean;
+  canLoadMoreSideVideos: boolean;
   subscriptions: Set<string>;
   savedVideoIds: Set<string>;
   likedVideoIds: Set<string>;
   profileId: string;
   videoRef: React.RefObject<HTMLIFrameElement | null>;
   onSelectVideo: (video: FeedVideo) => void;
+  onLoadMoreSideVideos: () => void;
   onSaveVideo: (video: FeedVideo) => void;
   onLikeVideo: (video: FeedVideo) => void;
   onAddChannel: (channel: string) => void;
@@ -37,8 +40,10 @@ type YtComment = {
 };
 
 export function WatchView(props: WatchViewProps) {
+  const sidePageSize = 12;
   const [description, setDescription] = useState("");
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
+  const [displayLimit, setDisplayLimit] = useState(sidePageSize);
   const [comments, setComments] = useState<YtComment[]>([]);
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -47,14 +52,50 @@ export function WatchView(props: WatchViewProps) {
   const [page, setPage] = useState(0);
   const [commentsLoaded, setCommentsLoaded] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
+  const sideSentinelRef = useRef<HTMLDivElement | null>(null);
   const commentsSectionRef = useRef<HTMLDivElement | null>(null);
   const fetchInProgress = useRef(false);
+  const sideLoadRequestedRef = useRef(false);
+  const displayLimitRef = useRef(sidePageSize);
+  const sideLoadDebounceRef = useRef<number | null>(null);
 
   const subscribed = props.subscriptions.has(normalize(props.activeVideo.author));
   const saved = props.savedVideoIds.has(props.activeVideo.id);
   const liked = props.likedVideoIds.has(props.activeVideo.id);
 
   const embedUrl = `https://www.youtube-nocookie.com/embed/${props.activeVideo.id}?autoplay=1&rel=0`;
+  const visibleSideVideos = props.sideVideos.slice(0, displayLimit);
+
+  useEffect(() => {
+    setDisplayLimit(sidePageSize);
+    if (sideLoadDebounceRef.current !== null) {
+      window.clearTimeout(sideLoadDebounceRef.current);
+      sideLoadDebounceRef.current = null;
+    }
+    sideLoadRequestedRef.current = false;
+  }, [props.activeVideo.id]);
+
+  useEffect(() => {
+    displayLimitRef.current = displayLimit;
+  }, [displayLimit]);
+
+  useEffect(() => {
+    setDisplayLimit((current) => (current > props.sideVideos.length ? props.sideVideos.length : current));
+  }, [props.sideVideos.length]);
+
+  useEffect(() => {
+    if (!props.loadingFeed) {
+      sideLoadRequestedRef.current = false;
+    }
+  }, [props.loadingFeed, props.sideVideos.length]);
+
+  useEffect(() => {
+    return () => {
+      if (sideLoadDebounceRef.current !== null) {
+        window.clearTimeout(sideLoadDebounceRef.current);
+      }
+    };
+  }, []);
 
   // Lazy-load comments when the user scrolls past the player into the meta area
   useEffect(() => {
@@ -93,6 +134,59 @@ export function WatchView(props: WatchViewProps) {
     observer.observe(sentinel);
     return () => observer.disconnect();
   }, [commentsLoaded, hasMore, loadingMore, page, props.activeVideo.id]);
+
+  useEffect(() => {
+    const sentinel = sideSentinelRef.current;
+
+    if (!sentinel) {
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (!entries[0].isIntersecting) {
+          return;
+        }
+
+        const currentLimit = displayLimitRef.current;
+
+        if (currentLimit >= props.sideVideos.length && !props.canLoadMoreSideVideos) {
+          return;
+        }
+
+        if (currentLimit < props.sideVideos.length) {
+          setDisplayLimit((current) => Math.min(current + sidePageSize, props.sideVideos.length));
+        }
+
+        if (
+          props.sideVideos.length === currentLimit &&
+          props.canLoadMoreSideVideos &&
+          !props.loadingFeed &&
+          !sideLoadRequestedRef.current
+        ) {
+          sideLoadRequestedRef.current = true;
+
+          if (sideLoadDebounceRef.current !== null) {
+            window.clearTimeout(sideLoadDebounceRef.current);
+          }
+
+          sideLoadDebounceRef.current = window.setTimeout(() => {
+            sideLoadDebounceRef.current = null;
+            props.onLoadMoreSideVideos();
+          }, 200);
+        }
+      },
+      { rootMargin: "320px" }
+    );
+
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [
+    props.canLoadMoreSideVideos,
+    props.loadingFeed,
+    props.onLoadMoreSideVideos,
+    props.sideVideos.length
+  ]);
 
   async function fetchComments(nextPage: number) {
     if (nextPage === 0) {
@@ -295,7 +389,7 @@ export function WatchView(props: WatchViewProps) {
           <h2>Up next</h2>
           <label className="toggle"><span>Autoplay</span><input type="checkbox" defaultChecked /></label>
         </div>
-        {props.sideVideos.map((video) => (
+        {visibleSideVideos.map((video) => (
           <button type="button" className="side-video" key={video.id} onClick={() => props.onSelectVideo(video)}>
             <span className="side-thumb">
               <img src={thumbnailFor(video)} loading="lazy" alt="" />
@@ -308,6 +402,14 @@ export function WatchView(props: WatchViewProps) {
             </span>
           </button>
         ))}
+        <div ref={sideSentinelRef} className="side-sentinel">
+          {props.loadingFeed && (
+            <div className="comments-loader">
+              <Loader2 aria-hidden="true" size={18} className="spinner" />
+              <span>Loading more videos…</span>
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );

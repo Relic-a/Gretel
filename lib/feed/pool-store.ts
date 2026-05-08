@@ -1,5 +1,6 @@
 import { getDatabase, getLikedVideoIds, getWatchedVideoIds } from "../profile-store";
 import { deleteRetainedEmbeddings } from "./algorithm-store";
+import { hydrateChannelAvatar } from "./channel-avatar-cache";
 import type { FeedNodeId, FeedVideo } from "./types";
 
 export type FeedPoolState = {
@@ -189,7 +190,7 @@ export function listPoolNodes(profileId: string, poolKey: string) {
 
   return rows.flatMap<StoredPoolNode>((row) => {
     try {
-      const video = JSON.parse(row.video_json) as FeedVideo;
+      const video = hydrateChannelAvatar(JSON.parse(row.video_json) as FeedVideo);
 
       return [{
         ...video,

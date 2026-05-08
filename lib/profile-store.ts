@@ -3,6 +3,7 @@ import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 import { getGretelConfig } from "./feed/config";
+import { hydrateChannelAvatar } from "./feed/channel-avatar-cache";
 import type { VideoInteraction } from "./feed/engagement";
 import type { FeedNodeId, FeedVideo } from "./feed/types";
 import { forgetYoutubeClient } from "./feed/youtube-client";
@@ -355,7 +356,7 @@ export function listHistoryVideos(profileId: string) {
     )
     .all(profileId) as Array<Record<string, string | null>>;
 
-  return rows.map<FeedVideo>(watchedRowToVideo);
+  return rows.map<FeedVideo>(watchedRowToVideo).map((video) => hydrateChannelAvatar(video));
 }
 
 export function listSavedVideos(profileId: string) {

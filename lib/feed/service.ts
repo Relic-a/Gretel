@@ -40,6 +40,7 @@ import {
   saveCentroid
 } from "./algorithm-store";
 import { averageNormalizedVectors, cosineSimilarity } from "./vector-math";
+import { hydrateChannelAvatars } from "./channel-avatar-cache";
 
 export type CreateFeedOptions = {
   expectedProfileUpdatedAt?: number;
@@ -140,7 +141,7 @@ export async function serveFeedPage(
     interactions,
     config
   });
-  const videos = candidates.videos.slice(0, config.feed.maxVideos);
+  const videos = hydrateChannelAvatars(candidates.videos).slice(0, config.feed.maxVideos);
 
   for (const video of videos) {
     session.servedVideoIds.add(video.id);
@@ -314,8 +315,8 @@ export async function createFeed(
         profileId,
         watchedVideoIds
       );
-  const poolRecommendations = readyPreview.videos.slice(0, config.feed.maxVideos);
-  const videos = [...fastLaneVideos, ...poolRecommendations].slice(0, config.feed.maxVideos);
+  const poolRecommendations = hydrateChannelAvatars(readyPreview.videos).slice(0, config.feed.maxVideos);
+  const videos = hydrateChannelAvatars([...fastLaneVideos, ...poolRecommendations]).slice(0, config.feed.maxVideos);
 
   await retainReadyQueueEmbeddings(profileId, videos, observation, options.expectedProfileUpdatedAt);
   ensureProfileCurrent(profileId, options.expectedProfileUpdatedAt);
@@ -802,7 +803,7 @@ function scorePoolVideos(profileId: string, poolKey: string, videos: FeedVideo[]
 
   updatePoolSimilarities(profileId, poolKey, rescored);
 
-  return rescored;
+  return hydrateChannelAvatars(rescored);
 }
 
 function recordScoringObservation(

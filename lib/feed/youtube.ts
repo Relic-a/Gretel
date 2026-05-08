@@ -20,6 +20,7 @@ import {
   getText,
   getTitle
 } from "./video-utils";
+import { rememberChannelAvatar } from "./channel-avatar-cache";
 
 export async function searchVideos(
   queries: string[],
@@ -150,6 +151,12 @@ export async function fetchChannelVideos(
 
         try {
           const channel = await youtube.getChannel(channelId);
+          const channelAvatarUrl = getThumbnailUrl(channel);
+          const channelNameFromPayload = getChannelName(channel);
+
+          rememberChannelAvatar(channelKey, channelAvatarUrl || undefined);
+          rememberChannelAvatar(channelNameFromPayload || undefined, channelAvatarUrl || undefined);
+
           const latestChannelVideos = await channel.getVideos();
           const sourceVideos = getChannelVideoItems(latestChannelVideos);
 
@@ -165,11 +172,14 @@ export async function fetchChannelVideos(
 
             seen.add(id);
             const author = getChannelVideoAuthor(video, channelName);
+            const authorChannelKey = normalizeChannelKey(author) || channelKey;
+            const authorAvatarUrl = getAuthorAvatarUrl(video) || channelAvatarUrl || undefined;
+            rememberChannelAvatar(authorChannelKey, authorAvatarUrl);
             channelVideos.push({
               id,
               title: getTitle(video),
               author,
-              channelAvatarUrl: getAuthorAvatarUrl(video),
+              channelAvatarUrl: authorAvatarUrl,
               duration,
               query: channelName,
               thumbnailUrl: getThumbnailUrl(video) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
@@ -177,7 +187,7 @@ export async function fetchChannelVideos(
               publishedText: getPublishedText(video),
               publishedAt: getPublishedAt(video),
               viewCount: getViewCount(video),
-              channelKey
+              channelKey: authorChannelKey
             });
 
             if (channelVideos.length >= perChannelLimit) {

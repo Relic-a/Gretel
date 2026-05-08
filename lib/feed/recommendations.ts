@@ -16,6 +16,7 @@ import {
   shouldKeepVideo
 } from "./video-utils";
 import { getYoutubeClient } from "./youtube-client";
+import { backfillChannelAvatarsWithinVideos } from "./channel-avatar-cache";
 
 export async function recommendVideosFromSeeds(
   sourceVideos: FeedVideo[],
@@ -148,9 +149,10 @@ async function recommendVideosFromLinks(
           seedVideoCount += 1;
 
           if (recommendations.length >= maxVideos) {
+            const recommendationsWithAvatars = backfillChannelAvatarsWithinVideos(recommendations);
             return {
-              value: recommendations,
-              output: { recommendationVideos: recommendations.length }
+              value: recommendationsWithAvatars,
+              output: { recommendationVideos: recommendationsWithAvatars.length }
             };
           }
 
@@ -160,9 +162,10 @@ async function recommendVideosFromLinks(
         }
       }
 
+      const recommendationsWithAvatars = backfillChannelAvatarsWithinVideos(recommendations);
       return {
-        value: recommendations,
-        output: { recommendationVideos: recommendations.length }
+        value: recommendationsWithAvatars,
+        output: { recommendationVideos: recommendationsWithAvatars.length }
       };
     }
   );
