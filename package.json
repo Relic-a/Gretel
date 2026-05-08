@@ -13,7 +13,6 @@
     "lint": "next lint"
   },
   "dependencies": {
-    "@huggingface/transformers": "^4.2.0",
     "electron": "^42.0.0",
     "lucide-react": "^1.14.0",
     "next": "latest",

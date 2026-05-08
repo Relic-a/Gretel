@@ -837,10 +837,10 @@ test("embedding rows are isolated by provider, model, and dimensions", () => {
       dimensions: 4096
     }
   });
-  const localConfigPath = writeConfig("embedding-store-local.json", {
+  const mockConfigPath = writeConfig("embedding-store-mock.json", {
     embeddings: {
-      provider: "local",
-      model: "Xenova/all-MiniLM-L6-v2",
+      provider: "mock",
+      model: "mock/hash-v1",
       dimensions: 384
     }
   });
@@ -857,7 +857,7 @@ test("embedding rows are isolated by provider, model, and dimensions", () => {
     assert.deepEqual(modules.algorithmStore.getCentroid(profile.id, "pool").current, [1, 0]);
     assert.deepEqual(modules.algorithmStore.getRetainedEmbedding(profile.id, "video"), [1, 0]);
 
-    process.env.GRETEL_CONFIG = localConfigPath;
+    process.env.GRETEL_CONFIG = mockConfigPath;
     assert.equal(modules.algorithmStore.getCentroid(profile.id, "pool"), null);
     assert.equal(modules.algorithmStore.getRetainedEmbedding(profile.id, "video"), null);
 
@@ -878,7 +878,7 @@ test("embedding rows are isolated by provider, model, and dimensions", () => {
       .map((row) => row.store_key);
 
     assert.deepEqual(storeKeys, [
-      "local_xenova_all_minilm_l6_v2_384",
+      "mock_mock_hash_v1_384",
       "openrouter_qwen_qwen3_embedding_8b_4096"
     ]);
   } finally {

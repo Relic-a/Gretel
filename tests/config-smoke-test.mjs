@@ -452,14 +452,14 @@ test("clamps and rounds out-of-range config values before logging applied config
   assert.equal(applied?.line.youtube.language, "fr");
 });
 
-test("config accepts local embeddings and falls back from invalid providers", () => {
-  const localConfigPath = writeConfig(
-    "local-embeddings.json",
+test("config accepts openrouter embeddings and falls back from invalid providers", () => {
+  const openRouterConfigPath = writeConfig(
+    "openrouter-embeddings.json",
     JSON.stringify({
       embeddings: {
-        provider: "local",
-        model: "Xenova/all-MiniLM-L6-v2",
-        dimensions: 384
+        provider: "openrouter",
+        model: "qwen/qwen3-embedding-8b",
+        dimensions: 4096
       }
     })
   );
@@ -473,17 +473,17 @@ test("config accepts local embeddings and falls back from invalid providers", ()
   );
   const { getGretelConfig, getPublicGretelConfig } = loadConfigModule();
 
-  process.env.GRETEL_CONFIG = localConfigPath;
-  const localConfig = getGretelConfig();
+  process.env.GRETEL_CONFIG = openRouterConfigPath;
+  const openRouterConfig = getGretelConfig();
   const publicConfig = getPublicGretelConfig();
 
-  assert.equal(localConfig.embeddings.provider, "local");
-  assert.equal(localConfig.embeddings.model, "Xenova/all-MiniLM-L6-v2");
-  assert.equal(localConfig.embeddings.dimensions, 384);
-  assert.equal(publicConfig.embeddings.provider, "local");
+  assert.equal(openRouterConfig.embeddings.provider, "openrouter");
+  assert.equal(openRouterConfig.embeddings.model, "qwen/qwen3-embedding-8b");
+  assert.equal(openRouterConfig.embeddings.dimensions, 4096);
+  assert.equal(publicConfig.embeddings.provider, "openrouter");
 
   process.env.GRETEL_CONFIG = invalidConfigPath;
-  assert.equal(getGretelConfig().embeddings.provider, "local");
+  assert.equal(getGretelConfig().embeddings.provider, "openrouter");
 });
 
 test("runtime feed flow initializes roots once, expands pool, serves fast lane, and records engagement", async () => {

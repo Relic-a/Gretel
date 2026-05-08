@@ -313,7 +313,7 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
       provider: oneOf(
         embeddings.provider,
         defaults.embeddings.provider,
-        ["openrouter", "local", "mock"] as const
+        ["openrouter", "mock"] as const
       ),
       store: oneOf(embeddings.store, defaults.embeddings.store, ["sqlite-vec"] as const),
       openRouterApiKeyEnv: nonEmptyString(
