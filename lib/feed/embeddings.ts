@@ -1,4 +1,5 @@
 import { getGretelConfig } from "./config";
+import { loadDotEnvFile } from "../env";
 import { normalizeVector } from "./vector-math";
 
 export type EmbeddingProvider = {
@@ -10,6 +11,8 @@ export function createEmbeddingInput(video: { title: string; author: string; que
 }
 
 export function getEmbeddingProvider(config = getGretelConfig()): EmbeddingProvider {
+  loadDotEnvFile();
+
   if (config.embeddings.provider === "mock") {
     return new MockEmbeddingProvider(config.embeddings.dimensions, config.embeddings.mockSeed);
   }

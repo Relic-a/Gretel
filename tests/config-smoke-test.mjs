@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import Module from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -484,6 +484,37 @@ test("config accepts openrouter embeddings and falls back from invalid providers
 
   process.env.GRETEL_CONFIG = invalidConfigPath;
   assert.equal(getGretelConfig().embeddings.provider, "openrouter");
+});
+
+test("config loads OPENROUTER_API_KEY from .env", () => {
+  const envDir = mkdtempSync(path.join(os.tmpdir(), "gretel-env-load-"));
+  const configModulePath = path.join(buildDir, "lib", "feed", "config.js");
+  const childEnv = { ...process.env };
+  delete childEnv.OPENROUTER_API_KEY;
+
+  writeFileSync(path.join(envDir, ".env"), "OPENROUTER_API_KEY=from_dot_env\n");
+
+  const result = spawnSync(
+    process.execPath,
+    [
+      "-e",
+      `
+        const { getGretelConfig } = require(process.argv[1]);
+        getGretelConfig();
+        if (process.env.OPENROUTER_API_KEY !== "from_dot_env") {
+          process.exit(17);
+        }
+      `,
+      configModulePath
+    ],
+    {
+      cwd: envDir,
+      env: childEnv,
+      encoding: "utf8"
+    }
+  );
+
+  assert.equal(result.status, 0, result.stderr || result.stdout);
 });
 
 test("runtime feed flow initializes roots once, expands pool, serves fast lane, and records engagement", async () => {

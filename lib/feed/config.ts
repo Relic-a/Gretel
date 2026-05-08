@@ -2,6 +2,7 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 
 import { DEFAULT_GRETEL_CONFIG, type GretelConfig } from "./config-defaults";
+import { loadDotEnvFile } from "../env";
 import { errorFields, logInfo, logWarn } from "../logger";
 
 type ConfigInput = Partial<{
@@ -31,6 +32,7 @@ const configInputCache = new Map<string, {
 }>();
 
 export function getGretelConfig() {
+  loadDotEnvFile();
   const input = readConfigInput();
   const config = mergeConfig(DEFAULT_GRETEL_CONFIG, input);
 
@@ -68,6 +70,7 @@ export function getPublicGretelConfig() {
 }
 
 export function getConfigPath() {
+  loadDotEnvFile();
   return process.env[CONFIG_ENV_KEY] || DEFAULT_CONFIG_PATH;
 }
 
