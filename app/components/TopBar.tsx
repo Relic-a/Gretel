@@ -14,6 +14,7 @@ type TopBarProps = {
   onToggleProfileMenu: () => void;
   onSelectProfile: (profileId: string) => void;
   onManageProfiles: () => void;
+  onOpenSettings: () => void;
 };
 
 export function TopBar(props: TopBarProps) {
@@ -42,27 +43,32 @@ export function TopBar(props: TopBarProps) {
           <History aria-hidden="true" size={19} /> History
         </button>
       </nav>
-      <div className="profile-menu">
-        <button type="button" className="profile-button" onClick={props.onToggleProfileMenu}>
-          <span className="profile-avatar" aria-hidden="true" />
-          {props.activeProfile?.name || "Select profile"}
-          <ChevronDown aria-hidden="true" size={17} />
+      <div className="topbar-actions">
+        <button type="button" className="settings-button" onClick={props.onOpenSettings} aria-label="Open settings">
+          <Settings aria-hidden="true" size={18} />
         </button>
-        {props.showProfileMenu && (
-          <div className="profile-popover">
-            {props.profiles.map((profile) => (
-              <button type="button" key={profile.id} onClick={() => props.onSelectProfile(profile.id)}>
-                <span className="profile-avatar small" aria-hidden="true" />
-                {profile.name}
-                {profile.id === props.activeProfile?.id && <span className="selected-mark" aria-hidden="true">✓</span>}
+        <div className="profile-menu">
+          <button type="button" className="profile-button" onClick={props.onToggleProfileMenu}>
+            <span className="profile-avatar" aria-hidden="true" />
+            {props.activeProfile?.name || "Select profile"}
+            <ChevronDown aria-hidden="true" size={17} />
+          </button>
+          {props.showProfileMenu && (
+            <div className="profile-popover">
+              {props.profiles.map((profile) => (
+                <button type="button" key={profile.id} onClick={() => props.onSelectProfile(profile.id)}>
+                  <span className="profile-avatar small" aria-hidden="true" />
+                  {profile.name}
+                  {profile.id === props.activeProfile?.id && <span className="selected-mark" aria-hidden="true">✓</span>}
+                </button>
+              ))}
+              <button type="button" onClick={props.onManageProfiles}>
+                <Settings className="manage-icon" aria-hidden="true" size={19} />
+                Manage profiles
               </button>
-            ))}
-            <button type="button" onClick={props.onManageProfiles}>
-              <Settings className="manage-icon" aria-hidden="true" size={19} />
-              Manage profiles
-            </button>
-          </div>
-        )}
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );

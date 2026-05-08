@@ -3,11 +3,19 @@
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ProfileModal } from "./components/ProfileModal";
+import { SettingsModal } from "./components/SettingsModal";
 import { TopBar } from "./components/TopBar";
 import { FeedView } from "./components/FeedView";
 import { WatchView } from "./components/WatchView";
 import { normalize } from "./components/video-utils";
-import type { ChannelResult, FeedResponse, FeedVideo, Profile, PublicGretelConfig } from "./types";
+import type {
+  ChannelResult,
+  FeedResponse,
+  FeedVideo,
+  Profile,
+  PublicGretelConfig,
+  UserSettings
+} from "./types";
 
 const clientStateKey = "gretel.clientState.v2";
 const feedCachePrefix = "gretel.feedCache.v1";
@@ -40,6 +48,10 @@ export default function Home() {
   const [booted, setBooted] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
   const [manageProfiles, setManageProfiles] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const [settings, setSettings] = useState<UserSettings>({});
+  const [settingsError, setSettingsError] = useState("");
+  const [savingSettings, setSavingSettings] = useState(false);
   const videoRef = useRef<HTMLIFrameElement | null>(null);
   const pendingVideoIdRef = useRef<string | null>(null);
   const pendingVideoRestoreInFlightRef = useRef<string | null>(null);
@@ -69,7 +81,8 @@ export default function Home() {
       const nextChannels = saved?.channels || [];
       const [selectedProfileId] = await Promise.all([
         loadProfiles(saved?.profileId),
-        loadPublicConfig()
+        loadPublicConfig(),
+        loadSettings()
       ]);
 
       if (disposed) {
@@ -357,6 +370,43 @@ export default function Home() {
     }
 
     setConfig(data);
+  }
+
+  async function loadSettings() {
+    const response = await fetch("/api/settings");
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || "Could not load settings.");
+    }
+
+    setSettings(data);
+  }
+
+  async function saveSettings(event: FormEvent) {
+    event.preventDefault();
+    setSettingsError("");
+    setSavingSettings(true);
+
+    try {
+      const response = await fetch("/api/settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(settings)
+      });
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || "Could not save settings.");
+      }
+
+      setSettings(data);
+      setShowSettings(false);
+    } catch (caught) {
+      setSettingsError(caught instanceof Error ? caught.message : "Could not save settings.");
+    } finally {
+      setSavingSettings(false);
+    }
   }
 
   async function createProfileAndBuild(event?: FormEvent) {
@@ -756,6 +806,11 @@ export default function Home() {
           setManageProfiles(true);
           setShowProfileMenu(false);
         }}
+        onOpenSettings={() => {
+          setSettingsError("");
+          setShowProfileMenu(false);
+          setShowSettings(true);
+        }}
       />
 
       {activeVideo && (
@@ -833,6 +888,20 @@ export default function Home() {
           onAddChannel={addNewProfileChannel}
           onRemoveChannel={removeNewProfileChannel}
           onDeleteProfile={deleteProfile}
+        />
+      )}
+
+      {showSettings && (
+        <SettingsModal
+          settings={settings}
+          saving={savingSettings}
+          error={settingsError}
+          onClose={() => {
+            setShowSettings(false);
+            setSettingsError("");
+          }}
+          onSubmit={saveSettings}
+          onChange={setSettings}
         />
       )}
     </main>

@@ -121,8 +121,32 @@ button:disabled {
 
 .profile-menu {
   position: relative;
-  align-self: center;
-  justify-self: end;
+}
+
+.topbar-actions {
+  display: flex;
+  align-items: center;
+  justify-content: end;
+  gap: 14px;
+}
+
+.settings-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  box-shadow: 2px 2px 0px var(--color-border);
+  transition: transform 0.1s, box-shadow 0.1s;
+}
+
+.settings-button:hover {
+  transform: translate(-2px, -2px);
+  box-shadow: 4px 4px 0px var(--color-brand);
+  border-color: var(--color-brand);
 }
 
 .profile-button {
@@ -924,6 +948,10 @@ img.avatar {
   border-radius: 8px;
   background: var(--color-surface);
   box-shadow: var(--shadow-popover);
+}
+
+.settings-modal {
+  width: min(560px, 100%);
 }
 
 .modal-head {

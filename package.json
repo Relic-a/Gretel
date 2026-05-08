@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "next dev",
     "electron": "electron electron/main.mjs",
-    "electron:dev": "electron electron/main.mjs",
+    "electron:dev": "concurrently \"next dev --port 3000\" \"wait-on http://localhost:3000 && ELECTRON_DEV=1 electron electron/main.mjs\"",
     "build": "next build",
     "test": "node tests/config-smoke-test.mjs && node tests/feed-algorithm-test.mjs",
     "start": "next start",
@@ -24,6 +24,8 @@
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "typescript": "latest"
+    "concurrently": "^9.2.1",
+    "typescript": "latest",
+    "wait-on": "^9.0.1"
   }
 }

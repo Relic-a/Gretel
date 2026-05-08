@@ -2,10 +2,13 @@ import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+import { ensureAppServer, stopAppServer } from "./server.mjs";
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const appUrl = process.env.GRETEL_APP_URL || "http://localhost:3000";
 
 let mainWindow = null;
+let serverChild = null;
+let appUrl = process.env.GRETEL_APP_URL || "http://localhost:3000";
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -27,18 +30,33 @@ function createWindow() {
   });
 }
 
-app.whenReady().then(() => {
-  createWindow();
-
-  app.on("activate", () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+app.whenReady().then(async () => {
+  try {
+    if (!process.env.GRETEL_APP_URL) {
+      const server = await ensureAppServer();
+      serverChild = server.child;
+      appUrl = `http://127.0.0.1:${server.port}`;
     }
-  });
+
+    createWindow();
+
+    app.on("activate", () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      }
+    });
+  } catch (error) {
+    console.error("Failed to start Gretel desktop app.", error);
+    app.quit();
+  }
 });
 
 app.on("window-all-closed", () => {
   if (process.platform !== "darwin") {
     app.quit();
   }
+});
+
+app.on("before-quit", async () => {
+  await stopAppServer(serverChild);
 });

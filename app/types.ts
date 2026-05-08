@@ -80,3 +80,8 @@ export type PublicGretelConfig = {
     language: string;
   };
 };
+
+export type UserSettings = {
+  openRouterApiKey?: string;
+  openRouterModel?: string;
+};

@@ -1,5 +1,6 @@
 import { getGretelConfig } from "./config";
 import { loadDotEnvFile } from "../env";
+import { getUserSettings } from "../settings";
 import { normalizeVector } from "./vector-math";
 
 export type EmbeddingProvider = {
@@ -17,7 +18,8 @@ export function getEmbeddingProvider(config = getGretelConfig()): EmbeddingProvi
     return new MockEmbeddingProvider(config.embeddings.dimensions, config.embeddings.mockSeed);
   }
 
-  const apiKey = process.env[config.embeddings.openRouterApiKeyEnv] || "";
+  const settings = getUserSettings();
+  const apiKey = settings.openRouterApiKey || process.env[config.embeddings.openRouterApiKeyEnv] || "";
 
   if (!apiKey) {
     throw new Error(
@@ -28,7 +30,7 @@ export function getEmbeddingProvider(config = getGretelConfig()): EmbeddingProvi
   return new OpenRouterEmbeddingProvider(
     config.embeddings.openRouterBaseUrl,
     apiKey,
-    config.embeddings.model,
+    settings.openRouterModel || config.embeddings.model,
     config.embeddings.dimensions,
     process.env[config.embeddings.openRouterSiteUrlEnv] || "",
     process.env[config.embeddings.openRouterAppNameEnv] || "",
