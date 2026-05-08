@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef } from "react";
 
 import type { FeedVideo } from "../types";
 import { normalize } from "./video-utils";
@@ -22,25 +22,24 @@ type FeedViewProps = {
   onRemoveChannel: (channel: string) => void;
 };
 
-const batchSize = 12;
-
 export function FeedView(props: FeedViewProps) {
-  const [visibleCount, setVisibleCount] = useState(batchSize);
   const loaderRef = useRef<HTMLDivElement | null>(null);
-  const feedKeyRef = useRef("");
-  const visibleVideos = props.videos.slice(0, visibleCount);
+  const loadMoreRequestedRef = useRef(false);
 
   useEffect(() => {
-    const feedKey = props.videos[0]?.id || "";
+    if (!props.loading) {
+      loadMoreRequestedRef.current = false;
+    }
+  }, [props.loading, props.videos.length]);
 
-    if (feedKeyRef.current !== feedKey) {
-      feedKeyRef.current = feedKey;
-      setVisibleCount(batchSize);
+  const loadMore = useCallback(() => {
+    if (!props.canAskForMore || props.loading || loadMoreRequestedRef.current) {
       return;
     }
 
-    setVisibleCount((count) => Math.min(Math.max(count, batchSize), props.videos.length));
-  }, [props.videos]);
+    loadMoreRequestedRef.current = true;
+    props.onLoadMore();
+  }, [props.canAskForMore, props.loading, props.onLoadMore]);
 
   useEffect(() => {
     const loader = loaderRef.current;
@@ -55,18 +54,34 @@ export function FeedView(props: FeedViewProps) {
           return;
         }
 
-        if (visibleCount < props.videos.length) {
-          setVisibleCount((count) => Math.min(count + batchSize, props.videos.length));
-        } else if (props.canAskForMore && !props.loading) {
-          props.onLoadMore();
-        }
+        loadMore();
       },
       { rootMargin: "520px 0px" }
     );
 
     observer.observe(loader);
     return () => observer.disconnect();
-  }, [props, visibleCount]);
+  }, [loadMore]);
+
+  useEffect(() => {
+    function requestWhenNearBottom() {
+      const documentHeight = document.documentElement.scrollHeight;
+      const viewportBottom = window.scrollY + window.innerHeight;
+
+      if (documentHeight - viewportBottom <= 720) {
+        loadMore();
+      }
+    }
+
+    requestWhenNearBottom();
+    window.addEventListener("scroll", requestWhenNearBottom, { passive: true });
+    window.addEventListener("resize", requestWhenNearBottom);
+
+    return () => {
+      window.removeEventListener("scroll", requestWhenNearBottom);
+      window.removeEventListener("resize", requestWhenNearBottom);
+    };
+  }, [loadMore, props.videos.length]);
 
   return (
     <section className="feed-view" aria-live="polite">
@@ -80,7 +95,7 @@ export function FeedView(props: FeedViewProps) {
       </div>
 
       <div className="video-grid">
-        {visibleVideos.map((video) => {
+        {props.videos.map((video) => {
           const subscribed = props.subscriptions.has(normalize(video.author));
 
           return (
@@ -101,14 +116,14 @@ export function FeedView(props: FeedViewProps) {
           );
         })}
         {props.loading &&
-          Array.from({ length: visibleVideos.length === 0 ? batchSize : 4 }).map((_, index) => (
+          Array.from({ length: props.videos.length === 0 ? 12 : 4 }).map((_, index) => (
             <VideoCardSkeleton key={`feed-skeleton-${index}`} />
           ))}
       </div>
 
       <div ref={loaderRef} className="feed-loader">
         <span className="loader-copy">
-          {props.loading ? "Loading more videos..." : visibleVideos.length < props.videos.length ? "Loading..." : ""}
+          {props.loading ? "Loading more videos..." : ""}
         </span>
       </div>
     </section>

@@ -30,8 +30,6 @@
     "expansionSeedCount": 4,
     "minRelatedVideosPerSeed": 1,
     "maxRelatedVideosPerSeed": 12,
-    "readyQueueTargetSize": 96,
-    "readyQueueLowWaterMark": 72,
     "subscriptionFastLanePerSession": 2,
     "coldStartParentEngagementWeight": 0.05
   },

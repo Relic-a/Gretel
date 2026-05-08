@@ -58,7 +58,6 @@ test("root discovery filters titles, stores a unit centroid, and gates channel v
         minVideosPerQuery: 2,
         minVideosPerChannel: 2,
         similarityThreshold: 0.75,
-        readyQueueLowWaterMark: 0,
         subscriptionFastLanePerSession: 0
       },
       embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
@@ -146,7 +145,6 @@ test("pool expansion budgets by score, skips visited videos, enforces threshold,
         maxVideos: 8,
         minVideosPerQuery: 1,
         similarityThreshold: 0.75,
-        readyQueueLowWaterMark: 20,
         recommendationSeeds: 1,
         expansionSeedCount: 1,
         minRelatedVideosPerSeed: 3,
@@ -208,7 +206,6 @@ test("stale expansion stops when the profile is deleted before related videos ar
       maxVideos: 8,
       minVideosPerQuery: 1,
       similarityThreshold: 0.75,
-      readyQueueLowWaterMark: 20,
       recommendationSeeds: 1,
       expansionSeedCount: 1,
       minRelatedVideosPerSeed: 1,
@@ -251,7 +248,6 @@ test("initial pool build uses configurable fetch size instead of serving page si
         maxQueries: 1,
         maxVideos: 2,
         minVideosPerQuery: 1,
-        readyQueueLowWaterMark: 0,
         subscriptionFastLanePerSession: 0
       },
       embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
@@ -297,7 +293,6 @@ test("serving excludes client-visible videos before ranking the next page", asyn
         maxQueries: 1,
         maxVideos: 2,
         minVideosPerQuery: 1,
-        readyQueueLowWaterMark: 0,
         subscriptionFastLanePerSession: 0
       },
       embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
@@ -351,7 +346,6 @@ test("impression-triggered expansion bypasses cooldown", async () => {
         minVideosPerQuery: 1,
         recommendationSeeds: 1,
         expansionSeedCount: 1,
-        readyQueueLowWaterMark: 0,
         subscriptionFastLanePerSession: 0,
         similarityThreshold: 0.75
       },
@@ -480,7 +474,6 @@ test("expansion caps fetch calls per cycle", async () => {
         maxVideos: 12,
         recommendationSeeds: 4,
         expansionSeedCount: 4,
-        readyQueueLowWaterMark: 20,
         subscriptionFastLanePerSession: 0,
         similarityThreshold: 0.75
       },
@@ -538,7 +531,6 @@ test("embedding input includes configured transcript introduction when available
         maxQueries: 1,
         maxVideos: 1,
         minVideosPerQuery: 1,
-        readyQueueLowWaterMark: 0,
         subscriptionFastLanePerSession: 0
       },
       embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
@@ -571,7 +563,6 @@ test("scoring computes engagement, nonlinear ignore decay, accumulated interacti
   const config = testConfig({
     feed: {
       coldStartInteractionThreshold: 2,
-      readyQueueTargetSize: 10,
       expansionSeedCount: 10,
       coldStartParentEngagementWeight: 0.5
     },
@@ -658,7 +649,6 @@ test("scoring computes engagement, nonlinear ignore decay, accumulated interacti
       },
       feed: {
         coldStartInteractionThreshold: 2,
-        readyQueueTargetSize: 10
       }
     })
   });
@@ -697,7 +687,6 @@ test("logs the top serving items with score breakdown and serving parameters", a
       feed: {
         maxQueries: 1,
         maxVideos: 1,
-        readyQueueTargetSize: 10,
         coldStartInteractionThreshold: 1,
         similarityThreshold: 0.1,
         subscriptionFastLanePerSession: 0
@@ -900,7 +889,7 @@ test("embedding rows are isolated by provider, model, and dimensions", () => {
 test("serving excludes completed watched nodes and orders unserved nodes by parent score", () => {
   const { createCandidatePoolFeed } = require(path.join(buildDir, "lib", "feed", "pool.js"));
   const config = testConfig({
-    feed: { coldStartInteractionThreshold: 1, readyQueueTargetSize: 10 },
+    feed: { coldStartInteractionThreshold: 1 },
     learning: { watchCompletionThreshold: 0.9 }
   });
   const interactions = new Map([
@@ -1007,7 +996,6 @@ test("pruning cleans non-engaged embeddings and pruned videos are not re-admitte
         maxQueries: 1,
         maxVideos: 8,
         similarityThreshold: 0.75,
-        readyQueueLowWaterMark: 20,
         recommendationSeeds: 1,
         expansionSeedCount: 1,
         minRelatedVideosPerSeed: 3,
@@ -1091,7 +1079,6 @@ test("subscription fast lane is served up to cap, never pooled, and never used a
         minVideosPerChannel: 3,
         subscriptionFastLanePerSession: 2,
         similarityThreshold: 0.99,
-        readyQueueLowWaterMark: 20,
         recommendationSeeds: 4
       },
       serving: {

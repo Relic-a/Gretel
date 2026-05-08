@@ -47,8 +47,7 @@ export function getPublicGretelConfig() {
     expansion: config.expansion,
     transcription: config.transcription,
     feed: {
-      maxVideos: config.feed.maxVideos,
-      readyQueueTargetSize: config.feed.readyQueueTargetSize
+      maxVideos: config.feed.maxVideos
     },
     learning: {
       watchSaveThreshold: config.learning.watchSaveThreshold
@@ -271,18 +270,6 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
         defaults.feed.maxRelatedVideosPerSeed,
         1,
         100
-      ),
-      readyQueueTargetSize: integer(
-        feed.readyQueueTargetSize,
-        defaults.feed.readyQueueTargetSize,
-        1,
-        1000
-      ),
-      readyQueueLowWaterMark: integer(
-        feed.readyQueueLowWaterMark,
-        defaults.feed.readyQueueLowWaterMark,
-        0,
-        1000
       ),
       subscriptionFastLanePerSession: integer(
         feed.subscriptionFastLanePerSession,

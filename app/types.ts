@@ -37,6 +37,7 @@ export type ChannelResult = {
 export type FeedResponse = {
   profile: Profile;
   videos: FeedVideo[];
+  sessionId?: string;
   upNextByVideoId?: Record<string, string[]>;
 };
 
@@ -61,7 +62,6 @@ export type PublicGretelConfig = {
   };
   feed: {
     maxVideos: number;
-    readyQueueTargetSize: number;
   };
   learning: {
     watchSaveThreshold: number;

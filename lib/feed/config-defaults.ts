@@ -30,8 +30,6 @@ export type GretelConfig = {
     expansionSeedCount: number;
     minRelatedVideosPerSeed: number;
     maxRelatedVideosPerSeed: number;
-    readyQueueTargetSize: number;
-    readyQueueLowWaterMark: number;
     subscriptionFastLanePerSession: number;
     coldStartParentEngagementWeight: number;
   };
@@ -99,8 +97,6 @@ export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
     expansionSeedCount: 4,
     minRelatedVideosPerSeed: 1,
     maxRelatedVideosPerSeed: 12,
-    readyQueueTargetSize: 96,
-    readyQueueLowWaterMark: 72,
     subscriptionFastLanePerSession: 6,
     coldStartParentEngagementWeight: 0.15
   },

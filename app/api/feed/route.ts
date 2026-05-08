@@ -1,6 +1,6 @@
 import { parseChannelSort, parseTags } from "../../../lib/feed/input";
 import { createFeedObservation, logFeedObservation } from "../../../lib/feed/observation";
-import { createFeed, FeedProfileStaleError } from "../../../lib/feed/service";
+import { FeedProfileStaleError, serveFeedPage } from "../../../lib/feed/service";
 import { errorFields } from "../../../lib/logger";
 import {
   getProfile,
@@ -17,10 +17,9 @@ export async function POST(request: Request) {
     const tags = parseTags(body.tags);
     const channels = parseTags(body.channels);
     const channelSort = parseChannelSort(body.channelSort);
-    const resetFeed = body.resetFeed === true;
-    const servingOnly = body.servingOnly === true;
-    const excludeVideoIds = Array.isArray(body.excludeVideoIds)
-      ? body.excludeVideoIds.filter((videoId: unknown) => typeof videoId === "string")
+    const sessionId = typeof body.sessionId === "string" ? body.sessionId : undefined;
+    const servedVideoIds = Array.isArray(body.servedVideoIds)
+      ? body.servedVideoIds.filter((videoId: unknown) => typeof videoId === "string")
       : [];
     const requestedProfileId = typeof body.profileId === "string" ? body.profileId : "";
     const profile = requestedProfileId ? getProfile(requestedProfileId) : null;
@@ -37,18 +36,16 @@ export async function POST(request: Request) {
     }
 
     const watchedVideoIds = getWatchedVideoIds(profile.id);
-    const feed = await createFeed(
+    const feed = await serveFeedPage(
       profile.id,
       tags,
       channels,
       channelSort,
       observation,
       {
-        servingOnly,
-        readOnlyPool: servingOnly,
         watchedVideoIds,
-        excludeVideoIds,
-        expectedProfileUpdatedAt: profile.updatedAt
+        sessionId,
+        servedVideoIds
       }
     );
 
@@ -63,14 +60,14 @@ export async function POST(request: Request) {
       finalVideos: feed.videos.length,
       activeNodes: feed.nodes.filter((node) => node.weight > 0).length,
       watchedExcluded: watchedVideoIds.length,
-      clientExcluded: excludeVideoIds.length,
+      clientExcluded: 0,
       poolVideos: feed.pool.videos,
       poolStatus: feed.pool.status,
       initializedRoot: feed.pool.initializedRoot,
       expandedPool: feed.pool.expandedPool,
       configuredMaxVideos: feed.pool.maxVideos,
-      resetFeed,
-      servingOnly
+      resetFeed: false,
+      servingOnly: true
     });
 
     return Response.json({
@@ -81,6 +78,7 @@ export async function POST(request: Request) {
       queries: feed.queries,
       nodes: feed.nodes,
       pool: feed.pool,
+      sessionId: feed.sessionId,
       upNextByVideoId: feed.upNextByVideoId,
       videos: feed.videos
     });

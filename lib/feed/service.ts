@@ -49,11 +49,135 @@ export type CreateFeedOptions = {
   excludeVideoIds?: string[];
 };
 
+export type ServeFeedPageOptions = {
+  sessionId?: string;
+  watchedVideoIds?: string[];
+  servedVideoIds?: string[];
+};
+
+type FeedServingSession = {
+  id: string;
+  profileId: string;
+  poolKey: string;
+  servedVideoIds: Set<string>;
+  createdAt: number;
+  updatedAt: number;
+};
+
+const feedServingSessions = getGlobalServingSessions();
+const feedServingSessionTtlMs = 1000 * 60 * 60 * 6;
+
 export class FeedProfileStaleError extends Error {
   constructor() {
     super("The active profile changed before feed generation finished.");
     this.name = "FeedProfileStaleError";
   }
+}
+
+export async function serveFeedPage(
+  profileId: string,
+  tags: string[],
+  channels: string[],
+  channelSort: ChannelSort,
+  observation: FeedObservation,
+  options: ServeFeedPageOptions = {}
+) {
+  const queries = createQueries(tags);
+  const config = getGretelConfig();
+  const poolKey = createFeedPoolKey({ tags: queries, channels, channelSort });
+  const poolState = getFeedPoolState(profileId, poolKey);
+
+  if (!poolState) {
+    throw new Error("This feed has not been built yet.");
+  }
+
+  const session = getOrCreateServingSession(options.sessionId, profileId, poolKey, options.servedVideoIds);
+  const watchedVideoIds = new Set(options.watchedVideoIds || []);
+  const poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
+  recordScoringObservation(observation, profileId, poolVideos, "serving");
+
+  const candidates = createCandidatePoolFeed({
+    rootVideos: poolVideos.filter((video) => video.sourceNodeId === "tagSearch"),
+    channelVideos: poolVideos.filter((video) => video.sourceNodeId === "channelVideos"),
+    relatedVideos: poolVideos.filter((video) => video.sourceNodeId === "relatedVideos"),
+    watchedVideoIds,
+    excludeVideoIds: session.servedVideoIds,
+    interactions: getVideoInteractions(profileId),
+    config
+  });
+  const videos = candidates.videos.slice(0, config.feed.maxVideos);
+
+  for (const video of videos) {
+    session.servedVideoIds.add(video.id);
+  }
+  session.updatedAt = Date.now();
+
+  await retainReadyQueueEmbeddings(profileId, videos, observation);
+  const upNextByVideoId = buildUpNextByVideoId(profileId, videos);
+  const poolHealth = describePoolHealth({
+    videos: poolVideos,
+    watchedVideoIds,
+    excludeVideoIds: session.servedVideoIds,
+    interactions: getVideoInteractions(profileId),
+    config
+  });
+
+  observation.operations.push({
+    name: "feed.phase5.serving",
+    durationMs: 0,
+    status: "ok",
+    input: {
+      maxVideos: config.feed.maxVideos,
+      sessionServedVideos: session.servedVideoIds.size
+    },
+    output: {
+      poolVideos: videos.length,
+      finalVideos: videos.length,
+      upNextLists: Object.keys(upNextByVideoId).length,
+      poolHealth
+    }
+  });
+
+  return {
+    queries,
+    videos,
+    nodes: candidates.nodes,
+    searchVideos: poolVideos.filter((video) => video.sourceNodeId === "tagSearch").length,
+    channelVideos: poolVideos.filter((video) => video.sourceNodeId === "channelVideos").length,
+    relatedVideos: poolVideos.filter((video) => video.sourceNodeId === "relatedVideos").length,
+    pool: {
+      key: poolKey,
+      videos: poolState.poolVideos,
+      targetVideos: config.feed.poolSizeCap,
+      health: poolHealth,
+      rootDiscoveredAt: poolState.rootDiscoveredAt,
+      maxVideos: config.feed.maxVideos,
+      initializedRoot: false,
+      expandedPool: false,
+      status: "served"
+    },
+    sessionId: session.id,
+    upNextByVideoId
+  };
+}
+
+export function startFeedServingSession(
+  profileId: string,
+  tags: string[],
+  channels: string[],
+  channelSort: ChannelSort,
+  servedVideoIds: string[] = []
+) {
+  const queries = createQueries(tags);
+  const poolKey = createFeedPoolKey({ tags: queries, channels, channelSort });
+  const session = getOrCreateServingSession(undefined, profileId, poolKey);
+
+  for (const videoId of servedVideoIds) {
+    session.servedVideoIds.add(videoId);
+  }
+  session.updatedAt = Date.now();
+
+  return session.id;
 }
 
 export async function createFeed(
@@ -159,7 +283,6 @@ export async function createFeed(
     durationMs: 0,
     status: "ok",
     input: {
-      readyQueueTargetSize: config.feed.readyQueueTargetSize,
       maxVideos: config.feed.maxVideos,
       excludedClientVideos: excludeVideoIds.size
     },
@@ -263,6 +386,60 @@ export async function expandFeedPoolForImpressions(
   }
 
   return { expandedPool, poolKey, poolVideos: poolVideos.length };
+}
+
+function getGlobalServingSessions() {
+  const globalKey = "__gretelFeedServingSessions";
+  const globalScope = globalThis as typeof globalThis & {
+    [globalKey]?: Map<string, FeedServingSession>;
+  };
+
+  if (!globalScope[globalKey]) {
+    globalScope[globalKey] = new Map<string, FeedServingSession>();
+  }
+
+  return globalScope[globalKey];
+}
+
+function getOrCreateServingSession(
+  sessionId: string | undefined,
+  profileId: string,
+  poolKey: string,
+  servedVideoIds: string[] = []
+) {
+  pruneServingSessions();
+
+  if (sessionId) {
+    const existing = feedServingSessions.get(sessionId);
+
+    if (existing && existing.profileId === profileId && existing.poolKey === poolKey) {
+      return existing;
+    }
+  }
+
+  const id = crypto.randomUUID();
+  const now = Date.now();
+  const session: FeedServingSession = {
+    id,
+    profileId,
+    poolKey,
+    servedVideoIds: new Set(servedVideoIds),
+    createdAt: now,
+    updatedAt: now
+  };
+
+  feedServingSessions.set(id, session);
+  return session;
+}
+
+function pruneServingSessions() {
+  const cutoff = Date.now() - feedServingSessionTtlMs;
+
+  for (const [sessionId, session] of feedServingSessions) {
+    if (session.updatedAt < cutoff) {
+      feedServingSessions.delete(sessionId);
+    }
+  }
 }
 
 async function initializePoolOnce(
@@ -571,7 +748,6 @@ function logTopServingItems(
     coldStart: isColdStart,
     parameters: {
       coldStartInteractionThreshold: config.feed.coldStartInteractionThreshold,
-      readyQueueTargetSize: config.feed.readyQueueTargetSize,
       warmSemanticWeight: config.serving.warmSemanticWeight,
       impressionPenaltyFactor: config.serving.impressionPenaltyFactor,
       fastLaneImpressionPenaltyFactor: config.serving.fastLaneImpressionPenaltyFactor,

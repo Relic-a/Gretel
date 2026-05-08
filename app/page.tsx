@@ -522,7 +522,8 @@ export default function Home() {
     const nextProfileId = input.nextProfileId || profileId;
     const resetFeed = input.resetFeed === true;
     const servingOnly = input.servingOnly ?? !resetFeed;
-    const excludeVideoIds = resetFeed ? [] : feed?.videos.map((video) => video.id) || [];
+    const sessionId = resetFeed ? undefined : feed?.sessionId;
+    const servedVideoIds = !resetFeed && feed?.videos?.length ? feed.videos.map((video) => video.id) : [];
     const requestId = feedRequestIdRef.current + 1;
     feedRequestIdRef.current = requestId;
 
@@ -534,16 +535,15 @@ export default function Home() {
     }
 
     try {
-      const response = await fetch("/api/feed", {
+      const response = await fetch(servingOnly ? "/api/feed" : "/api/feed/build", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           tags: nextTags,
           channels: nextChannels,
           profileId: nextProfileId,
-          resetFeed,
-          servingOnly,
-          excludeVideoIds
+          sessionId,
+          servedVideoIds: servingOnly ? servedVideoIds : []
         })
       });
       const data = await response.json();
@@ -821,7 +821,7 @@ function writeCachedFeed(profileId: string, feed: FeedResponse) {
       feedCacheKey(profileId),
       JSON.stringify({
         ...feed,
-        videos: feed.videos.slice(0, 96),
+        videos: feed.videos,
         cachedAt: Date.now()
       })
     );

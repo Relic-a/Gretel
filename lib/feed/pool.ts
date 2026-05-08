@@ -38,10 +38,6 @@ export function createCandidatePoolFeed(input: {
     .sort((left, right) =>
       servingScore(right, input.config, isColdStart) - servingScore(left, input.config, isColdStart) ||
       (right.similarityScore || 0) - (left.similarityScore || 0)
-    )
-    .slice(
-      0,
-      input.config.feed.readyQueueTargetSize
     );
 
   return {

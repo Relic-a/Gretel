@@ -43,6 +43,7 @@ function compileConfigModules() {
       "lib/feed/youtube-client.ts",
       "lib/feed/types.ts",
       "app/api/feed/route.ts",
+      "app/api/feed/build/route.ts",
       "app/api/impressions/route.ts",
       "app/api/profiles/route.ts",
       "app/api/watch-events/route.ts"
@@ -131,6 +132,7 @@ function loadRuntimeModules(fakeYoutubeClient) {
   const youtubeClientPath = path.join(buildDir, "lib", "feed", "youtube-client.js");
   const routePaths = [
     path.join(buildDir, "app", "api", "feed", "route.js"),
+    path.join(buildDir, "app", "api", "feed", "build", "route.js"),
     path.join(buildDir, "app", "api", "profiles", "route.js"),
     path.join(buildDir, "app", "api", "watch-events", "route.js"),
     path.join(buildDir, "lib", "profile-store.js")
@@ -153,9 +155,10 @@ function loadRuntimeModules(fakeYoutubeClient) {
 
   return {
     feedRoute: require(routePaths[0]),
-    profilesRoute: require(routePaths[1]),
-    watchEventsRoute: require(routePaths[2]),
-    profileStore: require(routePaths[3])
+    feedBuildRoute: require(routePaths[1]),
+    profilesRoute: require(routePaths[2]),
+    watchEventsRoute: require(routePaths[3]),
+    profileStore: require(routePaths[4])
   };
 }
 
@@ -184,7 +187,6 @@ function writeRuntimeConfig(name, overrides = {}) {
         recommendationSeeds: 2,
         minVideosPerQuery: 4,
         minVideosPerChannel: 4,
-        readyQueueLowWaterMark: 2,
         ...overrides.feed
       },
       learning: {
@@ -416,7 +418,6 @@ test("clamps and rounds out-of-range config values before logging applied config
         maxQueries: "2.4",
         maxVideos: 9999,
         poolSizeCap: -1,
-        readyQueueLowWaterMark: 9999
       },
       learning: {
         watchSaveThreshold: "0.75"
@@ -438,7 +439,6 @@ test("clamps and rounds out-of-range config values before logging applied config
     assert.equal(config.feed.maxQueries, 2);
     assert.equal(config.feed.maxVideos, 200);
     assert.equal(config.feed.poolSizeCap, 1);
-    assert.equal(config.feed.readyQueueLowWaterMark, 1000);
     assert.equal(config.learning.watchSaveThreshold, 0.75);
     assert.equal(config.client.watchProgressPollMs, 250);
     assert.equal(config.youtube.language, "fr");
@@ -489,7 +489,7 @@ test("config accepts local embeddings and falls back from invalid providers", ()
 test("runtime feed flow initializes roots once, expands pool, serves fast lane, and records engagement", async () => {
   const normalConfig = writeRuntimeConfig("runtime-normal.json");
   const fakeYoutubeClient = createFakeYoutubeClient();
-  const { feedRoute, profilesRoute, watchEventsRoute, profileStore } =
+  const { feedRoute, feedBuildRoute, profilesRoute, watchEventsRoute, profileStore } =
     loadRuntimeModules(fakeYoutubeClient);
   let profileId = "";
 
@@ -501,7 +501,7 @@ test("runtime feed flow initializes roots once, expands pool, serves fast lane, 
       profileId = created.body.profileId;
       assert.ok(profileStore.getProfile(profileId));
 
-      const firstFeed = await postJson(feedRoute, {
+      const firstFeed = await postJson(feedBuildRoute, {
         profileId,
         tags: "alpha, beta",
         channels: "Creator One",
@@ -568,7 +568,7 @@ test("runtime feed flow initializes roots once, expands pool, serves fast lane, 
         false
       );
 
-      const afterWatchFetch = await postJson(feedRoute, {
+      const afterWatchFetch = await postJson(feedBuildRoute, {
         profileId,
         tags: "alpha, beta",
         channels: "Creator One",
@@ -616,7 +616,7 @@ test("runtime feed builds one combined root pool across all tags", async () => {
     }
   });
   const fakeYoutubeClient = createFakeYoutubeClient();
-  const { feedRoute, profilesRoute, profileStore } = loadRuntimeModules(fakeYoutubeClient);
+  const { feedBuildRoute, profilesRoute, profileStore } = loadRuntimeModules(fakeYoutubeClient);
   let profileId = "";
 
   try {
@@ -626,7 +626,7 @@ test("runtime feed builds one combined root pool across all tags", async () => {
       assert.equal(created.status, 200);
       profileId = created.body.profileId;
 
-      const response = await postJson(feedRoute, {
+      const response = await postJson(feedBuildRoute, {
         profileId,
         tags: "alpha, beta"
       });
