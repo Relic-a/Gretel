@@ -32,7 +32,7 @@ import {
   getWatchedVideoIds
 } from "../profile-store";
 import { logInfo } from "../logger";
-import { observeOperation } from "./observation";
+import { createFeedObservation, logFeedObservation, observeOperation } from "./observation";
 import {
   getCentroid,
   getRetainedEmbedding,
@@ -66,6 +66,8 @@ type FeedServingSession = {
 
 const feedServingSessions = getGlobalServingSessions();
 const feedServingSessionTtlMs = 1000 * 60 * 60 * 6;
+const preemptiveExpansionInFlight = getGlobalPreemptiveExpansionState();
+const preemptiveExpansionFreshRatioThreshold = 0.4;
 
 export class FeedProfileStaleError extends Error {
   constructor() {
@@ -93,8 +95,41 @@ export async function serveFeedPage(
 
   const session = getOrCreateServingSession(options.sessionId, profileId, poolKey, options.servedVideoIds);
   const watchedVideoIds = new Set(options.watchedVideoIds || []);
-  const poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
+  const interactions = getVideoInteractions(profileId);
+  let poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
   recordScoringObservation(observation, profileId, poolVideos, "serving");
+  let poolHealth = describePoolHealth({
+    videos: poolVideos,
+    watchedVideoIds,
+    excludeVideoIds: session.servedVideoIds,
+    interactions,
+    config
+  });
+  const isLoadMoreRequest = Boolean(options.sessionId) || session.servedVideoIds.size > 0;
+
+  if (isLoadMoreRequest && poolHealth.needsExpansion) {
+    try {
+      await expandPool(profileId, poolKey, poolVideos, observation, undefined, { bypassCooldown: true });
+      poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
+      prunePool(profileId, poolKey, poolVideos, config.feed.poolSizeCap);
+      poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
+      recordScoringObservation(observation, profileId, poolVideos, "loadMoreExpansion");
+      poolHealth = describePoolHealth({
+        videos: poolVideos,
+        watchedVideoIds,
+        excludeVideoIds: session.servedVideoIds,
+        interactions,
+        config
+      });
+    } catch (expansionError) {
+      observation.operations.push({
+        name: "feed.phase2.expansion_failed",
+        durationMs: 0,
+        status: "error",
+        error: expansionError instanceof Error ? expansionError.message : String(expansionError)
+      });
+    }
+  }
 
   const candidates = createCandidatePoolFeed({
     rootVideos: poolVideos.filter((video) => video.sourceNodeId === "tagSearch"),
@@ -102,7 +137,7 @@ export async function serveFeedPage(
     relatedVideos: poolVideos.filter((video) => video.sourceNodeId === "relatedVideos"),
     watchedVideoIds,
     excludeVideoIds: session.servedVideoIds,
-    interactions: getVideoInteractions(profileId),
+    interactions,
     config
   });
   const videos = candidates.videos.slice(0, config.feed.maxVideos);
@@ -114,13 +149,17 @@ export async function serveFeedPage(
 
   await retainReadyQueueEmbeddings(profileId, videos, observation);
   const upNextByVideoId = buildUpNextByVideoId(profileId, videos);
-  const poolHealth = describePoolHealth({
+  poolHealth = describePoolHealth({
     videos: poolVideos,
     watchedVideoIds,
     excludeVideoIds: session.servedVideoIds,
-    interactions: getVideoInteractions(profileId),
+    interactions,
     config
   });
+
+  if (poolHealth.freshRatio < preemptiveExpansionFreshRatioThreshold) {
+    schedulePreemptiveExpansion(profileId, poolKey);
+  }
 
   observation.operations.push({
     name: "feed.phase5.serving",
@@ -147,7 +186,7 @@ export async function serveFeedPage(
     relatedVideos: poolVideos.filter((video) => video.sourceNodeId === "relatedVideos").length,
     pool: {
       key: poolKey,
-      videos: poolState.poolVideos,
+      videos: poolVideos.length,
       targetVideos: config.feed.poolSizeCap,
       health: poolHealth,
       rootDiscoveredAt: poolState.rootDiscoveredAt,
@@ -258,6 +297,10 @@ export async function createFeed(
       interactions: getVideoInteractions(profileId),
       config
     });
+  }
+
+  if (!options.readOnlyPool && poolHealth.freshRatio < preemptiveExpansionFreshRatioThreshold) {
+    schedulePreemptiveExpansion(profileId, poolKey);
   }
 
   logTopServingItems(profileId, poolKey, readyPreview.videos, config, observation.requestId);
@@ -396,6 +439,19 @@ function getGlobalServingSessions() {
 
   if (!globalScope[globalKey]) {
     globalScope[globalKey] = new Map<string, FeedServingSession>();
+  }
+
+  return globalScope[globalKey];
+}
+
+function getGlobalPreemptiveExpansionState() {
+  const globalKey = "__gretelPreemptiveExpansionInFlight";
+  const globalScope = globalThis as typeof globalThis & {
+    [globalKey]?: Set<string>;
+  };
+
+  if (!globalScope[globalKey]) {
+    globalScope[globalKey] = new Set<string>();
   }
 
   return globalScope[globalKey];
@@ -633,6 +689,50 @@ async function expandPool(
   );
 
   return admittedVideos >= config.expansion.minExpansionYield;
+}
+
+function schedulePreemptiveExpansion(
+  profileId: string,
+  poolKey: string
+) {
+  const stateKey = `${profileId}:${poolKey}`;
+
+  if (preemptiveExpansionInFlight.has(stateKey)) {
+    return;
+  }
+
+  preemptiveExpansionInFlight.add(stateKey);
+
+  void (async () => {
+    const observation = createFeedObservation();
+
+    try {
+      const currentPoolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
+      await expandPool(profileId, poolKey, currentPoolVideos, observation, undefined, {
+        bypassCooldown: true
+      });
+      let rescoredPoolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
+      prunePool(profileId, poolKey, rescoredPoolVideos, getGretelConfig().feed.poolSizeCap);
+      rescoredPoolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
+      recordScoringObservation(observation, profileId, rescoredPoolVideos, "preemptiveServingExpansion");
+      logFeedObservation(observation, {
+        trigger: "serve_feed_page_preemptive",
+        profileId,
+        poolKey,
+        poolVideos: rescoredPoolVideos.length
+      });
+    } catch (expansionError) {
+      logFeedObservation(observation, {
+        trigger: "serve_feed_page_preemptive",
+        profileId,
+        poolKey,
+        poolVideos: listPoolNodes(profileId, poolKey).length,
+        errorMessage: expansionError instanceof Error ? expansionError.message : String(expansionError)
+      });
+    } finally {
+      preemptiveExpansionInFlight.delete(stateKey);
+    }
+  })();
 }
 
 async function getSubscriptionFastLaneVideos(

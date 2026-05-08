@@ -507,7 +507,7 @@ export default function Home() {
           })
         });
       } catch {}
-    }, 250);
+    }, 50);
   }
 
   async function requestFeed(input: {

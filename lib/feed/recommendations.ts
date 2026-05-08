@@ -68,74 +68,95 @@ async function recommendVideosFromLinks(
       const maxVideos = config.feed.maxVideos;
       const seen = new Set<string>();
       const recommendations: FeedVideo[] = [];
-      let lastFetchAt = 0;
-
-      for (const seedVideo of seedVideos) {
+      const fetchConcurrency = 3;
+      const seedRecommendations: Array<{ seedVideo: FeedVideo; feed: unknown[] } | null> = [];
+      const fetchSeed = async (seedVideo: FeedVideo) => {
         const seedId = seedVideo.id;
 
         if (!seedId) {
-          continue;
+          return null;
         }
 
         try {
-          const elapsedMs = Date.now() - lastFetchAt;
-
-          if (lastFetchAt > 0 && elapsedMs < config.expansion.minDelayBetweenFetchesMs) {
-            await delay(config.expansion.minDelayBetweenFetchesMs - elapsedMs);
-          }
-
           const info = await youtube.getInfo(seedId);
-          lastFetchAt = Date.now();
-          let seedRecommendations = 0;
-          const maxVideosPerSeed = budgetForSeed(seedVideo, seedVideos);
 
-          for (const video of info.watch_next_feed || []) {
-            const id = getVideoId(video);
-            const duration = getDuration(video);
-
-            if (id === seedId || !shouldKeepVideo(id, seen)) {
-              continue;
-            }
-
-            seen.add(id);
-            const author = getAuthor(video);
-            recommendations.push({
-              id,
-              title: getTitle(video),
-              author,
-              channelAvatarUrl: getAuthorAvatarUrl(video),
-              duration,
-              query: sourceLabel,
-              thumbnailUrl: getThumbnailUrl(video) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
-              thumbnailCacheUrl: `/api/thumbnails/${profileId}/${id}`,
-              publishedText: getPublishedText(video),
-              publishedAt: getPublishedAt(video),
-              viewCount: getViewCount(video),
-              channelKey: normalizeChannelKey(author),
-              parent_video_id: seedVideo.id,
-              parent_title: seedVideo.title,
-              parent_author: seedVideo.author,
-              recommendation_depth: (seedVideo.recommendation_depth || 0) + 1
-            });
-            seedRecommendations += 1;
-
-            if (recommendations.length >= maxVideos) {
-              return {
-                value: recommendations,
-                output: { recommendationVideos: recommendations.length }
-              };
-            }
-
-            if (seedRecommendations >= maxVideosPerSeed) {
-              break;
-            }
-          }
+          return {
+            seedVideo,
+            feed: info.watch_next_feed || []
+          };
         } catch (error) {
           logWarn("youtube.recommendations_failed", {
             requestId: observation.requestId,
             seedId,
             ...errorFields(error)
           });
+          return null;
+        }
+      };
+
+      for (let index = 0; index < seedVideos.length; index += fetchConcurrency) {
+        const batch = seedVideos.slice(index, index + fetchConcurrency);
+        const batchRecommendations = await Promise.all(batch.map((seedVideo) => fetchSeed(seedVideo)));
+        seedRecommendations.push(...batchRecommendations);
+
+        if (
+          index + fetchConcurrency < seedVideos.length &&
+          config.expansion.minDelayBetweenFetchesMs > 0
+        ) {
+          await delay(config.expansion.minDelayBetweenFetchesMs);
+        }
+      }
+
+      for (const seedRecommendation of seedRecommendations) {
+        if (!seedRecommendation) {
+          continue;
+        }
+
+        const { seedVideo, feed } = seedRecommendation;
+        const seedId = seedVideo.id;
+        let seedVideoCount = 0;
+        const maxVideosPerSeed = budgetForSeed(seedVideo, seedVideos);
+
+        for (const video of feed) {
+          const id = getVideoId(video);
+          const duration = getDuration(video);
+
+          if (id === seedId || !shouldKeepVideo(id, seen)) {
+            continue;
+          }
+
+          seen.add(id);
+          const author = getAuthor(video);
+          recommendations.push({
+            id,
+            title: getTitle(video),
+            author,
+            channelAvatarUrl: getAuthorAvatarUrl(video),
+            duration,
+            query: sourceLabel,
+            thumbnailUrl: getThumbnailUrl(video) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+            thumbnailCacheUrl: `/api/thumbnails/${profileId}/${id}`,
+            publishedText: getPublishedText(video),
+            publishedAt: getPublishedAt(video),
+            viewCount: getViewCount(video),
+            channelKey: normalizeChannelKey(author),
+            parent_video_id: seedVideo.id,
+            parent_title: seedVideo.title,
+            parent_author: seedVideo.author,
+            recommendation_depth: (seedVideo.recommendation_depth || 0) + 1
+          });
+          seedVideoCount += 1;
+
+          if (recommendations.length >= maxVideos) {
+            return {
+              value: recommendations,
+              output: { recommendationVideos: recommendations.length }
+            };
+          }
+
+          if (seedVideoCount >= maxVideosPerSeed) {
+            break;
+          }
         }
       }
 

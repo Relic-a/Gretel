@@ -6,11 +6,11 @@
   },
   "expansion": {
     "initialFetchSize": 160,
-    "minDelayBetweenFetchesMs": 500,
-    "maxFetchCallsPerCycle": 4,
-    "cycleCooldownMs": 120000,
+    "minDelayBetweenFetchesMs": 100,
+    "maxFetchCallsPerCycle": 8,
+    "cycleCooldownMs": 30000,
     "minFreshVideos": 24,
-    "minFreshRatio": 0.25,
+    "minFreshRatio": 0.15,
     "minExpansionYield": 1
   },
   "transcription": {
@@ -20,16 +20,16 @@
   "feed": {
     "maxQueries": 5,
     "maxVideos": 48,
-    "poolSizeCap": 240,
+    "poolSizeCap": 400,
     "subscriptionRefreshMinutes": 45,
-    "recommendationSeeds": 4,
+    "recommendationSeeds": 6,
     "minVideosPerQuery": 3,
     "minVideosPerChannel": 3,
-    "similarityThreshold": 0.55,
+    "similarityThreshold": 0.38,
     "coldStartInteractionThreshold": 8,
-    "expansionSeedCount": 4,
+    "expansionSeedCount": 6,
     "minRelatedVideosPerSeed": 1,
-    "maxRelatedVideosPerSeed": 12,
+    "maxRelatedVideosPerSeed": 20,
     "subscriptionFastLanePerSession": 2,
     "coldStartParentEngagementWeight": 0.05
   },
@@ -53,7 +53,7 @@
     "openRouterAppNameEnv": "OPENROUTER_APP_NAME",
     "model": "qwen/qwen3-embedding-8b",
     "dimensions": 4096,
-    "batchSize": 16,
+    "batchSize": 32,
     "requestTimeoutMs": 30000,
     "mockSeed": 20260503
   },
