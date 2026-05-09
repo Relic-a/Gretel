@@ -43,3 +43,4 @@ pnpm-debug.log*
 
 # app/design scratch
 gretel_design/
+.cache

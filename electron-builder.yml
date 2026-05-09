@@ -34,10 +34,8 @@ linux:
   maintainer: Ezana <ezana@example.com>
   icon: build/icon.png
   artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
-  desktop:
-    Name: Gretel
-    Comment: Curate your YouTube feed
-    Categories: AudioVideo;Network;
+  synopsis: Curate your YouTube feed
+  description: Curate your YouTube feed
 deb:
   depends:
     - libgtk-3-0
@@ -55,7 +53,6 @@ win:
     - portable
   icon: build/icon.ico
   artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
-  publisher: Ezana
 nsis:
   oneClick: false
   perMachine: false
