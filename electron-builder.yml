@@ -24,6 +24,7 @@ electronDownload:
   cache: .cache/electron
 asar: true
 asarUnpack:
+  - ".next/standalone/**"
   - "**/*.node"
   - "**/better-sqlite3/**/*.node"
 linux:

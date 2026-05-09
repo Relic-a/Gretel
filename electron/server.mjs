@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(__dirname, "..");
+const appRoot = projectRoot.endsWith(".asar") ? projectRoot.replace(/\.asar$/, ".asar.unpacked") : projectRoot;
 const defaultPort = Number.parseInt(process.env.PORT || "3000", 10);
 
 export async function ensureAppServer() {
@@ -14,15 +15,14 @@ export async function ensureAppServer() {
     return { port: defaultPort, child: null };
   }
 
-  const serverEntry = path.join(projectRoot, ".next", "standalone", "server.js");
+  const serverEntry = path.join(appRoot, ".next", "standalone", "server.js");
   await access(serverEntry);
 
-  const nodeBinary = process.versions.electron ? "node" : process.execPath;
-
-  const child = spawn(nodeBinary, [serverEntry], {
-    cwd: projectRoot,
+  const child = spawn(process.execPath, [serverEntry], {
+    cwd: appRoot,
     env: {
       ...process.env,
+      ELECTRON_RUN_AS_NODE: "1",
       NODE_ENV: "production",
       PORT: String(defaultPort),
       HOSTNAME: "127.0.0.1"
