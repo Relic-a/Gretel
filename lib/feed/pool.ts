@@ -86,8 +86,10 @@ export function selectExpansionSeeds(input: {
   videos: FeedVideo[];
   interactions: Map<string, VideoInteraction>;
   config: GretelConfig;
+  seedCount?: number;
 }) {
   const isColdStart = input.interactions.size < input.config.feed.coldStartInteractionThreshold;
+  const count = input.seedCount ?? input.config.feed.expansionSeedCount;
 
   return [...input.videos]
     .sort((left, right) => {
@@ -97,7 +99,7 @@ export function selectExpansionSeeds(input: {
 
       return (right.engagementScore || 0) - (left.engagementScore || 0);
     })
-    .slice(0, input.config.feed.expansionSeedCount);
+    .slice(0, count);
 }
 
 export function relatedBudgetForSeed(

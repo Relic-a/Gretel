@@ -189,6 +189,18 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
         1,
         1000
       ),
+      initialExpansionCycles: integer(
+        expansion.initialExpansionCycles,
+        defaults.expansion.initialExpansionCycles,
+        0,
+        20
+      ),
+      initialExpansionSeedCount: integer(
+        expansion.initialExpansionSeedCount,
+        defaults.expansion.initialExpansionSeedCount,
+        1,
+        100
+      ),
       minDelayBetweenFetchesMs: integer(
         expansion.minDelayBetweenFetchesMs,
         defaults.expansion.minDelayBetweenFetchesMs,
@@ -221,6 +233,12 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
         expansion.minExpansionYield,
         defaults.expansion.minExpansionYield,
         0,
+        1000
+      ),
+      maxVideosPerCycle: integer(
+        expansion.maxVideosPerCycle,
+        defaults.expansion.maxVideosPerCycle,
+        1,
         1000
       )
     },

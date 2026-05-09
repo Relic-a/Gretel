@@ -277,7 +277,35 @@ export async function createFeed(
     interactions: getVideoInteractions(profileId),
     config
   });
-  const expandedPool = false;
+  const expandedPool = await runInitialExpansionCycles(
+    profileId,
+    poolKey,
+    poolVideos,
+    observation,
+    options.expectedProfileUpdatedAt,
+    config
+  );
+
+  if (expandedPool) {
+    poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
+    recordScoringObservation(observation, profileId, poolVideos, "initial-after-expansion");
+    readyPreview = createCandidatePoolFeed({
+      rootVideos: poolVideos.filter((video) => video.sourceNodeId === "tagSearch"),
+      channelVideos: poolVideos.filter((video) => video.sourceNodeId === "channelVideos"),
+      relatedVideos: poolVideos.filter((video) => video.sourceNodeId === "relatedVideos"),
+      watchedVideoIds,
+      excludeVideoIds,
+      interactions: getVideoInteractions(profileId),
+      config
+    });
+    poolHealth = describePoolHealth({
+      videos: poolVideos,
+      watchedVideoIds,
+      excludeVideoIds,
+      interactions: getVideoInteractions(profileId),
+      config
+    });
+  }
 
   const prunedVideos = options.readOnlyPool
     ? []
@@ -633,13 +661,68 @@ function persistentChannelCandidates(profileId: string, videos: FeedVideo[]) {
   return videos.filter((video) => !fastLaneIds.has(video.id));
 }
 
+async function runInitialExpansionCycles(
+  profileId: string,
+  poolKey: string,
+  poolVideos: FeedVideo[],
+  observation: FeedObservation,
+  expectedProfileUpdatedAt: number | undefined,
+  config: ReturnType<typeof getGretelConfig>
+) {
+  const cycles = config.expansion.initialExpansionCycles;
+
+  if (cycles <= 0) {
+    return false;
+  }
+
+  let anyExpanded = false;
+  let currentPool = poolVideos;
+  const interactions = getVideoInteractions(profileId);
+  const seeds = selectExpansionSeeds({
+    videos: currentPool,
+    interactions,
+    config,
+    seedCount: config.expansion.initialExpansionSeedCount
+  });
+
+  if (seeds.length === 0) {
+    return false;
+  }
+
+  for (let cycle = 0; cycle < cycles; cycle += 1) {
+    const expanded = await expandPool(profileId, poolKey, currentPool, observation, expectedProfileUpdatedAt, {
+      bypassCooldown: true,
+      seedCount: config.expansion.initialExpansionSeedCount
+    });
+
+    if (!expanded) {
+      break;
+    }
+
+    anyExpanded = true;
+    currentPool = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
+    prunePool(profileId, poolKey, currentPool, config.feed.poolSizeCap);
+    currentPool = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
+  }
+
+  observation.operations.push({
+    name: "feed.phase2.initial_expansion_cycles",
+    durationMs: 0,
+    status: "ok",
+    input: { requestedCycles: cycles },
+    output: { expanded: anyExpanded, finalPoolVideos: currentPool.length }
+  });
+
+  return anyExpanded;
+}
+
 async function expandPool(
   profileId: string,
   poolKey: string,
   poolVideos: FeedVideo[],
   observation: FeedObservation,
   expectedProfileUpdatedAt?: number,
-  options: { bypassCooldown?: boolean } = {}
+  options: { bypassCooldown?: boolean; seedCount?: number } = {}
 ) {
   const config = getGretelConfig();
   const poolState = getFeedPoolState(profileId, poolKey);
@@ -662,7 +745,7 @@ async function expandPool(
   const interactions = getVideoInteractions(profileId);
   const centroid = getCentroid(profileId, poolKey)?.current || [];
   const scoredPool = poolVideos.map((video) => applyEngagement(video, interactions, config));
-  const seeds = selectExpansionSeeds({ videos: scoredPool, interactions, config });
+  const seeds = selectExpansionSeeds({ videos: scoredPool, interactions, config, seedCount: options.seedCount });
   let admittedVideos = 0;
 
   if (seeds.length === 0) {

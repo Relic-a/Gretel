@@ -6,12 +6,15 @@ export type GretelConfig = {
   };
   expansion: {
     initialFetchSize: number;
+    initialExpansionCycles: number;
+    initialExpansionSeedCount: number;
     minDelayBetweenFetchesMs: number;
     maxFetchCallsPerCycle: number;
     cycleCooldownMs: number;
     minFreshVideos: number;
     minFreshRatio: number;
     minExpansionYield: number;
+    maxVideosPerCycle: number;
   };
   transcription: {
     introductionPercentage: number;
@@ -72,13 +75,16 @@ export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
     warmSemanticWeight: 0.25
   },
   expansion: {
-    initialFetchSize: 160,
+    initialFetchSize: 240,
+    initialExpansionCycles: 3,
+    initialExpansionSeedCount: 6,
     minDelayBetweenFetchesMs: 500,
     maxFetchCallsPerCycle: 4,
     cycleCooldownMs: 120000,
     minFreshVideos: 24,
     minFreshRatio: 0.25,
-    minExpansionYield: 1
+    minExpansionYield: 1,
+    maxVideosPerCycle: 120
   },
   transcription: {
     introductionPercentage: 0.15,
@@ -87,7 +93,7 @@ export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
   feed: {
     maxQueries: 5,
     maxVideos: 48,
-    poolSizeCap: 240,
+    poolSizeCap: 400,
     subscriptionRefreshMinutes: 45,
     recommendationSeeds: 4,
     minVideosPerQuery: 3,

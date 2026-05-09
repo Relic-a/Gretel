@@ -66,7 +66,7 @@ async function recommendVideosFromLinks(
     async () => {
       const youtube = await getYoutubeClient(profileId);
       const config = getGretelConfig();
-      const maxVideos = config.feed.maxVideos;
+      const maxVideos = config.expansion.maxVideosPerCycle;
       const seen = new Set<string>();
       const recommendations: FeedVideo[] = [];
       const fetchConcurrency = 3;
