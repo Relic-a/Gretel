@@ -906,7 +906,6 @@ export default function Home() {
           feedOpen={Boolean(feed)}
           profiles={profiles}
           profileName={profileName}
-          suggestedTags={starterTagSuggestions}
           tags={newProfileTags}
           channels={newProfileChannels}
           tagDraft={tagDraft}

@@ -1,5 +1,6 @@
 type TagEditorProps = {
   label: string;
+  helperText?: string;
   values: string[];
   draft: string;
   setDraft: (value: string) => void;
@@ -12,6 +13,7 @@ export function TagEditor(props: TagEditorProps) {
   return (
     <label className="tag-editor">
       <span>{props.label}</span>
+      {props.helperText && <small className="tag-help">{props.helperText}</small>}
       <div className="tag-input">
         {props.values.map((value) => (
           <button type="button" key={value} onClick={() => props.removeValue(value)}>

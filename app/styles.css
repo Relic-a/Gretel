@@ -995,6 +995,13 @@ img.avatar {
   margin: -12px 0 8px;
 }
 
+.tag-help {
+  color: var(--color-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
 .profile-list {
   margin-bottom: 18px;
   padding: 12px;
