@@ -20,6 +20,7 @@ export async function ensureAppServer() {
   const child = spawn(process.execPath, [serverEntry], {
     cwd: projectRoot,
     env: {
+      ...process.env,
       NODE_ENV: "production",
       PORT: String(defaultPort),
       HOSTNAME: "127.0.0.1"

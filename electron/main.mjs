@@ -1,7 +1,12 @@
-import { app, BrowserWindow } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+// Set Ozone platform switches BEFORE importing electron's app module
+if (process.platform === "linux" && process.env.WAYLAND_DISPLAY) {
+  process.argv.push("--enable-features=UseOzonePlatform", "--ozone-platform=wayland");
+}
+
+import { app, BrowserWindow } from "electron";
 import { ensureAppServer, stopAppServer } from "./server.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
