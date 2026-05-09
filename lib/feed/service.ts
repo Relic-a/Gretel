@@ -26,6 +26,7 @@ import { recommendVideosFromSeeds } from "./recommendations";
 import type { ChannelSort, FeedObservation, FeedVideo } from "./types";
 import { fetchChannelVideos, searchVideos } from "./youtube";
 import {
+  beginProfileOperation,
   getProfile,
   getVideoImpressionCounts,
   getVideoInteractions,
@@ -67,7 +68,9 @@ type FeedServingSession = {
 
 const feedServingSessions = getGlobalServingSessions();
 const feedServingSessionTtlMs = 1000 * 60 * 60 * 6;
+const maxFeedServingSessions = 100;
 const preemptiveExpansionInFlight = getGlobalPreemptiveExpansionState();
+const preemptiveExpansionTtlMs = 1000 * 60 * 10;
 const preemptiveExpansionFreshRatioThreshold = 0.4;
 
 export class FeedProfileStaleError extends Error {
@@ -85,6 +88,9 @@ export async function serveFeedPage(
   observation: FeedObservation,
   options: ServeFeedPageOptions = {}
 ) {
+  const endProfileOperation = beginProfileOperation(profileId);
+
+  try {
   const queries = createQueries(tags);
   const config = getGretelConfig();
   const poolKey = createFeedPoolKey({ tags: queries, channels, channelSort });
@@ -199,6 +205,9 @@ export async function serveFeedPage(
     sessionId: session.id,
     upNextByVideoId
   };
+  } finally {
+    endProfileOperation();
+  }
 }
 
 export function startFeedServingSession(
@@ -228,6 +237,9 @@ export async function createFeed(
   observation: FeedObservation,
   options: CreateFeedOptions = {}
 ) {
+  const endProfileOperation = beginProfileOperation(profileId);
+
+  try {
   ensureProfileCurrent(profileId, options.expectedProfileUpdatedAt);
 
   const queries = createQueries(tags);
@@ -362,6 +374,9 @@ export async function createFeed(
     pool,
     upNextByVideoId
   };
+  } finally {
+    endProfileOperation();
+  }
 }
 
 export async function expandFeedPoolForImpressions(
@@ -372,6 +387,9 @@ export async function expandFeedPoolForImpressions(
   observation: FeedObservation,
   options: Pick<CreateFeedOptions, "expectedProfileUpdatedAt" | "watchedVideoIds"> = {}
 ) {
+  const endProfileOperation = beginProfileOperation(profileId);
+
+  try {
   ensureProfileCurrent(profileId, options.expectedProfileUpdatedAt);
 
   const queries = createQueries(tags);
@@ -430,6 +448,9 @@ export async function expandFeedPoolForImpressions(
   }
 
   return { expandedPool, poolKey, poolVideos: poolVideos.length };
+  } finally {
+    endProfileOperation();
+  }
 }
 
 function getGlobalServingSessions() {
@@ -448,11 +469,11 @@ function getGlobalServingSessions() {
 function getGlobalPreemptiveExpansionState() {
   const globalKey = "__gretelPreemptiveExpansionInFlight";
   const globalScope = globalThis as typeof globalThis & {
-    [globalKey]?: Set<string>;
+    [globalKey]?: Map<string, number>;
   };
 
   if (!globalScope[globalKey]) {
-    globalScope[globalKey] = new Set<string>();
+    globalScope[globalKey] = new Map<string, number>();
   }
 
   return globalScope[globalKey];
@@ -496,6 +517,18 @@ function pruneServingSessions() {
     if (session.updatedAt < cutoff) {
       feedServingSessions.delete(sessionId);
     }
+  }
+
+  while (feedServingSessions.size > maxFeedServingSessions) {
+    const oldest = [...feedServingSessions.entries()].sort(
+      (left, right) => left[1].updatedAt - right[1].updatedAt
+    )[0]?.[0];
+
+    if (!oldest) {
+      break;
+    }
+
+    feedServingSessions.delete(oldest);
   }
 }
 
@@ -697,17 +730,20 @@ function schedulePreemptiveExpansion(
   poolKey: string
 ) {
   const stateKey = `${profileId}:${poolKey}`;
+  prunePreemptiveExpansionState();
 
   if (preemptiveExpansionInFlight.has(stateKey)) {
     return;
   }
 
-  preemptiveExpansionInFlight.add(stateKey);
+  preemptiveExpansionInFlight.set(stateKey, Date.now());
 
   void (async () => {
     const observation = createFeedObservation();
+    let endProfileOperation: (() => void) | undefined;
 
     try {
+      endProfileOperation = beginProfileOperation(profileId);
       const currentPoolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
       await expandPool(profileId, poolKey, currentPoolVideos, observation, undefined, {
         bypassCooldown: true
@@ -731,9 +767,20 @@ function schedulePreemptiveExpansion(
         errorMessage: expansionError instanceof Error ? expansionError.message : String(expansionError)
       });
     } finally {
+      endProfileOperation?.();
       preemptiveExpansionInFlight.delete(stateKey);
     }
   })();
+}
+
+function prunePreemptiveExpansionState() {
+  const cutoff = Date.now() - preemptiveExpansionTtlMs;
+
+  for (const [stateKey, startedAt] of preemptiveExpansionInFlight) {
+    if (startedAt < cutoff) {
+      preemptiveExpansionInFlight.delete(stateKey);
+    }
+  }
 }
 
 async function getSubscriptionFastLaneVideos(

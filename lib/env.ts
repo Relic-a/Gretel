@@ -27,10 +27,6 @@ export function loadDotEnvFile() {
 
       const key = match[1];
 
-      if (process.env[key] !== undefined) {
-        continue;
-      }
-
       const rawValue = match[2] || "";
       process.env[key] = parseEnvValue(rawValue);
     }

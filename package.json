@@ -13,14 +13,17 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "better-sqlite3": "^12.9.0",
     "electron": "^42.0.0",
     "lucide-react": "^1.14.0",
     "next": "latest",
+    "pino": "^10.3.1",
     "react": "latest",
     "react-dom": "latest",
     "youtubei.js": "latest"
   },
   "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",

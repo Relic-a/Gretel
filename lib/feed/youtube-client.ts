@@ -4,6 +4,7 @@ import { Innertube, UniversalCache } from "youtubei.js";
 import { getGretelConfig } from "./config";
 
 const youtubeClients = new Map<string, Promise<Innertube>>();
+const maxCachedClients = 10;
 
 export function getYoutubeClient(profileId: string) {
   if (!profileId) {
@@ -16,6 +17,8 @@ export function getYoutubeClient(profileId: string) {
   const existingClient = youtubeClients.get(cacheKey);
 
   if (existingClient) {
+    youtubeClients.delete(cacheKey);
+    youtubeClients.set(cacheKey, existingClient);
     return existingClient;
   }
 
@@ -31,6 +34,16 @@ export function getYoutubeClient(profileId: string) {
     enable_session_cache: true,
     lang: language
   });
+
+  while (youtubeClients.size >= maxCachedClients) {
+    const oldestKey = youtubeClients.keys().next().value as string | undefined;
+
+    if (!oldestKey) {
+      break;
+    }
+
+    youtubeClients.delete(oldestKey);
+  }
 
   youtubeClients.set(cacheKey, client);
   return client;

@@ -281,9 +281,21 @@ export function prunePool(profileId: string, poolKey: string, scoredVideos: Feed
   }
 
   const sorted = [...scoredVideos].sort(
-    (left, right) =>
-      (left.engagementScore || 0) - (right.engagementScore || 0) ||
-      (left.similarityScore || 0) - (right.similarityScore || 0)
+    (left, right) => {
+      const engagementDelta = (left.engagementScore || 0) - (right.engagementScore || 0);
+
+      if (engagementDelta !== 0) {
+        return engagementDelta;
+      }
+
+      const similarityDelta = (left.similarityScore || 0) - (right.similarityScore || 0);
+
+      if (similarityDelta !== 0) {
+        return similarityDelta;
+      }
+
+      return left.id.localeCompare(right.id);
+    }
   );
   const statement = getDatabase().prepare(
     "DELETE FROM feed_pool_nodes WHERE profile_id = ? AND pool_key = ? AND video_id = ?"

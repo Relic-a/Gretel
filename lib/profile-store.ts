@@ -1,7 +1,8 @@
 import { mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
-import { DatabaseSync } from "node:sqlite";
+import Database from "better-sqlite3";
 
+import { startCacheCleanup } from "./cache-cleanup";
 import { getGretelConfig } from "./feed/config";
 import { hydrateChannelAvatar } from "./feed/channel-avatar-cache";
 import type { VideoInteraction } from "./feed/engagement";
@@ -24,16 +25,22 @@ export type WatchEventInput = {
 
 const dataDir = path.join(process.cwd(), "data");
 const dbPath = path.join(dataDir, "gretel.sqlite");
-let db: DatabaseSync | null = null;
+let db: Database.Database | null = null;
 let likedVideoTableReady = false;
 let videoImpressionsTableReady = false;
+let videoInteractionTableReady = false;
+const activeProfileOperations = new Map<string, number>();
+const destructiveProfileOperations = new Set<string>();
 
 export function getDatabase() {
   if (!db) {
     mkdirSync(dataDir, { recursive: true });
-    db = new DatabaseSync(dbPath);
+    db = new Database(dbPath);
+    db.pragma("busy_timeout = 5000");
+    db.pragma("foreign_keys = ON");
     db.exec(`
       PRAGMA journal_mode = WAL;
+      PRAGMA wal_autocheckpoint = 1000;
 
       CREATE TABLE IF NOT EXISTS profiles (
         id TEXT PRIMARY KEY,
@@ -123,7 +130,19 @@ export function getDatabase() {
         PRIMARY KEY (profile_id, video_id),
         FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS video_interactions (
+        profile_id TEXT NOT NULL,
+        video_id TEXT NOT NULL,
+        clicked_at INTEGER,
+        ignore_count INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (profile_id, video_id),
+        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+      );
     `);
+    db.pragma("wal_checkpoint(PASSIVE)");
+    startCacheCleanup();
   }
 
   return db;
@@ -162,32 +181,46 @@ export function createProfile(name: string) {
 }
 
 export function deleteProfile(profileId: string) {
-  deleteFeedAlgorithmRows(profileId);
-  ensureVideoImpressionsTable();
-  getDatabase().prepare("DELETE FROM video_impressions WHERE profile_id = ?").run(profileId);
-  getDatabase().prepare("DELETE FROM profiles WHERE id = ?").run(profileId);
-  resetYoutubeProfileCache(profileId);
-  return listProfiles()[0] || null;
+  return runDestructiveProfileOperation(profileId, () => {
+    const database = getDatabase();
+
+    ensureVideoImpressionsTable();
+    ensureVideoInteractionTable();
+    runTransaction(() => {
+      deleteFeedAlgorithmRows(profileId);
+      database.prepare("DELETE FROM video_interactions WHERE profile_id = ?").run(profileId);
+      database.prepare("DELETE FROM video_impressions WHERE profile_id = ?").run(profileId);
+      database.prepare("DELETE FROM profiles WHERE id = ?").run(profileId);
+    });
+    resetYoutubeProfileCache(profileId);
+    database.pragma("wal_checkpoint(PASSIVE)");
+    return listProfiles()[0] || null;
+  });
 }
 
 export function resetProfile(profileId: string) {
-  ensureLikedVideoTable();
-  ensureVideoImpressionsTable();
-  const database = getDatabase();
+  runDestructiveProfileOperation(profileId, () => {
+    ensureLikedVideoTable();
+    ensureVideoImpressionsTable();
+    ensureVideoInteractionTable();
+    const database = getDatabase();
 
-  runTransaction(() => {
-    database.prepare("DELETE FROM watched_videos WHERE profile_id = ?").run(profileId);
-    database.prepare("DELETE FROM saved_videos WHERE profile_id = ?").run(profileId);
-    database.prepare("DELETE FROM liked_videos WHERE profile_id = ?").run(profileId);
-    database.prepare("DELETE FROM video_impressions WHERE profile_id = ?").run(profileId);
-    deleteFeedAlgorithmRows(profileId);
-    database.prepare("DELETE FROM feed_pool_state WHERE profile_id = ?").run(profileId);
-    database.prepare("DELETE FROM feed_pool_nodes WHERE profile_id = ?").run(profileId);
-    database.prepare("DELETE FROM feed_visited_videos WHERE profile_id = ?").run(profileId);
-    database.prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(Date.now(), profileId);
+    runTransaction(() => {
+      database.prepare("DELETE FROM watched_videos WHERE profile_id = ?").run(profileId);
+      database.prepare("DELETE FROM saved_videos WHERE profile_id = ?").run(profileId);
+      database.prepare("DELETE FROM liked_videos WHERE profile_id = ?").run(profileId);
+      database.prepare("DELETE FROM video_interactions WHERE profile_id = ?").run(profileId);
+      database.prepare("DELETE FROM video_impressions WHERE profile_id = ?").run(profileId);
+      deleteFeedAlgorithmRows(profileId);
+      database.prepare("DELETE FROM feed_pool_state WHERE profile_id = ?").run(profileId);
+      database.prepare("DELETE FROM feed_pool_nodes WHERE profile_id = ?").run(profileId);
+      database.prepare("DELETE FROM feed_visited_videos WHERE profile_id = ?").run(profileId);
+      database.prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(Date.now(), profileId);
+    });
+
+    resetYoutubeProfileCache(profileId);
+    database.pragma("wal_checkpoint(PASSIVE)");
   });
-
-  resetYoutubeProfileCache(profileId);
 }
 
 function deleteFeedAlgorithmRows(profileId: string) {
@@ -212,6 +245,7 @@ function deleteFeedAlgorithmRows(profileId: string) {
 }
 
 export function saveWatchedVideo(input: WatchEventInput) {
+  ensureProfileWritable(input.profileId);
   const watchedRatio = input.durationSeconds > 0 ? input.watchedSeconds / input.durationSeconds : 0;
   const config = getGretelConfig();
 
@@ -267,6 +301,7 @@ export function getWatchedVideoIds(profileId: string) {
 }
 
 export function recordVideoImpressions(profileId: string, videoIds: string[]) {
+  ensureProfileWritable(profileId);
   ensureVideoImpressionsTable();
 
   if (!getProfile(profileId)) {
@@ -310,6 +345,7 @@ export function getVideoImpressionCounts(profileId: string) {
 
 export function getVideoInteractions(profileId: string) {
   ensureLikedVideoTable();
+  ensureVideoInteractionTable();
   const watchedRows = getDatabase()
     .prepare(
       `SELECT video_id, watched_ratio
@@ -320,6 +356,9 @@ export function getVideoInteractions(profileId: string) {
   const likedRows = getDatabase()
     .prepare("SELECT video_id FROM liked_videos WHERE profile_id = ?")
     .all(profileId) as Array<{ video_id: string }>;
+  const extraRows = getDatabase()
+    .prepare("SELECT video_id, clicked_at, ignore_count FROM video_interactions WHERE profile_id = ?")
+    .all(profileId) as Array<{ video_id: string; clicked_at: number | null; ignore_count: number }>;
   const interactions = new Map<string, VideoInteraction>();
 
   for (const row of watchedRows) {
@@ -340,6 +379,17 @@ export function getVideoInteractions(profileId: string) {
       liked: true,
       clicked: existing?.clicked || false,
       ignoreCount: existing?.ignoreCount || 0
+    });
+  }
+
+  for (const row of extraRows) {
+    const existing = interactions.get(row.video_id);
+    interactions.set(row.video_id, {
+      videoId: row.video_id,
+      watchTimeRatio: existing?.watchTimeRatio || 0,
+      liked: existing?.liked || false,
+      clicked: Boolean(row.clicked_at),
+      ignoreCount: Math.max(0, Number(row.ignore_count) || 0)
     });
   }
 
@@ -396,6 +446,7 @@ export function getLikedVideoIds(profileId: string) {
 }
 
 export function saveVideo(profileId: string, video: FeedVideo) {
+  ensureProfileWritable(profileId);
   if (!getProfile(profileId)) {
     return false;
   }
@@ -416,6 +467,7 @@ export function saveVideo(profileId: string, video: FeedVideo) {
 }
 
 export function likeVideo(profileId: string, video: FeedVideo) {
+  ensureProfileWritable(profileId);
   ensureLikedVideoTable();
 
   if (!getProfile(profileId)) {
@@ -438,6 +490,7 @@ export function likeVideo(profileId: string, video: FeedVideo) {
 }
 
 export function unlikeVideo(profileId: string, videoId: string) {
+  ensureProfileWritable(profileId);
   ensureLikedVideoTable();
   getDatabase()
     .prepare("DELETE FROM liked_videos WHERE profile_id = ? AND video_id = ?")
@@ -446,10 +499,38 @@ export function unlikeVideo(profileId: string, videoId: string) {
 }
 
 export function unsaveVideo(profileId: string, videoId: string) {
+  ensureProfileWritable(profileId);
   getDatabase()
     .prepare("DELETE FROM saved_videos WHERE profile_id = ? AND video_id = ?")
     .run(profileId, videoId);
   getDatabase().prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(Date.now(), profileId);
+}
+
+export function recordVideoInteraction(profileId: string, videoId: string, interaction: { clicked?: boolean; ignoreCount?: number }) {
+  ensureProfileWritable(profileId);
+  ensureVideoInteractionTable();
+
+  if (!getProfile(profileId) || !videoId.trim()) {
+    return false;
+  }
+
+  const now = Date.now();
+  const clickedAt = interaction.clicked ? now : null;
+  const ignoreCount = Math.max(0, Math.floor(interaction.ignoreCount || 0));
+
+  getDatabase()
+    .prepare(
+      `INSERT INTO video_interactions (profile_id, video_id, clicked_at, ignore_count, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(profile_id, video_id) DO UPDATE SET
+         clicked_at = COALESCE(excluded.clicked_at, video_interactions.clicked_at),
+         ignore_count = MAX(video_interactions.ignore_count, excluded.ignore_count),
+         updated_at = excluded.updated_at`
+    )
+    .run(profileId, videoId, clickedAt, ignoreCount, now);
+
+  getDatabase().prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(now, profileId);
+  return true;
 }
 
 function ensureLikedVideoTable() {
@@ -489,17 +570,68 @@ function ensureVideoImpressionsTable() {
   videoImpressionsTableReady = true;
 }
 
+function ensureVideoInteractionTable() {
+  if (videoInteractionTableReady) {
+    return;
+  }
+
+  getDatabase().exec(`
+    CREATE TABLE IF NOT EXISTS video_interactions (
+      profile_id TEXT NOT NULL,
+      video_id TEXT NOT NULL,
+      clicked_at INTEGER,
+      ignore_count INTEGER NOT NULL DEFAULT 0,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (profile_id, video_id),
+      FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+    );
+  `);
+  videoInteractionTableReady = true;
+}
+
 function runTransaction(work: () => void) {
   const database = getDatabase();
 
-  database.exec("BEGIN");
+  database.transaction(work)();
+}
+
+export function beginProfileOperation(profileId: string) {
+  ensureProfileWritable(profileId);
+  activeProfileOperations.set(profileId, (activeProfileOperations.get(profileId) || 0) + 1);
+
+  return () => {
+    const count = (activeProfileOperations.get(profileId) || 1) - 1;
+
+    if (count <= 0) {
+      activeProfileOperations.delete(profileId);
+      return;
+    }
+
+    activeProfileOperations.set(profileId, count);
+  };
+}
+
+export function ensureProfileWritable(profileId: string) {
+  if (destructiveProfileOperations.has(profileId)) {
+    throw new Error("Profile is currently being reset or deleted.");
+  }
+}
+
+function runDestructiveProfileOperation<T>(profileId: string, work: () => T) {
+  if (!profileId) {
+    return work();
+  }
+
+  if (destructiveProfileOperations.has(profileId)) {
+    throw new Error("Profile is currently busy.");
+  }
+
+  destructiveProfileOperations.add(profileId);
 
   try {
-    work();
-    database.exec("COMMIT");
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
+    return work();
+  } finally {
+    destructiveProfileOperations.delete(profileId);
   }
 }
 

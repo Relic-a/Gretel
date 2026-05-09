@@ -3,7 +3,7 @@ import { getUserSettings, setUserSettings } from "../../../lib/settings";
 export const runtime = "nodejs";
 
 export async function GET() {
-  return Response.json(getUserSettings());
+  return Response.json(toClientSettings(getUserSettings()));
 }
 
 export async function POST(request: Request) {
@@ -14,5 +14,12 @@ export async function POST(request: Request) {
     openRouterModel: typeof body.openRouterModel === "string" ? body.openRouterModel : ""
   });
 
-  return Response.json(getUserSettings());
+  return Response.json(toClientSettings(getUserSettings()));
+}
+
+function toClientSettings(settings: ReturnType<typeof getUserSettings>) {
+  return {
+    openRouterApiKey: settings.openRouterApiKey ? "set" : "",
+    openRouterModel: settings.openRouterModel || ""
+  };
 }

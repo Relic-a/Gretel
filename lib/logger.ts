@@ -1,6 +1,7 @@
-import { appendFile } from "node:fs/promises";
+import { rename, stat, appendFile } from "node:fs/promises";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
+import pino from "pino";
 
 type LogFields = Record<string, unknown>;
 
@@ -8,9 +9,12 @@ type LogLevel = "info" | "warn" | "error";
 type LoggerState = {
   logFileWriteQueue: Promise<void>;
   preparedLogDirs: Set<string>;
+  logger: pino.Logger;
 };
 
 const LOG_FILE_ENV_KEY = "GRETEL_LOG_FILE";
+const maxLogFileBytes = 5 * 1024 * 1024;
+const rotatedLogFiles = 3;
 const DEFAULT_LOG_FILE = path.join(
   /*turbopackIgnore: true*/ process.cwd(),
   "logs",
@@ -55,14 +59,11 @@ export function flushLogFileWrites() {
 
 function writeLog(level: LogLevel, event: string, fields: LogFields) {
   const at = new Date().toISOString();
-  const line = JSON.stringify({
-    level,
-    event,
-    at,
-    ...fields
-  });
+  const lineFields = { event, at, ...fields };
+  const line = JSON.stringify({ level, ...lineFields });
 
   writeLogFile(line, at);
+  loggerState.logger[level](lineFields);
 
   if (level === "error") {
     console.error(line);
@@ -84,13 +85,16 @@ function writeLogFile(line: string, at: string) {
     try {
       const dir = path.dirname(logFilePath);
 
-      if (!loggerState.preparedLogDirs.has(dir)) {
-        await mkdir(/*turbopackIgnore: true*/ dir, { recursive: true });
-        loggerState.preparedLogDirs.add(dir);
-      }
+      await mkdir(/*turbopackIgnore: true*/ dir, { recursive: true });
+      loggerState.preparedLogDirs.add(dir);
 
+      await rotateLogFile(logFilePath);
       await appendFile(/*turbopackIgnore: true*/ logFilePath, `${line}\n`, "utf8");
     } catch (error) {
+      if (isMissingPathError(error)) {
+        return;
+      }
+
       console.error(JSON.stringify({
         level: "error",
         event: "logger.file_write_failed",
@@ -102,6 +106,35 @@ function writeLogFile(line: string, at: string) {
   });
 }
 
+function isMissingPathError(error: unknown) {
+  return typeof error === "object" && error !== null && "code" in error && error.code === "ENOENT";
+}
+
+async function rotateLogFile(logFilePath: string) {
+  try {
+    const current = await stat(/*turbopackIgnore: true*/ logFilePath);
+
+    if (current.size < maxLogFileBytes) {
+      return;
+    }
+  } catch {
+    return;
+  }
+
+  for (let index = rotatedLogFiles - 1; index >= 1; index -= 1) {
+    try {
+      await rename(
+        /*turbopackIgnore: true*/ `${logFilePath}.${index}`,
+        /*turbopackIgnore: true*/ `${logFilePath}.${index + 1}`
+      );
+    } catch {}
+  }
+
+  try {
+    await rename(/*turbopackIgnore: true*/ logFilePath, /*turbopackIgnore: true*/ `${logFilePath}.1`);
+  } catch {}
+}
+
 function getLoggerState() {
   const globalState = globalThis as typeof globalThis & {
     __gretelLoggerState?: LoggerState;
@@ -110,7 +143,12 @@ function getLoggerState() {
   if (!globalState.__gretelLoggerState) {
     globalState.__gretelLoggerState = {
       logFileWriteQueue: Promise.resolve(),
-      preparedLogDirs: new Set<string>()
+      preparedLogDirs: new Set<string>(),
+      logger: pino({
+        base: undefined,
+        enabled: false,
+        timestamp: false
+      })
     };
   }
 
