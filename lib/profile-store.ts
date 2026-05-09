@@ -8,6 +8,7 @@ import { hydrateChannelAvatar } from "./feed/channel-avatar-cache";
 import type { VideoInteraction } from "./feed/engagement";
 import type { FeedNodeId, FeedVideo } from "./feed/types";
 import { forgetYoutubeClient } from "./feed/youtube-client";
+import { getDataDir } from "./data-dir";
 
 export type GretelProfile = {
   id: string;
@@ -23,7 +24,7 @@ export type WatchEventInput = {
   durationSeconds: number;
 };
 
-const dataDir = path.join(process.cwd(), "data");
+const dataDir = getDataDir();
 const dbPath = path.join(dataDir, "gretel.sqlite");
 let db: Database.Database | null = null;
 let likedVideoTableReady = false;

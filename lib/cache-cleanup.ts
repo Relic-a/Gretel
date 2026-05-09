@@ -1,7 +1,9 @@
 import { readdirSync, rmSync, statSync } from "node:fs";
 import path from "node:path";
 
-const dataDir = path.join(process.cwd(), "data");
+import { getDataDir } from "./data-dir";
+
+const dataDir = getDataDir();
 const cleanupIntervalMs = 1000 * 60 * 60 * 24;
 const maxCacheAgeMs = cleanupIntervalMs * 30;
 

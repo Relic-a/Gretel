@@ -37,6 +37,8 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   try {
+    process.env.GRETEL_DATA_DIR ||= path.join(app.getPath("userData"), "data");
+
     if (!process.env.GRETEL_APP_URL) {
       const server = await ensureAppServer();
       serverChild = server.child;

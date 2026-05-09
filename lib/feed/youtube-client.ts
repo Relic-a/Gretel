@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import { Innertube, UniversalCache } from "youtubei.js";
+import { getDataDir } from "../data-dir";
 import { getGretelConfig } from "./config";
 
 const youtubeClients = new Map<string, Promise<Innertube>>();
@@ -23,8 +24,7 @@ export function getYoutubeClient(profileId: string) {
   }
 
   const cacheDirectory = path.join(
-    process.cwd(),
-    "data",
+    getDataDir(),
     "youtube-sessions",
     profileKey,
     language.replace(/[^a-z0-9._-]/gi, "_")

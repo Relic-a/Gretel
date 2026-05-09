@@ -1,12 +1,14 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { getDataDir } from "./data-dir";
+
 export type UserSettings = {
   openRouterApiKey?: string;
   openRouterModel?: string;
 };
 
-const dataDir = path.join(/*turbopackIgnore: true*/ process.cwd(), "data");
+const dataDir = getDataDir();
 const settingsPath = path.join(dataDir, "user-settings.json");
 
 export function getUserSettings(): UserSettings {

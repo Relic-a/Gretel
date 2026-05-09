@@ -1,6 +1,8 @@
 import path from "node:path";
 
-const dataDir = path.join(process.cwd(), "data");
+import { getDataDir } from "../data-dir";
+
+const dataDir = getDataDir();
 const thumbnailDir = path.join(dataDir, "thumbnails");
 
 export function getCachedThumbnailPath(profileId: string, videoId: string) {
