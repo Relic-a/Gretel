@@ -8,6 +8,11 @@ export function loadDotEnvFile() {
     return;
   }
 
+  if (process.env.NODE_ENV === "production") {
+    envLoaded = true;
+    return;
+  }
+
   envLoaded = true;
   const envPath = path.join(/*turbopackIgnore: true*/ process.cwd(), ".env");
 

@@ -9,8 +9,16 @@ export async function GET() {
 export async function POST(request: Request) {
   const body = await request.json();
 
+  const current = getUserSettings();
+  const openRouterApiKey =
+    body.openRouterApiKey === "set"
+      ? current.openRouterApiKey || ""
+      : typeof body.openRouterApiKey === "string"
+      ? body.openRouterApiKey
+      : "";
+
   setUserSettings({
-    openRouterApiKey: typeof body.openRouterApiKey === "string" ? body.openRouterApiKey : "",
+    openRouterApiKey,
     openRouterModel: typeof body.openRouterModel === "string" ? body.openRouterModel : ""
   });
 

@@ -64,6 +64,7 @@ export default function Home() {
   );
   const activeProfile = profiles.find((profile) => profile.id === profileId);
   const needsProfile = booted && profiles.length === 0 && !feed;
+  const needsOpenRouterKey = settings.openRouterApiKey !== "set";
   const homeVideos = feed?.videos || [];
   const visibleVideos =
     section === "saved" ? savedVideos : section === "history" ? historyVideos : homeVideos;
@@ -419,10 +420,30 @@ export default function Home() {
     const createdTags = newProfileTags;
     const createdChannels = newProfileChannels;
 
+    if (needsOpenRouterKey && !settings.openRouterApiKey?.trim()) {
+      setError("Enter your OpenRouter API key before creating a profile.");
+      return;
+    }
+
     setError("");
     setLoading(true);
 
     try {
+      if (needsOpenRouterKey) {
+        const settingsResponse = await fetch("/api/settings", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(settings)
+        });
+        const savedSettings = await settingsResponse.json();
+
+        if (!settingsResponse.ok) {
+          throw new Error(savedSettings.error || "Could not save settings.");
+        }
+
+        setSettings(savedSettings);
+      }
+
       const response = await fetch("/api/profiles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -878,8 +899,11 @@ export default function Home() {
           channelResults={channelResults}
           loading={loading}
           error={error}
+          needsOpenRouterKey={needsOpenRouterKey}
+          settings={settings}
           onClose={() => setManageProfiles(false)}
           onSubmit={createProfileAndBuild}
+          onSettingsChange={setSettings}
           onProfileNameChange={setProfileName}
           onTagDraftChange={setTagDraft}
           onChannelDraftChange={setChannelDraft}

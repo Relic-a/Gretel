@@ -1,6 +1,6 @@
 import { FormEvent } from "react";
 
-import type { ChannelResult, Profile } from "../types";
+import type { ChannelResult, Profile, UserSettings } from "../types";
 import { TagEditor } from "./TagEditor";
 
 type ProfileModalProps = {
@@ -15,8 +15,11 @@ type ProfileModalProps = {
   channelResults: ChannelResult[];
   loading: boolean;
   error: string;
+  needsOpenRouterKey: boolean;
+  settings: UserSettings;
   onClose: () => void;
   onSubmit: (event: FormEvent) => void;
+  onSettingsChange: (settings: UserSettings) => void;
   onProfileNameChange: (value: string) => void;
   onTagDraftChange: (value: string) => void;
   onChannelDraftChange: (value: string) => void;
@@ -66,6 +69,46 @@ export function ProfileModal(props: ProfileModalProps) {
               placeholder="Profile name"
             />
           </label>
+
+          {props.needsOpenRouterKey && (
+            <>
+              <label>
+                <span>OpenRouter API key</span>
+                <small>Required before Gretel can build your first feed.</small>
+                <input
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={props.settings.openRouterApiKey || ""}
+                  onChange={(event) =>
+                    props.onSettingsChange({
+                      ...props.settings,
+                      openRouterApiKey: event.target.value
+                    })
+                  }
+                  placeholder="sk-or-v1-..."
+                />
+              </label>
+
+              <label>
+                <span>OpenRouter model</span>
+                <small>Optional. Leave blank to use the default embedding model.</small>
+                <input
+                  type="text"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={props.settings.openRouterModel || ""}
+                  onChange={(event) =>
+                    props.onSettingsChange({
+                      ...props.settings,
+                      openRouterModel: event.target.value
+                    })
+                  }
+                  placeholder="qwen/qwen3-embedding-8b"
+                />
+              </label>
+            </>
+          )}
 
           <TagEditor
             label="Topics"

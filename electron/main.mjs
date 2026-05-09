@@ -6,7 +6,7 @@ if (process.platform === "linux" && process.env.WAYLAND_DISPLAY) {
   process.argv.push("--enable-features=UseOzonePlatform", "--ozone-platform=wayland");
 }
 
-import { app, BrowserWindow } from "electron";
+import { app, BrowserWindow, Menu } from "electron";
 import { ensureAppServer, stopAppServer } from "./server.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -37,6 +37,7 @@ function createWindow() {
 
 app.whenReady().then(async () => {
   try {
+    Menu.setApplicationMenu(null);
     process.env.GRETEL_DATA_DIR ||= path.join(app.getPath("userData"), "data");
 
     if (!process.env.GRETEL_APP_URL) {

@@ -97,6 +97,12 @@ async function build() {
     force: true,
   });
 
+  console.log("\n🧹  Removing local env files from standalone output...\n");
+  await rm(path.join(standaloneDir, ".env"), { force: true });
+  await rm(path.join(standaloneDir, ".env.local"), { force: true });
+  await rm(path.join(standaloneDir, ".env.production"), { force: true });
+  await rm(path.join(standaloneDir, ".env.production.local"), { force: true });
+
   await prepareStandaloneNativeModules();
 
   // Make the Electron source available where the packaged app expects it.

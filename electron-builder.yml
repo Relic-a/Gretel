@@ -7,6 +7,10 @@ directories:
 files:
   - "electron/**"
   - ".next/standalone/**"
+  - "!.next/standalone/.env"
+  - "!.next/standalone/.env.*"
+  - "!.next/standalone/**/.env"
+  - "!.next/standalone/**/.env.*"
   - ".next/static/**"
   - "config/**"
   - "!package.json"

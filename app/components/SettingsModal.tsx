@@ -34,14 +34,14 @@ export function SettingsModal(props: SettingsModalProps) {
               type="password"
               autoComplete="off"
               spellCheck={false}
-              value={props.settings.openRouterApiKey || ""}
+              value={props.settings.openRouterApiKey === "set" ? "" : props.settings.openRouterApiKey || ""}
               onChange={(event) =>
                 props.onChange({
                   ...props.settings,
                   openRouterApiKey: event.target.value
                 })
               }
-              placeholder="sk-or-v1-..."
+              placeholder={props.settings.openRouterApiKey === "set" ? "API key already saved" : "sk-or-v1-..."}
             />
           </label>
 
