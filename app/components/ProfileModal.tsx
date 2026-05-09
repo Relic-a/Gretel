@@ -8,6 +8,7 @@ type ProfileModalProps = {
   feedOpen: boolean;
   profiles: Profile[];
   profileName: string;
+  suggestedTags: string[];
   tags: string[];
   channels: string[];
   tagDraft: string;
@@ -109,6 +110,17 @@ export function ProfileModal(props: ProfileModalProps) {
               </label>
             </>
           )}
+
+          <div className="tag-suggestions">
+            <span>Suggested topics</span>
+            <div className="tag-suggestion-row">
+              {props.suggestedTags.map((tag) => (
+                <button type="button" key={tag} onClick={() => props.onAddTag(tag)}>
+                  {tag}
+                </button>
+              ))}
+            </div>
+          </div>
 
           <TagEditor
             label="Topics"

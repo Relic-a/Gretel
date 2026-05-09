@@ -20,16 +20,22 @@ import type {
 const clientStateKey = "gretel.clientState.v2";
 const feedCachePrefix = "gretel.feedCache.v1";
 const activeVideoSessionKey = "gretel.activeVideo.v1";
-const starterTags = ["AI engineering", "TypeScript", "product design"];
+const starterTagSuggestions = ["AI engineering", "TypeScript", "product design"];
+
+type CachedFeed = FeedResponse & {
+  tags?: string[];
+  channels?: string[];
+  channelSort?: string;
+};
 type Section = "home" | "saved" | "history";
 
 export default function Home() {
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profileId, setProfileId] = useState("");
   const [profileName, setProfileName] = useState("");
-  const [tags, setTags] = useState<string[]>(starterTags);
+  const [tags, setTags] = useState<string[]>([]);
   const [channels, setChannels] = useState<string[]>([]);
-  const [newProfileTags, setNewProfileTags] = useState<string[]>(starterTags);
+  const [newProfileTags, setNewProfileTags] = useState<string[]>([]);
   const [newProfileChannels, setNewProfileChannels] = useState<string[]>([]);
   const [tagDraft, setTagDraft] = useState("");
   const [channelDraft, setChannelDraft] = useState("");
@@ -78,13 +84,20 @@ export default function Home() {
       const saved = readSavedState();
       const route = readRouteFromUrl();
       const stashedActiveVideo = readStashedActiveVideo(route.videoId);
-      const nextTags = saved?.tags?.length ? saved.tags : starterTags;
-      const nextChannels = saved?.channels || [];
       const [selectedProfileId] = await Promise.all([
         loadProfiles(saved?.profileId),
         loadPublicConfig(),
         loadSettings()
       ]);
+      const cachedFeed = selectedProfileId ? readCachedFeed(selectedProfileId) : null;
+      const nextTags = cachedFeed?.tags?.length
+        ? cachedFeed.tags
+        : saved?.tags?.length
+          ? saved.tags
+          : [];
+      const nextChannels = cachedFeed?.channels?.length
+        ? cachedFeed.channels
+        : saved?.channels || [];
 
       if (disposed) {
         return;
@@ -101,13 +114,11 @@ export default function Home() {
         pendingVideoIdRef.current = null;
       }
 
+      if (cachedFeed) {
+        setFeed(cachedFeed);
+      }
+
       if (selectedProfileId) {
-        const cachedFeed = readCachedFeed(selectedProfileId);
-
-        if (cachedFeed) {
-          setFeed(cachedFeed);
-        }
-
         await loadSavedVideos(selectedProfileId);
         await loadLikedVideos(selectedProfileId);
 
@@ -460,7 +471,7 @@ export default function Home() {
       setProfileName("");
       setTags(createdTags);
       setChannels(createdChannels);
-      setNewProfileTags(starterTags);
+      setNewProfileTags([]);
       setNewProfileChannels([]);
       setFeed(null);
       setActiveVideo(null);
@@ -807,7 +818,10 @@ export default function Home() {
           feedRequestIdRef.current += 1;
           setLoading(false);
           setProfileId(nextProfileId);
-          setFeed(readCachedFeed(nextProfileId));
+          const cachedFeed = readCachedFeed(nextProfileId);
+          setFeed(cachedFeed);
+          setTags(cachedFeed?.tags?.length ? cachedFeed.tags : []);
+          setChannels(cachedFeed?.channels?.length ? cachedFeed.channels : []);
           setActiveVideo(null);
           setSection("home");
           writeRoute("home");
@@ -892,6 +906,7 @@ export default function Home() {
           feedOpen={Boolean(feed)}
           profiles={profiles}
           profileName={profileName}
+          suggestedTags={starterTagSuggestions}
           tags={newProfileTags}
           channels={newProfileChannels}
           tagDraft={tagDraft}
@@ -952,6 +967,10 @@ function orderedSideVideos(
   );
 }
 
+function isStarterTag(tag: string) {
+  return starterTagSuggestions.some((starterTag) => normalize(starterTag) === normalize(tag));
+}
+
 function readSavedState() {
   try {
     const raw = window.localStorage.getItem(clientStateKey);
@@ -964,7 +983,9 @@ function readSavedState() {
 
     return {
       profileId: typeof parsed.profileId === "string" ? parsed.profileId : "",
-      tags: Array.isArray(parsed.tags) ? parsed.tags.filter((tag: unknown) => typeof tag === "string") : [],
+      tags: Array.isArray(parsed.tags)
+        ? parsed.tags.filter((tag: unknown) => typeof tag === "string" && !isStarterTag(tag))
+        : [],
       channels: Array.isArray(parsed.channels)
         ? parsed.channels.filter((channel: unknown) => typeof channel === "string")
         : []
@@ -994,8 +1015,12 @@ function readCachedFeed(profileId: string) {
 
     return {
       ...parsed,
+      tags: Array.isArray(parsed.tags) ? parsed.tags.filter((tag: unknown) => typeof tag === "string") : [],
+      channels: Array.isArray(parsed.channels)
+        ? parsed.channels.filter((channel: unknown) => typeof channel === "string")
+        : [],
       videos: parsed.videos.filter((video: unknown) => Boolean(video && typeof video === "object"))
-    } as FeedResponse;
+    } as CachedFeed;
   } catch {
     return null;
   }
