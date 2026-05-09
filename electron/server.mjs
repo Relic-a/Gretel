@@ -17,7 +17,9 @@ export async function ensureAppServer() {
   const serverEntry = path.join(projectRoot, ".next", "standalone", "server.js");
   await access(serverEntry);
 
-  const child = spawn(process.execPath, [serverEntry], {
+  const nodeBinary = process.versions.electron ? "node" : process.execPath;
+
+  const child = spawn(nodeBinary, [serverEntry], {
     cwd: projectRoot,
     env: {
       ...process.env,
