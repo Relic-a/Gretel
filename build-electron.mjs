@@ -9,7 +9,7 @@
  *   node build-electron.mjs --mac     # build macOS targets
  */
 import { spawn } from "node:child_process";
-import { cp, mkdir, rm, access } from "node:fs/promises";
+import { cp, mkdir, rm, access, readFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -43,6 +43,38 @@ function run(cmd, args = [], opts = {}) {
   });
 }
 
+async function getElectronVersion() {
+  const packageJson = JSON.parse(await readFile(path.join(projectRoot, "package.json"), "utf8"));
+  return packageJson.devDependencies.electron.replace(/^[^0-9]*/, "");
+}
+
+async function prepareStandaloneNativeModules() {
+  const electronVersion = await getElectronVersion();
+  const standaloneDir = path.join(projectRoot, ".next", "standalone");
+  const standaloneNodeModules = path.join(standaloneDir, "node_modules");
+
+  console.log("\n🔧  Rebuilding native modules for Electron...\n");
+
+  // Next standalone tracing copies only the runtime files for native packages.
+  // Rebuilding needs the full package source, so copy better-sqlite3 before npm rebuild.
+  await rm(path.join(standaloneNodeModules, "better-sqlite3"), { recursive: true, force: true });
+  await cp(
+    path.join(projectRoot, "node_modules", "better-sqlite3"),
+    path.join(standaloneNodeModules, "better-sqlite3"),
+    { recursive: true, force: true }
+  );
+
+  await run("npm", ["rebuild", "better-sqlite3", "--prefix", standaloneDir], {
+    env: {
+      ...process.env,
+      npm_config_runtime: "electron",
+      npm_config_target: electronVersion,
+      npm_config_disturl: "https://electronjs.org/headers",
+      npm_config_build_from_source: "true"
+    }
+  });
+}
+
 async function build() {
   console.log("\n🔨  Cleaning old build outputs...\n");
   await rm(path.join(projectRoot, "dist"), { recursive: true, force: true });
@@ -64,6 +96,8 @@ async function build() {
     recursive: true,
     force: true,
   });
+
+  await prepareStandaloneNativeModules();
 
   // Make the Electron source available where the packaged app expects it.
   // electron-builder packages from the project root, so .next/standalone/
