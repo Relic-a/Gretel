@@ -1,0 +1,88 @@
+#!/usr/bin/env node
+/**
+ * Build script: compiles Next.js (standalone) then packages with electron-builder.
+ *
+ * Usage:
+ *   node build-electron.mjs           # build all (depends on host platform)
+ *   node build-electron.mjs --win     # build Windows on Linux (needs wine)
+ *   node build-electron.mjs --linux   # build Linux targets
+ *   node build-electron.mjs --mac     # build macOS targets
+ */
+import { spawn } from "node:child_process";
+import { cp, mkdir, rm, access } from "node:fs/promises";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const projectRoot = __dirname;
+
+const args = process.argv.slice(2);
+const targetFlag = args.find((a) => a.startsWith("--")) || "";
+
+async function exists(p) {
+  try {
+    await access(p);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function run(cmd, args = [], opts = {}) {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, {
+      stdio: "inherit",
+      shell: false,
+      cwd: projectRoot,
+      ...opts,
+    });
+    child.on("close", (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`\`${cmd} ${args.join(" ")}\` exited with ${code}`));
+    });
+  });
+}
+
+async function build() {
+  console.log("\n🔨  Cleaning old build outputs...\n");
+  await rm(path.join(projectRoot, "dist"), { recursive: true, force: true });
+
+  console.log("\n📦  Building Next.js (standalone output)...\n");
+  await run("npx", ["next", "build"]);
+
+  const standaloneDir = path.join(projectRoot, ".next", "standalone");
+  const staticDir = path.join(projectRoot, ".next", "static");
+  const standaloneNextDir = path.join(standaloneDir, ".next");
+
+  if (!(await exists(standaloneDir))) {
+    throw new Error("Next.js standalone output not found at .next/standalone");
+  }
+
+  console.log("\n📁  Copying static assets into standalone...\n");
+  await mkdir(standaloneNextDir, { recursive: true });
+  await cp(staticDir, path.join(standaloneNextDir, "static"), {
+    recursive: true,
+    force: true,
+  });
+
+  // Make the Electron source available where the packaged app expects it.
+  // electron-builder packages from the project root, so .next/standalone/
+  // must remain at the root and electron/** stays at the root too.
+
+  console.log("\n🚀  Running electron-builder...\n");
+  const builderArgs = ["electron-builder"];
+
+  if (targetFlag === "--win") builderArgs.push("--win");
+  else if (targetFlag === "--linux") builderArgs.push("--linux");
+  else if (targetFlag === "--mac") builderArgs.push("--mac");
+  // no flag → electron-builder builds for current platform
+
+  await run("npx", builderArgs);
+
+  console.log("\n✅  Done! Check the dist/ folder for your packages.\n");
+}
+
+build().catch((err) => {
+  console.error("\n❌  Build failed:\n", err.message);
+  process.exit(1);
+});

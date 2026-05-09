@@ -7,14 +7,20 @@
     "dev": "next dev",
     "electron": "electron --ozone-platform=wayland electron/main.mjs",
     "electron:dev": "concurrently \"next dev --port 3000\" \"wait-on http://localhost:3000 && ELECTRON_DEV=1 electron --ozone-platform=wayland electron/main.mjs\"",
-    "build": "next build && cp -r .next/static .next/standalone/.next/static",
+    "build": "next build",
+    "build:electron": "node build-electron.mjs",
+    "dist": "node build-electron.mjs",
+    "dist:win": "node build-electron.mjs --win",
+    "dist:linux": "node build-electron.mjs --linux",
+    "dist:mac": "node build-electron.mjs --mac",
     "test": "node tests/config-smoke-test.mjs && node tests/feed-algorithm-test.mjs",
     "start": "next start",
     "lint": "next lint"
   },
+  "description": "Gretel desktop app",
+  "author": "Ezana",
   "dependencies": {
     "better-sqlite3": "^12.9.0",
-    "electron": "^42.0.0",
     "lucide-react": "^1.14.0",
     "next": "latest",
     "pino": "^10.3.1",
@@ -28,6 +34,8 @@
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "concurrently": "^9.2.1",
+    "electron": "^42.0.0",
+    "electron-builder": "^26.8.1",
     "typescript": "latest",
     "wait-on": "^9.0.1"
   }

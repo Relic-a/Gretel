@@ -1,0 +1,78 @@
+appId: com.ezana.gretel
+productName: Gretel
+copyright: Copyright © 2026
+directories:
+  output: dist
+  buildResources: build
+files:
+  - "electron/**"
+  - ".next/standalone/**"
+  - ".next/static/**"
+  - "config/**"
+  - "!package.json"
+  - "!package-lock.json"
+  - "!node_modules/**"
+  - "!build/**"
+extraResources:
+  - from: "data"
+    to: "data"
+    filter:
+      - "**/*"
+      - "!**/*.db-journal"
+      - "!**/*.wal"
+electronDownload:
+  cache: .cache/electron
+asar: true
+asarUnpack:
+  - "**/*.node"
+  - "**/better-sqlite3/**/*.node"
+linux:
+  target:
+    - deb
+    - AppImage
+  category: AudioVideo
+  maintainer: Ezana <ezana@example.com>
+  icon: build/icon.png
+  artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+  desktop:
+    Name: Gretel
+    Comment: Curate your YouTube feed
+    Categories: AudioVideo;Network;
+deb:
+  depends:
+    - libgtk-3-0
+    - libnotify4
+    - libnss3
+    - libxss1
+    - libxtst6
+    - xdg-utils
+    - libatspi2.0-0
+    - libuuid1
+    - libsecret-1-0
+win:
+  target:
+    - nsis
+    - portable
+  icon: build/icon.ico
+  artifactName: "${productName}-${version}-${os}-${arch}.${ext}"
+  publisher: Ezana
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  installerHeader: build/icon.png
+  installerSidebar: build/icon.png
+  uninstallerSidebar: build/icon.png
+  license: build/LICENSE.md
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.entertainment
+  icon: build/icon.png
+  hardenedRuntime: true
+  gatekeeperAssess: false
