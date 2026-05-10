@@ -20,8 +20,9 @@ function compileConfigModules() {
   writeFileSync(path.join(buildDir, "package.json"), JSON.stringify({ type: "commonjs" }));
 
   const result = spawnSync(
-    path.join(root, "node_modules", ".bin", "tsc"),
+    process.execPath,
     [
+      path.join(root, "node_modules", "typescript", "lib", "tsc.js"),
       "--outDir",
       buildDir,
       "--module",

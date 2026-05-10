@@ -1129,8 +1129,9 @@ function compileModules() {
     path.join(repoRoot, "app", "api", "watch-events", "route.ts")
   ].map((file) => path.relative(repoRoot, file));
   const result = spawnSync(
-    path.join(repoRoot, "node_modules", ".bin", "tsc"),
+    process.execPath,
     [
+      path.join(repoRoot, "node_modules", "typescript", "lib", "tsc.js"),
       "--outDir",
       buildDir,
       "--module",
