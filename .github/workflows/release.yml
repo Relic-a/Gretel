@@ -58,6 +58,9 @@ jobs:
       - name: Run tests
         run: npm test
 
+      - name: Generate package icons
+        run: npm run generate:icons
+
       - name: Build package
         run: ${{ matrix.command }}
 

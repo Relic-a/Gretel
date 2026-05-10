@@ -64,7 +64,6 @@ nsis:
   installerHeader: build/icon.png
   installerSidebar: build/icon.png
   uninstallerSidebar: build/icon.png
-  license: build/LICENSE.md
 mac:
   target:
     - dmg
