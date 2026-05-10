@@ -9,7 +9,7 @@ out/
 dist/
 dist-electron/
 release/
-build/
+/build/
 data/
 
 # typescript
