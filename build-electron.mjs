@@ -29,14 +29,10 @@ async function exists(p) {
 }
 
 function run(cmd, args = [], opts = {}) {
-  const executable = process.platform === "win32" && ["npm", "npx"].includes(cmd)
-    ? `${cmd}.cmd`
-    : cmd;
-
   return new Promise((resolve, reject) => {
-    const child = spawn(executable, args, {
+    const child = spawn(cmd, args, {
       stdio: "inherit",
-      shell: false,
+      shell: process.platform === "win32" && cmd.endsWith(".cmd"),
       cwd: projectRoot,
       ...opts,
     });
@@ -68,7 +64,7 @@ async function prepareStandaloneNativeModules() {
     { recursive: true, force: true }
   );
 
-  await run("npm", ["rebuild", "better-sqlite3", "--prefix", standaloneDir], {
+  await run(process.platform === "win32" ? "npm.cmd" : "npm", ["rebuild", "better-sqlite3", "--prefix", standaloneDir], {
     env: {
       ...process.env,
       npm_config_runtime: "electron",
@@ -84,7 +80,7 @@ async function build() {
   await rm(path.join(projectRoot, "dist"), { recursive: true, force: true });
 
   console.log("\n📦  Building Next.js (standalone output)...\n");
-  await run("npx", ["next", "build"]);
+  await run(process.execPath, [path.join(projectRoot, "node_modules", "next", "dist", "bin", "next"), "build"]);
 
   const standaloneDir = path.join(projectRoot, ".next", "standalone");
   const staticDir = path.join(projectRoot, ".next", "static");
@@ -116,14 +112,14 @@ async function build() {
   // must remain at the root and electron/** stays at the root too.
 
   console.log("\n🚀  Running electron-builder...\n");
-  const builderArgs = ["electron-builder", "--publish", "never"];
+  const builderArgs = [path.join(projectRoot, "node_modules", "electron-builder", "cli.js"), "--publish", "never"];
 
   if (targetFlag === "--win") builderArgs.push("--win");
   else if (targetFlag === "--linux") builderArgs.push("--linux");
   else if (targetFlag === "--mac") builderArgs.push("--mac");
   // no flag → electron-builder builds for current platform
 
-  await run("npx", builderArgs);
+  await run(process.execPath, builderArgs);
 
   console.log("\n✅  Done! Check the dist/ folder for your packages.\n");
 }
