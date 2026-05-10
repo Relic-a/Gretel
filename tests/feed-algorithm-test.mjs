@@ -333,6 +333,7 @@ test("impression-triggered expansion bypasses cooldown", async () => {
     process.env.GRETEL_CONFIG = writeConfig("reactive-expansion.json", {
       expansion: {
         initialFetchSize: 4,
+        initialExpansionCycles: 1,
         minDelayBetweenFetchesMs: 0,
         maxFetchCallsPerCycle: 1,
         cycleCooldownMs: 600000,
