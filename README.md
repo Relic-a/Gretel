@@ -37,7 +37,7 @@ https://openrouter.ai/keys
 Clone the repo and install dependencies:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/gretel.git
+git clone https://github.com/Relic-a/gretel.git
 cd gretel
 npm install
 ```
