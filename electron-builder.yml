@@ -11,19 +11,14 @@ files:
   - "!.next/standalone/.env.*"
   - "!.next/standalone/**/.env"
   - "!.next/standalone/**/.env.*"
+  - "!.next/standalone/data/**"
+  - "!.next/standalone/logs/**"
   - ".next/static/**"
   - "config/**"
   - "!package.json"
   - "!package-lock.json"
   - "!node_modules/**"
   - "!build/**"
-extraResources:
-  - from: "data"
-    to: "data"
-    filter:
-      - "**/*"
-      - "!**/*.db-journal"
-      - "!**/*.wal"
 electronDownload:
   cache: .cache/electron
 asar: true

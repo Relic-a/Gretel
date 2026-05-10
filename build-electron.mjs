@@ -102,6 +102,8 @@ async function build() {
   await rm(path.join(standaloneDir, ".env.local"), { force: true });
   await rm(path.join(standaloneDir, ".env.production"), { force: true });
   await rm(path.join(standaloneDir, ".env.production.local"), { force: true });
+  await rm(path.join(standaloneDir, "data"), { recursive: true, force: true });
+  await rm(path.join(standaloneDir, "logs"), { recursive: true, force: true });
 
   await prepareStandaloneNativeModules();
 
