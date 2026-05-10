@@ -168,7 +168,8 @@ test("pool expansion budgets by score, skips visited videos, enforces threshold,
       .listPoolNodes(profile.id, poolKey)
       .filter((node) => node.sourceNodeId === "relatedVideos");
 
-    assert.deepEqual(calls, ["root-alpha"]);
+    assert.equal(feed.pool.expandedPool, true);
+    assert.deepEqual(calls, ["root-alpha", "root-alpha"]);
     assert.equal(related.some((node) => node.id === "root-alpha"), false);
     assert.deepEqual(related.map((node) => node.id), ["related-above"]);
     assert.equal(related[0].parent_video_id, "root-alpha");
@@ -179,7 +180,7 @@ test("pool expansion budgets by score, skips visited videos, enforces threshold,
   }
 });
 
-test("stale expansion stops when the profile is deleted before related videos are stored", async () => {
+test("stale initial expansion stops when the profile is deleted before related videos are stored", async () => {
   let modules;
   let profile;
   const client = createFakeYoutubeClient({
@@ -215,13 +216,10 @@ test("stale expansion stops when the profile is deleted before related videos ar
     embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
   });
 
-  await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
-    servingOnly: true
-  });
-  modules.profileStore.recordVideoImpressions(profile.id, ["root-alpha"]);
-
   await assert.rejects(
-    modules.service.expandFeedPoolForImpressions(profile.id, ["alpha"], [], "mixed", observation()),
+    modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), {
+      servingOnly: true
+    }),
     modules.service.FeedProfileStaleError
   );
   assert.equal(modules.profileStore.getProfile(profile.id), null);
@@ -323,7 +321,7 @@ test("impression-triggered expansion bypasses cooldown", async () => {
       ),
       infoForSeed(seedId) {
         infoSeeds.push(seedId);
-        return [rawVideo(`related-${seedId}`, "related alpha", "Related")];
+        return [rawVideo(`related-${seedId}-${infoSeeds.length}`, "related alpha", "Related")];
       }
     }),
     embeddingForText: () => [1, 0]
@@ -374,10 +372,10 @@ test("impression-triggered expansion bypasses cooldown", async () => {
       .listPoolNodes(profile.id, poolKey)
       .filter((node) => node.sourceNodeId === "relatedVideos");
 
-    assert.equal(feed.pool.expandedPool, false);
+    assert.equal(feed.pool.expandedPool, true);
     assert.equal(expansion.expandedPool, true);
-    assert.equal(infoSeeds.length, 1);
-    assert.equal(related.length, 1);
+    assert.equal(infoSeeds.length, 2);
+    assert.equal(related.length, 2);
   } finally {
     modules.profileStore.deleteProfile(profile.id);
   }
