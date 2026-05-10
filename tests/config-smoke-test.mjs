@@ -518,7 +518,7 @@ test("config loads OPENROUTER_API_KEY from .env", () => {
   assert.equal(result.status, 0, result.stderr || result.stdout);
 });
 
-test("runtime feed flow initializes roots once, expands pool, serves fast lane, and records engagement", async () => {
+test("runtime feed flow initializes roots with early expansion, serves fast lane, and records engagement", async () => {
   const normalConfig = writeRuntimeConfig("runtime-normal.json");
   const fakeYoutubeClient = createFakeYoutubeClient();
   const { feedRoute, feedBuildRoute, profilesRoute, watchEventsRoute, profileStore } =
@@ -543,7 +543,7 @@ test("runtime feed flow initializes roots once, expands pool, serves fast lane, 
       assert.equal(firstFeed.body.queries.length, 1);
       assert.equal(firstFeed.body.pool.status, "initialized");
       assert.equal(firstFeed.body.pool.initializedRoot, true);
-      assert.equal(firstFeed.body.pool.expandedPool, false);
+      assert.equal(firstFeed.body.pool.expandedPool, true);
       assert.equal(
         firstFeed.body.videos.some(
           (video) => video.sourceNodeId === "tagSearch" && !/alpha/i.test(video.title)
@@ -628,6 +628,7 @@ test("runtime feed flow initializes roots once, expands pool, serves fast lane, 
     assert.equal(watchLogs.length, 1);
     assert.equal(profileLogs.length, 0);
     assert.equal(feedLogs[0].line.summary.poolStatus, "initialized");
+    assert.equal(feedLogs[0].line.summary.expandedPool, true);
     assert.equal(feedLogs[1].line.summary.poolStatus, "served");
     assert.equal(feedLogs[3].line.summary.expandedPool, false);
 
