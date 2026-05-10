@@ -9,7 +9,7 @@
  *   node build-electron.mjs --mac     # build macOS targets
  */
 import { spawn } from "node:child_process";
-import { cp, mkdir, rm, access, readFile } from "node:fs/promises";
+import { cp, mkdir, rm, access, readFile, readdir, readlink } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -46,6 +46,22 @@ function run(cmd, args = [], opts = {}) {
 async function getElectronVersion() {
   const packageJson = JSON.parse(await readFile(path.join(projectRoot, "package.json"), "utf8"));
   return packageJson.devDependencies.electron.replace(/^[^0-9]*/, "");
+}
+
+async function materializeStandaloneNextModuleAliases() {
+  const aliasesDir = path.join(projectRoot, ".next", "standalone", ".next", "node_modules");
+
+  if (!(await exists(aliasesDir))) return;
+
+  for (const entry of await readdir(aliasesDir, { withFileTypes: true })) {
+    if (!entry.isSymbolicLink()) continue;
+
+    const aliasPath = path.join(aliasesDir, entry.name);
+    const targetPath = path.resolve(aliasesDir, await readlink(aliasPath));
+
+    await rm(aliasPath, { recursive: true, force: true });
+    await cp(targetPath, aliasPath, { recursive: true, dereference: true });
+  }
 }
 
 async function prepareStandaloneNativeModules() {
@@ -104,9 +120,9 @@ async function build() {
   await rm(path.join(standaloneDir, ".env.production.local"), { force: true });
   await rm(path.join(standaloneDir, "data"), { recursive: true, force: true });
   await rm(path.join(standaloneDir, "logs"), { recursive: true, force: true });
-  await rm(path.join(standaloneNextDir, "node_modules"), { recursive: true, force: true });
 
   await prepareStandaloneNativeModules();
+  await materializeStandaloneNextModuleAliases();
 
   // Make the Electron source available where the packaged app expects it.
   // electron-builder packages from the project root, so .next/standalone/
