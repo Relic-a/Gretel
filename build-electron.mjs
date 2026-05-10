@@ -29,8 +29,12 @@ async function exists(p) {
 }
 
 function run(cmd, args = [], opts = {}) {
+  const executable = process.platform === "win32" && ["npm", "npx"].includes(cmd)
+    ? `${cmd}.cmd`
+    : cmd;
+
   return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, {
+    const child = spawn(executable, args, {
       stdio: "inherit",
       shell: false,
       cwd: projectRoot,
@@ -112,7 +116,7 @@ async function build() {
   // must remain at the root and electron/** stays at the root too.
 
   console.log("\n🚀  Running electron-builder...\n");
-  const builderArgs = ["electron-builder"];
+  const builderArgs = ["electron-builder", "--publish", "never"];
 
   if (targetFlag === "--win") builderArgs.push("--win");
   else if (targetFlag === "--linux") builderArgs.push("--linux");
