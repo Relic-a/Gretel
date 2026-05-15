@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "next dev",
     "electron": "electron --ozone-platform=wayland electron/main.mjs",
-    "electron:dev": "concurrently \"next dev --port 3000\" \"wait-on http://localhost:3000 && ELECTRON_DEV=1 electron --ozone-platform=wayland electron/main.mjs\"",
+    "electron:dev": "ELECTRON_DEV=1 electron --ozone-platform=wayland electron/main.mjs",
     "build": "next build",
     "build:electron": "node build-electron.mjs",
     "dist": "node build-electron.mjs",
@@ -35,11 +35,9 @@
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "concurrently": "^9.2.1",
     "electron": "^41.5.1",
     "electron-builder": "^26.8.1",
     "png-to-ico": "^3.0.1",
-    "typescript": "latest",
-    "wait-on": "^9.0.1"
+    "typescript": "latest"
   }
 }
