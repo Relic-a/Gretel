@@ -34,10 +34,9 @@ await writeFile("dist-electron/package.json", JSON.stringify({
 }));
 
 const rebuild = spawnSync(
-  process.platform === "win32"
-    ? "node_modules/.bin/electron-rebuild.cmd"
-    : "node_modules/.bin/electron-rebuild",
-  ["-f", "-w", "better-sqlite3", "-m", "dist-electron", "-v",
+  process.execPath,
+  ["node_modules/@electron/rebuild/lib/cli.js",
+    "-f", "-w", "better-sqlite3", "-m", "dist-electron", "-v",
     packageJson.devDependencies.electron.replace(/^[^0-9]*/, "")],
   {
     stdio: "inherit"
