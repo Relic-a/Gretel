@@ -1,5 +1,3 @@
-"use client";
-
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { ProfileModal } from "./components/ProfileModal";
@@ -74,7 +72,10 @@ export default function Home() {
   const homeVideos = feed?.videos || [];
   const visibleVideos =
     section === "saved" ? savedVideos : section === "history" ? historyVideos : homeVideos;
-  const sideVideos = orderedSideVideos(visibleVideos, activeVideo, feed?.upNextByVideoId);
+  const sideVideos = useMemo(
+    () => orderedSideVideos(visibleVideos, activeVideo, feed?.upNextByVideoId),
+    [visibleVideos, activeVideo, feed?.upNextByVideoId]
+  );
   const canAskForMore = section === "home" && Boolean(feed) && !loading && !feedEnd;
 
   useEffect(() => {
@@ -243,7 +244,14 @@ export default function Home() {
       return;
     }
 
-    writeCachedFeed(profileId, feed);
+    const save = () => writeCachedFeed(profileId, feed);
+    const idleCallback = window.requestIdleCallback?.(save, { timeout: 1_000 });
+    const timeout = idleCallback === undefined ? window.setTimeout(save, 100) : undefined;
+
+    return () => {
+      if (idleCallback !== undefined) window.cancelIdleCallback?.(idleCallback);
+      if (timeout !== undefined) window.clearTimeout(timeout);
+    };
   }, [booted, profileId, feed]);
 
   useEffect(() => {
@@ -1031,7 +1039,7 @@ function writeCachedFeed(profileId: string, feed: FeedResponse) {
       feedCacheKey(profileId),
       JSON.stringify({
         ...feed,
-        videos: feed.videos,
+        videos: feed.videos.slice(-150),
         cachedAt: Date.now()
       })
     );

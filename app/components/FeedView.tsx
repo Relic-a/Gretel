@@ -23,8 +23,12 @@ type FeedViewProps = {
 };
 
 export function FeedView(props: FeedViewProps) {
+  const gridRef = useRef<HTMLDivElement | null>(null);
   const loaderRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRequestedRef = useRef(false);
+  const impressionHandlerRef = useRef(props.onVideoImpression);
+
+  impressionHandlerRef.current = props.onVideoImpression;
 
   useEffect(() => {
     if (!props.loading) {
@@ -64,24 +68,26 @@ export function FeedView(props: FeedViewProps) {
   }, [loadMore]);
 
   useEffect(() => {
-    function requestWhenNearBottom() {
-      const documentHeight = document.documentElement.scrollHeight;
-      const viewportBottom = window.scrollY + window.innerHeight;
+    const grid = gridRef.current;
+    if (!grid || !props.onVideoImpression) return;
 
-      if (documentHeight - viewportBottom <= 720) {
-        loadMore();
+    const videosById = new Map(props.videos.map((video) => [video.id, video]));
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const element = entry.target as HTMLElement;
+        const video = videosById.get(element.dataset.videoId || "");
+        if (video && element.dataset.impressionReported !== "true") {
+          element.dataset.impressionReported = "true";
+          impressionHandlerRef.current?.(video);
+          observer.unobserve(element);
+        }
       }
-    }
+    }, { threshold: 0.5 });
 
-    requestWhenNearBottom();
-    window.addEventListener("scroll", requestWhenNearBottom, { passive: true });
-    window.addEventListener("resize", requestWhenNearBottom);
-
-    return () => {
-      window.removeEventListener("scroll", requestWhenNearBottom);
-      window.removeEventListener("resize", requestWhenNearBottom);
-    };
-  }, [loadMore, props.videos.length]);
+    grid.querySelectorAll<HTMLElement>("[data-video-id]").forEach((card) => observer.observe(card));
+    return () => observer.disconnect();
+  }, [props.videos, Boolean(props.onVideoImpression)]);
 
   return (
     <section className="feed-view" aria-live="polite">
@@ -94,7 +100,7 @@ export function FeedView(props: FeedViewProps) {
         )}
       </div>
 
-      <div className="video-grid">
+      <div ref={gridRef} className="video-grid">
         {props.videos.map((video) => {
           const subscribed = props.subscriptions.has(normalize(video.author));
 
@@ -109,7 +115,6 @@ export function FeedView(props: FeedViewProps) {
               onSelectVideo={props.onSelectVideo}
               onSaveVideo={props.onSaveVideo}
               onLikeVideo={props.onLikeVideo}
-              onImpression={props.onVideoImpression}
               onAddChannel={props.onAddChannel}
               onRemoveChannel={props.onRemoveChannel}
             />

@@ -269,6 +269,9 @@ button:disabled {
 }
 
 .video-card {
+  content-visibility: auto;
+  contain: layout paint style;
+  contain-intrinsic-size: auto 360px;
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--color-border);

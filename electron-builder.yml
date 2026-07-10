@@ -2,30 +2,20 @@ appId: com.ezana.gretel
 productName: Gretel
 copyright: Copyright © 2026
 directories:
+  app: package
   output: dist
   buildResources: build
 files:
-  - "electron/**"
-  - ".next/standalone/**"
-  - "!.next/standalone/.env"
-  - "!.next/standalone/.env.*"
-  - "!.next/standalone/**/.env"
-  - "!.next/standalone/**/.env.*"
-  - "!.next/standalone/data/**"
-  - "!.next/standalone/logs/**"
-  - ".next/static/**"
+  - "dist-electron/**"
+  - "dist-renderer/**"
   - "config/**"
-  - "!package.json"
-  - "!package-lock.json"
-  - "!node_modules/**"
   - "!build/**"
 electronDownload:
   cache: .cache/electron
 asar: true
+npmRebuild: false
 asarUnpack:
-  - ".next/standalone/**"
   - "**/*.node"
-  - "**/better-sqlite3/**/*.node"
 linux:
   target:
     - deb

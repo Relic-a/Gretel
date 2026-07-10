@@ -1,5 +1,3 @@
-import { useEffect, useRef } from "react";
-
 import type { FeedVideo } from "../types";
 import { VideoActions } from "./VideoActions";
 import { formatPublished, thumbnailFor } from "./video-utils";
@@ -14,44 +12,13 @@ type VideoCardProps = {
   onSelectVideo: (video: FeedVideo) => void;
   onSaveVideo: (video: FeedVideo) => void;
   onLikeVideo: (video: FeedVideo) => void;
-  onImpression?: (video: FeedVideo) => void;
   onAddChannel: (channel: string) => void;
   onRemoveChannel: (channel: string) => void;
 };
 
 export function VideoCard(props: VideoCardProps) {
-  const cardRef = useRef<HTMLElement | null>(null);
-  const reportedRef = useRef("");
-
-  useEffect(() => {
-    reportedRef.current = "";
-  }, [props.video.id]);
-
-  useEffect(() => {
-    const card = cardRef.current;
-
-    if (!card || !props.onImpression) {
-      return;
-    }
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries[0].isIntersecting || reportedRef.current === props.video.id) {
-          return;
-        }
-
-        reportedRef.current = props.video.id;
-        props.onImpression?.(props.video);
-      },
-      { threshold: 0 }
-    );
-
-    observer.observe(card);
-    return () => observer.disconnect();
-  }, [props.video, props.onImpression]);
-
   return (
-    <article ref={cardRef} className={props.compact ? "video-card compact" : "video-card"}>
+    <article data-video-id={props.video.id} className={props.compact ? "video-card compact" : "video-card"}>
       <div className="thumbnail-wrap">
         <button type="button" className="thumbnail-button" onClick={() => props.onSelectVideo(props.video)}>
           <img src={thumbnailFor(props.video)} loading="lazy" alt="" />

@@ -8,6 +8,8 @@ out/
 # production
 dist/
 dist-electron/
+dist-renderer/
+package/
 release/
 /build/
 data/

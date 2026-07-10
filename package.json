@@ -3,12 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "main": "electron/main.mjs",
+  "main": "dist-electron/main.cjs",
   "scripts": {
-    "dev": "next dev",
-    "electron": "electron --ozone-platform=wayland electron/main.mjs",
-    "electron:dev": "ELECTRON_DEV=1 electron --ozone-platform=wayland electron/main.mjs",
-    "build": "next build",
+    "dev": "vite",
+    "electron": "electron --ozone-platform=wayland .",
+    "electron:dev": "npm run build && electron --ozone-platform=wayland .",
+    "build": "vite build --outDir dist-renderer && node scripts/build-electron-main.mjs",
     "build:electron": "node build-electron.mjs",
     "dist": "node build-electron.mjs",
     "dist:win": "node build-electron.mjs --win",
@@ -16,28 +16,28 @@
     "dist:mac": "node build-electron.mjs --mac",
     "generate:icons": "node scripts/generate-build-icons.mjs",
     "test": "node tests/config-smoke-test.mjs && node tests/feed-algorithm-test.mjs",
-    "start": "next start",
-    "lint": "next lint"
+    "start": "npm run electron",
+    "typecheck": "tsc --noEmit"
   },
   "description": "Gretel desktop app",
   "author": "Ezana",
   "dependencies": {
     "better-sqlite3": "^12.9.0",
     "lucide-react": "^1.14.0",
-    "next": "latest",
     "pino": "^10.3.1",
-    "react": "latest",
-    "react-dom": "latest",
-    "youtubei.js": "latest"
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "youtubei.js": "17.0.1"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
-    "@types/node": "latest",
-    "@types/react": "latest",
-    "@types/react-dom": "latest",
+    "@types/node": "25.6.2",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
     "electron": "^41.5.1",
     "electron-builder": "^26.8.1",
     "png-to-ico": "^3.0.1",
-    "typescript": "latest"
+    "typescript": "6.0.3",
+    "vite": "^7.0.0"
   }
 }

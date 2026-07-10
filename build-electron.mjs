@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Build script: compiles Next.js (standalone) then packages with electron-builder.
+ * Build script: compiles the Vite renderer and Electron backend, then packages them.
  *
  * Usage:
  *   node build-electron.mjs           # build all (depends on host platform)
@@ -9,7 +9,7 @@
  *   node build-electron.mjs --mac     # build macOS targets
  */
 import { spawn } from "node:child_process";
-import { cp, mkdir, rm, access, readFile, readdir, readlink } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,15 +18,6 @@ const projectRoot = __dirname;
 
 const args = process.argv.slice(2);
 const targetFlag = args.find((a) => a.startsWith("--")) || "";
-
-async function exists(p) {
-  try {
-    await access(p);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 function run(cmd, args = [], opts = {}) {
   return new Promise((resolve, reject) => {
@@ -43,90 +34,36 @@ function run(cmd, args = [], opts = {}) {
   });
 }
 
-async function getElectronVersion() {
-  const packageJson = JSON.parse(await readFile(path.join(projectRoot, "package.json"), "utf8"));
-  return packageJson.devDependencies.electron.replace(/^[^0-9]*/, "");
-}
-
-async function materializeStandaloneNextModuleAliases() {
-  const aliasesDir = path.join(projectRoot, ".next", "standalone", ".next", "node_modules");
-
-  if (!(await exists(aliasesDir))) return;
-
-  for (const entry of await readdir(aliasesDir, { withFileTypes: true })) {
-    if (!entry.isSymbolicLink()) continue;
-
-    const aliasPath = path.join(aliasesDir, entry.name);
-    const targetPath = path.resolve(aliasesDir, await readlink(aliasPath));
-
-    await rm(aliasPath, { recursive: true, force: true });
-    await cp(targetPath, aliasPath, { recursive: true, dereference: true });
-  }
-}
-
-async function prepareStandaloneNativeModules() {
-  const electronVersion = await getElectronVersion();
-  const standaloneDir = path.join(projectRoot, ".next", "standalone");
-  const standaloneNodeModules = path.join(standaloneDir, "node_modules");
-
-  console.log("\n🔧  Rebuilding native modules for Electron...\n");
-
-  // Next standalone tracing copies only the runtime files for native packages.
-  // Rebuilding needs the full package source, so copy better-sqlite3 before npm rebuild.
-  await rm(path.join(standaloneNodeModules, "better-sqlite3"), { recursive: true, force: true });
-  await cp(
-    path.join(projectRoot, "node_modules", "better-sqlite3"),
-    path.join(standaloneNodeModules, "better-sqlite3"),
-    { recursive: true, force: true }
-  );
-
-  await run(process.platform === "win32" ? "npm.cmd" : "npm", ["rebuild", "better-sqlite3", "--prefix", standaloneDir], {
-    env: {
-      ...process.env,
-      npm_config_runtime: "electron",
-      npm_config_target: electronVersion,
-      npm_config_disturl: "https://electronjs.org/headers",
-      npm_config_build_from_source: "true"
-    }
-  });
-}
-
 async function build() {
   console.log("\n🔨  Cleaning old build outputs...\n");
   await rm(path.join(projectRoot, "dist"), { recursive: true, force: true });
 
-  console.log("\n📦  Building Next.js (standalone output)...\n");
-  await run(process.execPath, [path.join(projectRoot, "node_modules", "next", "dist", "bin", "next"), "build"]);
+  console.log("\n📦  Building the renderer and desktop backend...\n");
+  await run(process.platform === "win32" ? "npm.cmd" : "npm", ["run", "build"]);
 
-  const standaloneDir = path.join(projectRoot, ".next", "standalone");
-  const staticDir = path.join(projectRoot, ".next", "static");
-  const standaloneNextDir = path.join(standaloneDir, ".next");
-
-  if (!(await exists(standaloneDir))) {
-    throw new Error("Next.js standalone output not found at .next/standalone");
-  }
-
-  console.log("\n📁  Copying static assets into standalone...\n");
-  await mkdir(standaloneNextDir, { recursive: true });
-  await cp(staticDir, path.join(standaloneNextDir, "static"), {
-    recursive: true,
-    force: true,
-  });
-
-  console.log("\n🧹  Removing local env files from standalone output...\n");
-  await rm(path.join(standaloneDir, ".env"), { force: true });
-  await rm(path.join(standaloneDir, ".env.local"), { force: true });
-  await rm(path.join(standaloneDir, ".env.production"), { force: true });
-  await rm(path.join(standaloneDir, ".env.production.local"), { force: true });
-  await rm(path.join(standaloneDir, "data"), { recursive: true, force: true });
-  await rm(path.join(standaloneDir, "logs"), { recursive: true, force: true });
-
-  await prepareStandaloneNativeModules();
-  await materializeStandaloneNextModuleAliases();
-
-  // Make the Electron source available where the packaged app expects it.
-  // electron-builder packages from the project root, so .next/standalone/
-  // must remain at the root and electron/** stays at the root too.
+  const packageRoot = path.join(projectRoot, "package");
+  const projectPackage = JSON.parse(await readFile(path.join(projectRoot, "package.json"), "utf8"));
+  await rm(packageRoot, { recursive: true, force: true });
+  await mkdir(packageRoot, { recursive: true });
+  await cp(path.join(projectRoot, "dist-electron"), path.join(packageRoot, "dist-electron"), { recursive: true });
+  await cp(path.join(projectRoot, "dist-renderer"), path.join(packageRoot, "dist-renderer"), { recursive: true });
+  await cp(path.join(projectRoot, "config"), path.join(packageRoot, "config"), { recursive: true });
+  await cp(
+    path.join(packageRoot, "dist-electron", "node_modules"),
+    path.join(packageRoot, "node_modules"),
+    { recursive: true }
+  );
+  await rm(path.join(packageRoot, "dist-electron", "node_modules"), { recursive: true, force: true });
+  await writeFile(path.join(packageRoot, "package.json"), JSON.stringify({
+    name: projectPackage.name,
+    version: projectPackage.version,
+    description: projectPackage.description,
+    author: projectPackage.author,
+    main: projectPackage.main,
+    type: projectPackage.type,
+    dependencies: { "better-sqlite3": projectPackage.dependencies["better-sqlite3"] },
+    private: true
+  }, null, 2));
 
   console.log("\n🚀  Running electron-builder...\n");
   const builderArgs = [path.join(projectRoot, "node_modules", "electron-builder", "cli.js"), "--publish", "never"];

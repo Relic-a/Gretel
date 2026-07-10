@@ -55,6 +55,7 @@ export function WatchView(props: WatchViewProps) {
   const sideSentinelRef = useRef<HTMLDivElement | null>(null);
   const commentsSectionRef = useRef<HTMLDivElement | null>(null);
   const fetchInProgress = useRef(false);
+  const commentsRequestRef = useRef<AbortController | null>(null);
   const sideLoadRequestedRef = useRef(false);
   const displayLimitRef = useRef(sidePageSize);
   const sideLoadDebounceRef = useRef<number | null>(null);
@@ -65,6 +66,23 @@ export function WatchView(props: WatchViewProps) {
 
   const embedUrl = `https://www.youtube-nocookie.com/embed/${props.activeVideo.id}?autoplay=1&rel=0`;
   const visibleSideVideos = props.sideVideos.slice(0, displayLimit);
+
+  useEffect(() => {
+    commentsRequestRef.current?.abort();
+    commentsRequestRef.current = null;
+    fetchInProgress.current = false;
+    setDescription("");
+    setDescriptionExpanded(false);
+    setComments([]);
+    setLoading(false);
+    setLoadingMore(false);
+    setError("");
+    setHasMore(true);
+    setPage(0);
+    setCommentsLoaded(false);
+
+    return () => commentsRequestRef.current?.abort();
+  }, [props.activeVideo.id]);
 
   useEffect(() => {
     setDisplayLimit(sidePageSize);
@@ -189,6 +207,9 @@ export function WatchView(props: WatchViewProps) {
   ]);
 
   async function fetchComments(nextPage: number) {
+    const request = new AbortController();
+    commentsRequestRef.current?.abort();
+    commentsRequestRef.current = request;
     if (nextPage === 0) {
       setLoading(true);
     } else {
@@ -205,6 +226,7 @@ export function WatchView(props: WatchViewProps) {
           profileId: props.profileId,
           page: nextPage,
         }),
+        signal: request.signal,
       });
       const data = await res.json();
 
@@ -223,11 +245,15 @@ export function WatchView(props: WatchViewProps) {
 
       setHasMore(data.hasMore === true);
     } catch (caught) {
+      if (caught instanceof DOMException && caught.name === "AbortError") return;
       setError(caught instanceof Error ? caught.message : "Failed to load comments.");
     } finally {
-      setLoading(false);
-      setLoadingMore(false);
-      fetchInProgress.current = false;
+      if (commentsRequestRef.current === request) {
+        commentsRequestRef.current = null;
+        setLoading(false);
+        setLoadingMore(false);
+        fetchInProgress.current = false;
+      }
     }
   }
 

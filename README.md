@@ -52,15 +52,17 @@ Then add your OpenRouter API key:
 
 ```env
 OPENROUTER_API_KEY=your_openrouter_key_here
-OPENROUTER_SITE_URL=http://localhost:3000
+OPENROUTER_SITE_URL=gretel://app
 OPENROUTER_APP_NAME=Gretel
 ```
 
-Run the web app only:
+Run a renderer-only browser preview:
 
 ```bash
 npm run dev
 ```
+
+The browser preview does not provide the local desktop APIs. Use the Electron command for full functionality.
 
 Run the Electron desktop app in development:
 
@@ -108,11 +110,12 @@ Notes:
 ## Project Scripts
 
 ```bash
-npm run dev            # Start Next.js dev server
-npm run electron:dev   # Start Next.js and Electron together
-npm run build          # Build Next.js
+npm run dev            # Start the renderer-only Vite preview
+npm run electron:dev   # Build and start the complete desktop app
+npm run build          # Build the Vite renderer and Electron backend
 npm run dist:linux     # Build Linux desktop packages
 npm run dist:win       # Build Windows desktop packages
 npm run dist:mac       # Build macOS desktop packages
 npm test               # Run tests
+npm run typecheck      # Check TypeScript
 ```
