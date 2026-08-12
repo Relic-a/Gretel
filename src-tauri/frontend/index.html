@@ -5,10 +5,35 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gretel</title>
     <style>
-      :root { color-scheme: light; font-family: system-ui, sans-serif; }
-      body { align-items: center; background: #f7f7f2; color: #20201c; display: flex; height: 100vh; justify-content: center; margin: 0; }
-      p { margin: 0; }
+      :root { color-scheme: dark; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+      * { box-sizing: border-box; }
+      body {
+        align-items: center;
+        background-color: #0a0a0c;
+        background-image: linear-gradient(rgb(20 20 22 / 0.8) 1px, transparent 1px), linear-gradient(90deg, rgb(20 20 22 / 0.8) 1px, transparent 1px);
+        background-size: 40px 40px;
+        color: #e0e0e0;
+        display: flex;
+        height: 100vh;
+        justify-content: center;
+        margin: 0;
+      }
+      .startup { display: grid; justify-items: center; gap: 20px; }
+      .brand { color: #e44232; font-size: 2rem; font-weight: 900; letter-spacing: 0.1em; margin: 0; text-transform: uppercase; text-shadow: 2px 2px 0 #421a15; }
+      .indicator { background: #2a2a2a; height: 2px; overflow: hidden; width: 180px; }
+      .indicator::after { animation: loading 1.1s ease-in-out infinite; background: #e44232; content: ""; display: block; height: 100%; width: 45%; }
+      #startup-status { color: #888; font-size: 0.75rem; margin: 0; max-width: min(520px, calc(100vw - 48px)); text-align: center; }
+      body[data-state="error"] .indicator { display: none; }
+      body[data-state="error"] #startup-status { color: #f65874; }
+      @keyframes loading { from { transform: translateX(-110%); } to { transform: translateX(330%); } }
+      @media (prefers-reduced-motion: reduce) { .indicator::after { animation: none; width: 100%; } }
     </style>
   </head>
-  <body><p>Starting Gretel…</p></body>
+  <body>
+    <main class="startup" role="status" aria-live="polite">
+      <h1 class="brand">Gretel</h1>
+      <div class="indicator" aria-hidden="true"></div>
+      <p id="startup-status">Starting your feed&hellip;</p>
+    </main>
+  </body>
 </html>

@@ -26,20 +26,27 @@ pub fn run() {
             }
 
             let port = find_available_port().map_err(to_boxed_error)?;
-            let mut server = start_production_server(app, port).map_err(to_boxed_error)?;
-            if let Err(error) = wait_for_server(port, Duration::from_secs(30)) {
-                stop_server(&mut server);
-                return Err(to_boxed_error(error));
-            }
-
             let window = app
                 .get_webview_window("main")
                 .ok_or_else(|| "The Gretel main window was not created.".to_string())?;
-            if let Err(error) = navigate_to_server(&window, port) {
-                stop_server(&mut server);
-                return Err(to_boxed_error(error));
-            }
+            let server = start_production_server(app, port).map_err(to_boxed_error)?;
             app.manage(ServerProcess(Mutex::new(Some(server))));
+
+            // Returning from setup lets the bundled startup page paint immediately
+            // while Node and Next.js warm up away from Tauri's setup thread.
+            thread::spawn(move || {
+                let result = wait_for_server(port, Duration::from_secs(30))
+                    .and_then(|_| navigate_to_server(&window, port));
+
+                if let Err(error) = result {
+                    eprintln!("Gretel startup failed: {error}");
+                    let _ = window.eval(startup_error_script(&error));
+
+                    if let Some(server) = window.app_handle().try_state::<ServerProcess>() {
+                        stop_managed_server(&server);
+                    }
+                }
+            });
 
             Ok(())
         })
@@ -48,15 +55,19 @@ pub fn run() {
         .run(|app_handle, event| {
             if let RunEvent::ExitRequested { .. } = event {
                 if let Some(server) = app_handle.try_state::<ServerProcess>() {
-                    if let Ok(mut child) = server.0.lock() {
-                        if let Some(child) = child.as_mut() {
-                            stop_server(child);
-                        }
-                        child.take();
-                    }
+                    stop_managed_server(&server);
                 }
             }
         });
+}
+
+fn stop_managed_server(server: &ServerProcess) {
+    if let Ok(mut child) = server.0.lock() {
+        if let Some(child) = child.as_mut() {
+            stop_server(child);
+        }
+        child.take();
+    }
 }
 
 fn stop_server(child: &mut Child) {
@@ -256,4 +267,17 @@ fn navigate_to_server<R: tauri::Runtime>(
     window
         .navigate(url)
         .map_err(|error| format!("Could not load Gretel's local server: {error}"))
+}
+
+fn startup_error_script(error: &str) -> String {
+    let escaped = error
+        .replace('\\', "\\\\")
+        .replace('`', "\\`")
+        .replace("${", "\\${")
+        .replace('\n', " ")
+        .replace('\r', " ");
+
+    format!(
+        "document.body.dataset.state='error';document.getElementById('startup-status').textContent=`{escaped}`;"
+    )
 }
