@@ -1,0 +1,53 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Gretel",
+  "version": "0.2.0-alpha.2",
+  "identifier": "com.ezana.gretel",
+  "build": {
+    "beforeDevCommand": "npm run dev -- --hostname 127.0.0.1 --port 3000",
+    "beforeBuildCommand": "npm run tauri:prepare",
+    "devUrl": "http://127.0.0.1:3000",
+    "frontendDist": "frontend"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Gretel",
+        "width": 1280,
+        "height": 900,
+        "minWidth": 960,
+        "minHeight": 700,
+        "backgroundColor": "#f7f7f2",
+        "url": "index.html"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "Entertainment",
+    "shortDescription": "Curate your YouTube feed",
+    "longDescription": "Build a more intentional YouTube feed with profiles, topics, channels, and local history.",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../.next/standalone": ".next/standalone",
+      "../config": "config",
+      "node-runtime/node.exe": "node.exe"
+    },
+    "windows": {
+      "webviewInstallMode": {
+        "type": "embedBootstrapper"
+      }
+    }
+  }
+}

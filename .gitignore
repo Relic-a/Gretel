@@ -5,9 +5,12 @@ node_modules/
 .next/
 out/
 
+# tauri
+src-tauri/target/
+src-tauri/node-runtime/
+
 # production
 dist/
-dist-electron/
 release/
 /build/
 data/

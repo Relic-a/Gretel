@@ -1,23 +1,23 @@
 {
   "name": "gretel",
-  "version": "0.1.0",
+  "version": "0.2.0-alpha.2",
   "private": true,
   "type": "module",
-  "main": "electron/main.mjs",
   "scripts": {
     "dev": "next dev",
-    "electron": "electron --ozone-platform=wayland electron/main.mjs",
-    "electron:dev": "ELECTRON_DEV=1 electron --ozone-platform=wayland electron/main.mjs",
     "build": "next build",
-    "build:electron": "node build-electron.mjs",
-    "dist": "node build-electron.mjs",
-    "dist:win": "node build-electron.mjs --win",
-    "dist:linux": "node build-electron.mjs --linux",
-    "dist:mac": "node build-electron.mjs --mac",
-    "generate:icons": "node scripts/generate-build-icons.mjs",
-    "test": "node tests/config-smoke-test.mjs && node tests/feed-algorithm-test.mjs",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:prepare": "node scripts/prepare-tauri.mjs",
+    "tauri:build": "tauri build",
+    "dist": "tauri build",
+    "dist:win": "tauri build --target x86_64-pc-windows-msvc --bundles nsis",
+    "dist:linux": "tauri build --target x86_64-unknown-linux-gnu",
+    "dist:mac": "tauri build",
+    "generate:icons": "tauri icon logo.png",
+    "test": "node tests/tauri-config-test.mjs && node tests/config-smoke-test.mjs && node tests/feed-algorithm-test.mjs",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "tsc --noEmit"
   },
   "description": "Gretel desktop app",
   "author": "Ezana",
@@ -35,9 +35,7 @@
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "electron": "^41.5.1",
-    "electron-builder": "^26.8.1",
-    "png-to-ico": "^3.0.1",
+    "@tauri-apps/cli": "2.11.4",
     "typescript": "latest"
   }
 }

@@ -13,6 +13,7 @@ const workDir = path.join(os.tmpdir(), `gretel-feed-algorithm-${process.pid}`);
 const configDir = path.join(workDir, "config");
 const require = createRequire(import.meta.url);
 let profileStoreForCleanup = null;
+const profileStoresForCleanup = new Set();
 let originalCwd = process.cwd();
 
 before(() => {
@@ -26,6 +27,11 @@ after(() => {
   try {
     profileStoreForCleanup?.getDatabase?.().close?.();
   } catch {}
+  for (const profileStore of profileStoresForCleanup) {
+    try {
+      profileStore.getDatabase?.().close?.();
+    } catch {}
+  }
   rmSync(buildDir, { force: true, recursive: true });
   rmSync(workDir, { force: true, recursive: true });
 });
@@ -1196,13 +1202,16 @@ function loadRuntimeModules({ youtubeClient, embeddingForText = () => [1, 0] } =
   };
   require.cache[embeddingsPath] = fakeEmbeddingsModule;
 
+  const profileStore = require(path.join(buildDir, "lib", "profile-store.js"));
+  profileStoresForCleanup.add(profileStore);
+
   return {
     service: require(path.join(buildDir, "lib", "feed", "service.js")),
     poolStore: require(path.join(buildDir, "lib", "feed", "pool-store.js")),
     algorithmStore: require(path.join(buildDir, "lib", "feed", "algorithm-store.js")),
     centroidDrift: require(path.join(buildDir, "lib", "feed", "centroid-drift.js")),
     vectorMath: require(path.join(buildDir, "lib", "feed", "vector-math.js")),
-    profileStore: require(path.join(buildDir, "lib", "profile-store.js"))
+    profileStore
   };
 }
 

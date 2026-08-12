@@ -20,12 +20,13 @@ Gretel is a desktop app for building a more intentional YouTube feed. Create pro
 - Saved videos, liked videos, and watch history
 - Local SQLite storage
 - OpenRouter-powered embeddings
-- Desktop builds for Linux, Windows, and macOS through Electron
+- Desktop builds for Linux, Windows, and macOS through Tauri
 
 ## Requirements
 
 - Node.js 22+
 - npm
+- Rust 1.77+ and the platform prerequisites listed by Tauri (Windows builds need Visual Studio Build Tools with the MSVC and Windows SDK workloads)
 - An OpenRouter API key
 
 You can create an OpenRouter key at:
@@ -62,10 +63,10 @@ Run the web app only:
 npm run dev
 ```
 
-Run the Electron desktop app in development:
+Run the Tauri desktop app in development:
 
 ```bash
-npm run electron:dev
+npm run tauri:dev
 ```
 
 ## App Settings
@@ -74,11 +75,17 @@ You can also enter your OpenRouter API key inside the app settings UI. Gretel st
 
 Approximate data locations:
 
-- Linux: `~/.config/Gretel/data`
-- Windows: `%APPDATA%/Gretel/data`
-- macOS: `~/Library/Application Support/Gretel/data`
+- Linux: `~/.local/share/com.ezana.gretel/data`
+- Windows: `%APPDATA%/com.ezana.gretel/data`
+- macOS: `~/Library/Application Support/com.ezana.gretel/data`
+
+Existing Electron data in the previous `Gretel/data` location is reused automatically when the new Tauri data directory is empty.
 
 ## Build Locally
+
+Tauri bundles the Next.js standalone server and a matching Node.js runtime, so installed desktop builds do not require Node.js on the end user's machine. Rust (with the platform's Tauri prerequisites) and Node.js are required when building from source.
+
+Build each package on its target OS and architecture; the preparation step intentionally rejects cross-target builds because it embeds the host Node.js runtime.
 
 Build Linux packages:
 
@@ -101,7 +108,7 @@ npm run dist:mac
 Notes:
 
 - Linux builds produce `.AppImage` and `.deb` files.
-- Windows builds produce `.exe` installers/portable builds.
+- Windows builds produce `.exe` installers. Prerelease builds use Tauri's NSIS target because MSI only accepts numeric prerelease identifiers.
 - macOS builds require macOS for best results.
 - Local builds are unsigned by default.
 
@@ -109,10 +116,11 @@ Notes:
 
 ```bash
 npm run dev            # Start Next.js dev server
-npm run electron:dev   # Start Next.js and Electron together
+npm run tauri:dev      # Start Next.js and Tauri together
 npm run build          # Build Next.js
-npm run dist:linux     # Build Linux desktop packages
-npm run dist:win       # Build Windows desktop packages
-npm run dist:mac       # Build macOS desktop packages
+npm run tauri:build    # Build Tauri desktop packages for the host platform
+npm run dist:linux     # Build Linux desktop packages (from Linux)
+npm run dist:win       # Build Windows desktop packages (from Windows)
+npm run dist:mac       # Build macOS desktop packages (from macOS)
 npm test               # Run tests
 ```

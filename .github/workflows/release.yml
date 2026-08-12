@@ -22,25 +22,18 @@ jobs:
             os: ubuntu-latest
             command: npm run dist:linux
             artifacts: |
-              dist/*.AppImage
-              dist/*.deb
-              dist/latest-linux.yml
+              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage
+              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
           - name: Windows
             os: windows-latest
             command: npm run dist:win
             artifacts: |
-              dist/*.exe
-              dist/latest.yml
+              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe
           - name: macOS
             os: macos-latest
             command: npm run dist:mac
             artifacts: |
-              dist/*.dmg
-              dist/*.zip
-              dist/latest-mac.yml
-
-    env:
-      CSC_IDENTITY_AUTO_DISCOVERY: false
+              src-tauri/target/release/bundle/dmg/*.dmg
 
     steps:
       - name: Check out repository
@@ -51,6 +44,15 @@ jobs:
         with:
           node-version: 22
           cache: npm
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux Tauri dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
 
       - name: Install dependencies
         run: npm ci
@@ -71,9 +73,25 @@ jobs:
           path: ${{ matrix.artifacts }}
           if-no-files-found: error
 
-      - name: Upload files to GitHub Release
-        if: startsWith(github.ref, 'refs/tags/')
+  release:
+    name: Publish GitHub release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Download Tauri installers
+        uses: actions/download-artifact@v4
+        with:
+          pattern: Gretel-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish Tauri installers
         uses: softprops/action-gh-release@v2
         with:
-          prerelease: true
-          files: ${{ matrix.artifacts }}
+          name: Gretel ${{ github.ref_name }}
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          fail_on_unmatched_files: true
+          files: release-assets/**/*
