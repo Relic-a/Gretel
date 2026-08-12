@@ -552,6 +552,69 @@ test("embedding input includes configured transcript introduction when available
   }
 });
 
+test("embedding batches run with bounded concurrency and record stage timings", async () => {
+  let activeRequests = 0;
+  let maxActiveRequests = 0;
+  let requestCount = 0;
+  const modules = loadRuntimeModules({
+    youtubeClient: createFakeYoutubeClient({
+      searchVideos: Array.from({ length: 10 }, (_, index) =>
+        rawVideo(`parallel-${index}`, `alpha parallel ${index}`, "Search")
+      )
+    }),
+    embeddingProvider: {
+      async embedTexts(texts) {
+        activeRequests += 1;
+        requestCount += 1;
+        maxActiveRequests = Math.max(maxActiveRequests, activeRequests);
+        await new Promise((resolve) => setTimeout(resolve, 20));
+        activeRequests -= 1;
+        return texts.map(() => [1, 0]);
+      }
+    }
+  });
+  const profile = modules.profileStore.createProfile("Parallel Embeddings");
+  profileStoreForCleanup = modules.profileStore;
+
+  try {
+    process.env.GRETEL_CONFIG = writeConfig("parallel-embeddings.json", {
+      expansion: { initialFetchSize: 10, initialExpansionCycles: 0 },
+      transcription: { introductionPercentage: 0 },
+      feed: { maxQueries: 1, maxVideos: 10, minVideosPerQuery: 10 },
+      embeddings: {
+        provider: "mock",
+        dimensions: 2,
+        batchSize: 2,
+        maxConcurrentRequests: 3
+      }
+    });
+    const runObservation = observation();
+
+    await modules.service.createFeed(
+      profile.id,
+      ["alpha"],
+      [],
+      "mixed",
+      runObservation
+    );
+
+    assert.equal(requestCount, 5);
+    assert.equal(maxActiveRequests, 3);
+    assert.equal(
+      runObservation.operations.filter((operation) => operation.name === "embedding.mock.request").length,
+      5
+    );
+    const total = runObservation.operations.find(
+      (operation) => operation.name === "feed.embeddings.total" && operation.input.stage === "initial_discovery"
+    );
+    assert.equal(total.input.requests, 5);
+    assert.equal(total.input.concurrency, 3);
+    assert.ok(total.durationMs >= 20);
+  } finally {
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});
+
 test("scoring computes engagement, nonlinear ignore decay, accumulated interactions, and cold/warm ordering", () => {
   const { computeEngagementScore, applyEngagement } = require(path.join(
     buildDir,
@@ -1167,7 +1230,11 @@ function listTsFiles(dir) {
   });
 }
 
-function loadRuntimeModules({ youtubeClient, embeddingForText = () => [1, 0] } = {}) {
+function loadRuntimeModules({
+  youtubeClient,
+  embeddingForText = () => [1, 0],
+  embeddingProvider
+} = {}) {
   for (const modulePath of Object.keys(require.cache)) {
     if (modulePath.startsWith(buildDir)) {
       delete require.cache[modulePath];
@@ -1193,7 +1260,7 @@ function loadRuntimeModules({ youtubeClient, embeddingForText = () => [1, 0] } =
       return [video.title, video.author, video.query].filter(Boolean).join("\n");
     },
     getEmbeddingProvider() {
-      return {
+      return embeddingProvider || {
         async embedTexts(texts) {
           return texts.map((text) => normalize(embeddingForText(text)));
         }

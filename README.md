@@ -57,6 +57,8 @@ OPENROUTER_SITE_URL=http://localhost:3000
 OPENROUTER_APP_NAME=Gretel
 ```
 
+`OPENROUTER_KEY` is also accepted as an API-key environment variable.
+
 Run the web app only:
 
 ```bash

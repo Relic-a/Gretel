@@ -6,6 +6,8 @@
   },
   "expansion": {
     "initialFetchSize": 160,
+    "initialExpansionCycles": 1,
+    "initialExpansionSeedCount": 4,
     "minDelayBetweenFetchesMs": 100,
     "maxFetchCallsPerCycle": 8,
     "cycleCooldownMs": 30000,
@@ -52,8 +54,9 @@
     "openRouterSiteUrlEnv": "OPENROUTER_SITE_URL",
     "openRouterAppNameEnv": "OPENROUTER_APP_NAME",
     "model": "qwen/qwen3-embedding-8b",
-    "dimensions": 4096,
-    "batchSize": 32,
+    "dimensions": 1024,
+    "batchSize": 8,
+    "maxConcurrentRequests": 13,
     "requestTimeoutMs": 30000,
     "mockSeed": 20260503
   },

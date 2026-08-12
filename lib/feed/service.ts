@@ -57,6 +57,11 @@ export type ServeFeedPageOptions = {
   servedVideoIds?: string[];
 };
 
+type PoolInitialization = {
+  initialized: boolean;
+  channelCandidates: FeedVideo[];
+};
+
 type FeedServingSession = {
   id: string;
   profileId: string;
@@ -247,8 +252,8 @@ export async function createFeed(
   const poolKey = createFeedPoolKey({ tags: queries, channels, channelSort });
   const watchedVideoIds = new Set(options.watchedVideoIds || []);
   const excludeVideoIds = new Set(options.excludeVideoIds || []);
-  const initializedRoot = options.readOnlyPool
-    ? false
+  const initialization: PoolInitialization = options.readOnlyPool
+    ? { initialized: false, channelCandidates: [] }
     : await initializePoolOnce(
         profileId,
         poolKey,
@@ -258,6 +263,7 @@ export async function createFeed(
         observation,
         options.expectedProfileUpdatedAt
       );
+  const initializedRoot = initialization.initialized;
 
   let poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
   recordScoringObservation(observation, profileId, poolVideos, "initial");
@@ -348,6 +354,13 @@ export async function createFeed(
 
   const fastLaneVideos = options.readOnlyPool
     ? []
+    : initializedRoot
+    ? selectSubscriptionFastLaneVideos(
+        initialization.channelCandidates,
+        profileId,
+        watchedVideoIds,
+        config
+      )
     : await getSubscriptionFastLaneVideos(
         channels,
         channelSort,
@@ -573,15 +586,35 @@ async function initializePoolOnce(
   const existingCentroid = getCentroid(profileId, poolKey);
 
   if (existingState && existingCentroid) {
-    return false;
+    return { initialized: false, channelCandidates: [] };
   }
 
   const timestamp = Date.now();
   const config = getGretelConfig();
-  const discoveredRootVideos = queries.length > 0
-    ? await searchVideos(queries, observation, profileId, config.expansion.initialFetchSize)
-    : [];
-  const discoveredRootEmbeddings = await embedVideos(profileId, discoveredRootVideos);
+  const [discoveredRootVideos, channelCandidates] = await Promise.all([
+    queries.length > 0
+      ? searchVideos(queries, observation, profileId, config.expansion.initialFetchSize)
+      : Promise.resolve([]),
+    channels.length > 0
+      ? fetchChannelVideos(channels, channelSort, observation, profileId, config.expansion.initialFetchSize)
+      : Promise.resolve([])
+  ]);
+  const persistentChannels = persistentChannelCandidates(profileId, channelCandidates);
+  const embeddingCandidates = [...new Map(
+    [...discoveredRootVideos, ...persistentChannels].map((video) => [video.id, video])
+  ).values()];
+  const initialEmbeddings = await embedVideos(
+    profileId,
+    embeddingCandidates,
+    observation,
+    "initial_discovery"
+  );
+  const discoveredRootEmbeddings = new Map(
+    discoveredRootVideos.flatMap((video) => {
+      const embedding = initialEmbeddings.get(video.id);
+      return embedding ? [[video.id, embedding] as const] : [];
+    })
+  );
   const rootFilter = filterEmbeddingOutliers(discoveredRootVideos, discoveredRootEmbeddings);
   const rootVideos = rootFilter.videos;
   const rootEmbeddings = rootFilter.embeddings;
@@ -613,12 +646,14 @@ async function initializePoolOnce(
   retainVideoEmbeddings(profileId, scoredRoots, rootEmbeddings);
   addPoolNodes(profileId, poolKey, "tagSearch", scoredRoots, timestamp);
 
-  const channelCandidates = channels.length > 0
-    ? await fetchChannelVideos(channels, channelSort, observation, profileId, config.expansion.initialFetchSize)
-    : [];
-  const channelEmbeddings = await embedVideos(profileId, channelCandidates);
+  const channelEmbeddings = new Map(
+    persistentChannels.flatMap((video) => {
+      const embedding = initialEmbeddings.get(video.id);
+      return embedding ? [[video.id, embedding] as const] : [];
+    })
+  );
   const channelPoolVideos = scoreByCentroid(
-    persistentChannelCandidates(profileId, channelCandidates),
+    persistentChannels,
     channelEmbeddings,
     originalCentroid,
     "channelVideos"
@@ -639,7 +674,7 @@ async function initializePoolOnce(
   ensureProfileCurrent(profileId, expectedProfileUpdatedAt);
   addPoolNodes(profileId, poolKey, "channelVideos", channelPoolVideos, timestamp);
 
-  return true;
+  return { initialized: true, channelCandidates };
 }
 
 function persistentChannelCandidates(profileId: string, videos: FeedVideo[]) {
@@ -776,7 +811,7 @@ async function expandPool(
       );
       const visitedVideoIds = getVisitedVideoIds(profileId, poolKey);
       const newCandidates = rawRelatedVideos.filter((video) => !visitedVideoIds.has(video.id));
-      const embeddings = await embedVideos(profileId, newCandidates);
+      const embeddings = await embedVideos(profileId, newCandidates, observation, "pool_expansion");
       const parentScores = new Map(seeds.map((seed) => [seed.id, seed.engagementScore || 0]));
       const relatedVideos = scoreByCentroid(newCandidates, embeddings, centroid, "relatedVideos")
         .map((video) => ({
@@ -1009,31 +1044,91 @@ function logTopServingItems(
   });
 }
 
-async function embedVideos(profileId: string, videos: FeedVideo[]) {
+async function embedVideos(
+  profileId: string,
+  videos: FeedVideo[],
+  observation: FeedObservation,
+  stage: string
+) {
   const config = getGretelConfig();
   const provider = getEmbeddingProvider(config);
   const embeddings = new Map<string, number[]>();
+  const uniqueVideos = [...new Map(videos.map((video) => [video.id, video])).values()];
+  const batches: FeedVideo[][] = [];
+  const startedAt = performance.now();
 
-  for (let index = 0; index < videos.length; index += config.embeddings.batchSize) {
-    const batch = videos.slice(index, index + config.embeddings.batchSize);
-    const texts = await Promise.all(
-      batch.map(async (video) => {
-        const transcriptIntroduction = await fetchTranscriptIntroduction(profileId, video.id, config);
+  for (let index = 0; index < uniqueVideos.length; index += config.embeddings.batchSize) {
+    batches.push(uniqueVideos.slice(index, index + config.embeddings.batchSize));
+  }
+
+  let nextBatchIndex = 0;
+  const workerCount = Math.min(config.embeddings.maxConcurrentRequests, batches.length);
+  await Promise.all(Array.from({ length: workerCount }, async () => {
+    while (nextBatchIndex < batches.length) {
+      const batchIndex = nextBatchIndex;
+      nextBatchIndex += 1;
+      const batch = batches[batchIndex];
+      const transcriptStartedAt = performance.now();
+      const transcriptIntroductions = await Promise.all(
+        batch.map((video) => fetchTranscriptIntroduction(profileId, video.id, config))
+      );
+      observation.operations.push({
+        name: "feed.embeddings.transcripts",
+        durationMs: Math.round(performance.now() - transcriptStartedAt),
+        status: "ok",
+        input: { stage, batchIndex, videos: batch.length },
+        output: {
+          transcriptsFound: transcriptIntroductions.filter(Boolean).length
+        }
+      });
+      const texts = batch.map((video, index) => {
+        const transcriptIntroduction = transcriptIntroductions[index];
         return transcriptIntroduction
           ? createEmbeddingInputWithTranscript(video, transcriptIntroduction)
           : createEmbeddingInput(video);
-      })
-    );
-    const vectors = await provider.embedTexts(texts);
+      });
+      const vectors = await observeOperation(
+        observation,
+        `embedding.${config.embeddings.provider}.request`,
+        {
+          stage,
+          batchIndex,
+          batchSize: batch.length,
+          configuredBatchSize: config.embeddings.batchSize,
+          concurrency: workerCount,
+          provider: provider.provider || config.embeddings.provider,
+          model: provider.model || config.embeddings.model
+        },
+        async () => {
+          const value = await provider.embedTexts(texts);
+          return { value, output: { vectors: value.length } };
+        }
+      );
 
-    for (let vectorIndex = 0; vectorIndex < batch.length; vectorIndex += 1) {
-      const vector = vectors[vectorIndex];
+      for (let vectorIndex = 0; vectorIndex < batch.length; vectorIndex += 1) {
+        const vector = vectors[vectorIndex];
 
-      if (vector?.length) {
-        embeddings.set(batch[vectorIndex].id, vector);
+        if (vector?.length) {
+          embeddings.set(batch[vectorIndex].id, vector);
+        }
       }
     }
-  }
+  }));
+
+  observation.operations.push({
+    name: "feed.embeddings.total",
+    durationMs: Math.round(performance.now() - startedAt),
+    status: "ok",
+    input: {
+      stage,
+      videos: videos.length,
+      uniqueVideos: uniqueVideos.length,
+      batchSize: config.embeddings.batchSize,
+      concurrency: workerCount,
+      requests: batches.length
+    },
+    output: { embeddedVideos: embeddings.size }
+  });
 
   return embeddings;
 }
@@ -1130,7 +1225,7 @@ async function retainReadyQueueEmbeddings(
     return;
   }
 
-  const embeddings = await embedVideos(profileId, missingVideos);
+  const embeddings = await embedVideos(profileId, missingVideos, observation, "ready_queue");
   ensureProfileCurrent(profileId, expectedProfileUpdatedAt);
   retainVideoEmbeddings(profileId, missingVideos, embeddings);
   observation.operations.push({

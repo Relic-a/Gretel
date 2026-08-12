@@ -552,6 +552,7 @@ test("runtime feed flow initializes roots with early expansion, serves fast lane
       );
 
       const firstCounts = { ...fakeYoutubeClient.calls };
+      assert.equal(firstCounts.getChannel, 1);
       const secondFeed = await postJson(feedRoute, {
         profileId,
         tags: "alpha, beta",

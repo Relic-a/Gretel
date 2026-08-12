@@ -57,6 +57,7 @@ export type GretelConfig = {
     model: string;
     dimensions: number;
     batchSize: number;
+    maxConcurrentRequests: number;
     requestTimeoutMs: number;
     mockSeed: number;
   };
@@ -125,8 +126,9 @@ export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
     openRouterSiteUrlEnv: "OPENROUTER_SITE_URL",
     openRouterAppNameEnv: "OPENROUTER_APP_NAME",
     model: "qwen/qwen3-embedding-8b",
-    dimensions: 4096,
-    batchSize: 16,
+    dimensions: 1024,
+    batchSize: 8,
+    maxConcurrentRequests: 13,
     requestTimeoutMs: 30000,
     mockSeed: 20260503
   },

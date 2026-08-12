@@ -1,0 +1,94 @@
+[
+  {
+    "name": "distributed-systems",
+    "seeds": [
+      "Raft Consensus Algorithm Explained\nDistributed Systems Lab\ndistributed systems",
+      "Replication and Fault Tolerance\nMartin Kleppmann\ndistributed systems",
+      "Consistent Hashing and Data Partitioning\nSystem Design Academy\ndistributed systems",
+      "Logical Clocks and Event Ordering\nComputer Science Lectures\ndistributed systems"
+    ],
+    "candidates": [
+      { "relevant": true, "text": "Paxos Made Understandable\nDistributed Computing Course\nconsensus protocols" },
+      { "relevant": true, "text": "Leader Election During Network Partitions\nBackend Engineering\nfault tolerant systems" },
+      { "relevant": true, "text": "Gossip Protocols at Scale\nCloud Native Talks\ndistributed systems" },
+      { "relevant": true, "text": "Building an Eventually Consistent Key Value Store\nSystems Workshop\ndistributed databases" },
+      { "relevant": true, "text": "Exactly Once Delivery in Event Streams\nData Infrastructure\nmessage processing" },
+      { "relevant": true, "text": "Tracing Requests Across Microservices\nProduction Engineering\ndistributed observability" },
+      { "relevant": false, "text": "Distributed GPU Training for Neural Networks\nDeep Learning School\nmachine learning" },
+      { "relevant": false, "text": "The History of Distributed Ledger Cryptocurrencies\nFinance Explained\nblockchain investing" },
+      { "relevant": false, "text": "Operating System Process Scheduling\nComputer Architecture\noperating systems" },
+      { "relevant": false, "text": "How to Design a Mobile App Interface\nProduct Design\nmobile UI" },
+      { "relevant": false, "text": "Home Network Wi-Fi Router Setup\nTech Help\nhome networking" },
+      { "relevant": false, "text": "Probability Distributions from Scratch\nMath Classroom\nstatistics" }
+    ]
+  },
+  {
+    "name": "rust-programming",
+    "seeds": [
+      "Rust Ownership and Borrowing\nSystems Academy\nRust programming",
+      "Fearless Concurrency with Rust\nCode to the Moon\nRust programming",
+      "Error Handling with Result and Option\nRust Workshop\nRust programming",
+      "Building Async Services with Tokio\nBackend Engineering\nRust programming"
+    ],
+    "candidates": [
+      { "relevant": true, "text": "Understanding Lifetimes in Rust\nLet's Get Rusty\nRust programming" },
+      { "relevant": true, "text": "Trait Objects and Dynamic Dispatch\nRust Nation\nRust language" },
+      { "relevant": true, "text": "Writing Safe Rust FFI Bindings\nSystems Programming\nRust interoperability" },
+      { "relevant": true, "text": "Cargo Workspaces for Large Projects\nDeveloper Tools\nRust builds" },
+      { "relevant": true, "text": "Zero Cost Abstractions in Rust\nPerformance Engineering\nRust programming" },
+      { "relevant": true, "text": "Create a Command Line Tool in Rust\nCode Tutorial\nRust CLI" },
+      { "relevant": false, "text": "Removing Rust from an Old Car Frame\nGarage Restoration\nautomotive repair" },
+      { "relevant": false, "text": "The Rise and Fall of the Rust Survival Game\nGaming History\nvideo games" },
+      { "relevant": false, "text": "C++ Smart Pointers and Memory Ownership\nCppCon\nC++ programming" },
+      { "relevant": false, "text": "Python Asyncio Complete Tutorial\nPython Engineer\nPython programming" },
+      { "relevant": false, "text": "Iron Oxidation Chemistry Experiment\nScience Lab\nchemistry" },
+      { "relevant": false, "text": "Go Channels and Goroutines Explained\nGopher Academy\nGo programming" }
+    ]
+  },
+  {
+    "name": "ml-infrastructure",
+    "seeds": [
+      "Serving Large Language Models in Production\nML Systems\nmachine learning infrastructure",
+      "GPU Batching for Low Latency Inference\nAI Engineering\nmodel serving",
+      "Monitoring Feature Drift\nMLOps Community\nmachine learning operations",
+      "Quantization for Faster Neural Network Inference\nDeep Learning Systems\nmodel optimization"
+    ],
+    "candidates": [
+      { "relevant": true, "text": "Autoscaling an Inference API\nProduction AI\nmodel serving" },
+      { "relevant": true, "text": "KV Cache Optimization for LLM Serving\nGPU Mode\nLLM inference" },
+      { "relevant": true, "text": "Building a Reliable Feature Store\nMLOps World\nmachine learning infrastructure" },
+      { "relevant": true, "text": "Evaluating Model Latency and Throughput\nAI Performance\ninference benchmarking" },
+      { "relevant": true, "text": "Data Versioning for Training Pipelines\nML Platform\nMLOps" },
+      { "relevant": true, "text": "Deploying Embedding Models with GPUs\nVector Search Engineering\nmodel deployment" },
+      { "relevant": false, "text": "Linear Regression by Hand\nStatistics Course\nmachine learning theory" },
+      { "relevant": false, "text": "The Best AI Stocks to Buy This Year\nMarket Insights\ntechnology investing" },
+      { "relevant": false, "text": "Prompt Writing Tips for Chatbots\nCreator Academy\nprompting" },
+      { "relevant": false, "text": "Building a Gaming PC with Two GPUs\nHardware Lab\nPC building" },
+      { "relevant": false, "text": "Neuroscience of Human Memory\nMedical Lectures\nbrain science" },
+      { "relevant": false, "text": "How Recommendation Algorithms Shape Culture\nDigital Society\nmedia studies" }
+    ]
+  },
+  {
+    "name": "espresso-coffee",
+    "seeds": [
+      "Dialing In Espresso Grind Size\nJames Hoffmann\nespresso technique",
+      "Understanding Espresso Extraction\nEuropean Coffee Trip\nespresso",
+      "How to Steam Silky Milk\nBarista Training\ncoffee",
+      "Comparing Home Espresso Machines\nCoffee Gear Lab\nespresso equipment"
+    ],
+    "candidates": [
+      { "relevant": true, "text": "Fixing Sour Espresso Shots\nCoffee Expert\nespresso extraction" },
+      { "relevant": true, "text": "Pressure Profiling on a Manual Lever Machine\nHome Barista\nespresso" },
+      { "relevant": true, "text": "Choosing Burrs for an Espresso Grinder\nCoffee Equipment\nespresso gear" },
+      { "relevant": true, "text": "Latte Art Fundamentals\nBarista School\nmilk drinks" },
+      { "relevant": true, "text": "Cleaning and Backflushing Your Espresso Machine\nCafe Maintenance\ncoffee equipment" },
+      { "relevant": true, "text": "Light Roast Espresso Recipe\nSpecialty Coffee\nespresso brewing" },
+      { "relevant": false, "text": "Cold Brew Coffee at Home\nSummer Drinks\ncold brew" },
+      { "relevant": false, "text": "Testing JavaScript with Espresso on Android\nMobile Developers\nsoftware testing" },
+      { "relevant": false, "text": "Italian Language Lesson at a Cafe\nLearn Italian\nlanguages" },
+      { "relevant": false, "text": "Restoring a Vintage Steam Engine\nEngineering History\nmechanical restoration" },
+      { "relevant": false, "text": "Healthy Matcha Latte Recipe\nWellness Kitchen\ntea drinks" },
+      { "relevant": false, "text": "How Commodity Futures Markets Price Coffee\nEconomics Explained\ncommodity trading" }
+    ]
+  }
+]

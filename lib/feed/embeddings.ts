@@ -4,6 +4,8 @@ import { getUserSettings } from "../settings";
 import { normalizeVector } from "./vector-math";
 
 export type EmbeddingProvider = {
+  provider?: "openrouter" | "mock";
+  model?: string;
   embedTexts(texts: string[]): Promise<number[][]>;
 };
 
@@ -19,11 +21,14 @@ export function getEmbeddingProvider(config = getGretelConfig()): EmbeddingProvi
   }
 
   const settings = getUserSettings();
-  const apiKey = settings.openRouterApiKey || process.env[config.embeddings.openRouterApiKeyEnv] || "";
+  const apiKey = settings.openRouterApiKey ||
+    process.env[config.embeddings.openRouterApiKeyEnv] ||
+    process.env.OPENROUTER_KEY ||
+    "";
 
   if (!apiKey) {
     throw new Error(
-      `Missing OpenRouter API key in environment variable ${config.embeddings.openRouterApiKeyEnv}`
+      `Missing OpenRouter API key in ${config.embeddings.openRouterApiKeyEnv}, OPENROUTER_KEY, or user settings`
     );
   }
 
@@ -39,10 +44,12 @@ export function getEmbeddingProvider(config = getGretelConfig()): EmbeddingProvi
 }
 
 class OpenRouterEmbeddingProvider implements EmbeddingProvider {
+  readonly provider = "openrouter" as const;
+
   constructor(
     private readonly baseUrl: string,
     private readonly apiKey: string,
-    private readonly model: string,
+    readonly model: string,
     private readonly dimensions: number,
     private readonly siteUrl: string,
     private readonly appName: string,
@@ -75,10 +82,29 @@ class OpenRouterEmbeddingProvider implements EmbeddingProvider {
       }
 
       const payload = await response.json() as {
-        data?: Array<{ embedding?: number[] }>;
+        data?: Array<{ embedding?: number[]; index?: number }>;
       };
+      const data = [...(payload.data || [])].sort(
+        (left, right) => (left.index ?? 0) - (right.index ?? 0)
+      );
 
-      return (payload.data || []).map((item) => normalizeVector(item.embedding || []));
+      if (data.length !== texts.length) {
+        throw new Error(
+          `OpenRouter returned ${data.length} embeddings for ${texts.length} inputs`
+        );
+      }
+
+      return data.map((item, index) => {
+        const vector = normalizeVector(item.embedding || []);
+
+        if (vector.length !== this.dimensions) {
+          throw new Error(
+            `OpenRouter embedding ${index} has ${vector.length} dimensions; expected ${this.dimensions}`
+          );
+        }
+
+        return vector;
+      });
     } finally {
       clearTimeout(timeout);
     }
@@ -86,6 +112,9 @@ class OpenRouterEmbeddingProvider implements EmbeddingProvider {
 }
 
 class MockEmbeddingProvider implements EmbeddingProvider {
+  readonly provider = "mock" as const;
+  readonly model = "mock/hash-v1";
+
   constructor(
     private readonly dimensions: number,
     private readonly seed: number

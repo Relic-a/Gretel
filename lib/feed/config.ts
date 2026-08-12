@@ -146,7 +146,8 @@ function logConfigIfChanged(config: GretelConfig) {
       store: config.embeddings.store,
       model: config.embeddings.model,
       dimensions: config.embeddings.dimensions,
-      batchSize: config.embeddings.batchSize
+      batchSize: config.embeddings.batchSize,
+      maxConcurrentRequests: config.embeddings.maxConcurrentRequests
     },
     client: config.client,
     youtube: config.youtube
@@ -356,6 +357,12 @@ function mergeConfig(defaults: GretelConfig, input: ConfigInput): GretelConfig {
       model: nonEmptyString(embeddings.model, defaults.embeddings.model),
       dimensions: integer(embeddings.dimensions, defaults.embeddings.dimensions, 1, 32768),
       batchSize: integer(embeddings.batchSize, defaults.embeddings.batchSize, 1, 256),
+      maxConcurrentRequests: integer(
+        embeddings.maxConcurrentRequests,
+        defaults.embeddings.maxConcurrentRequests,
+        1,
+        16
+      ),
       requestTimeoutMs: integer(
         embeddings.requestTimeoutMs,
         defaults.embeddings.requestTimeoutMs,
