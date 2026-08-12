@@ -10,6 +10,7 @@ const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "ut
 assert.equal(config.identifier, "com.ezana.gretel");
 assert.equal(config.version, packageJson.version);
 assert.match(packageJson.scripts["dist:win"], /--bundles nsis(?:\s|$)/);
+assert.match(packageJson.scripts["dist:linux"], /--bundles deb,rpm(?:\s|$)/);
 assert.equal(config.build.devUrl, "http://127.0.0.1:3000");
 assert.equal(config.build.frontendDist, "frontend");
 assert.equal(config.bundle.resources["node-runtime/node.exe"], "node.exe");

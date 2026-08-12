@@ -107,7 +107,7 @@ npm run dist:mac
 
 Notes:
 
-- Linux builds produce `.AppImage` and `.deb` files.
+- Linux release builds produce `.deb` and `.rpm` installers. AppImage packaging is currently excluded because Tauri's upstream `linuxdeploy` step is unreliable on GitHub's Linux runners.
 - Windows builds produce `.exe` installers. Prerelease builds use Tauri's NSIS target because MSI only accepts numeric prerelease identifiers.
 - macOS builds require macOS for best results.
 - Local builds are unsigned by default.

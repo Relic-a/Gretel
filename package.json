@@ -1,6 +1,6 @@
 {
   "name": "gretel",
-  "version": "0.2.0-alpha.3",
+  "version": "0.2.0-alpha.4",
   "private": true,
   "type": "module",
   "scripts": {
@@ -12,7 +12,7 @@
     "tauri:build": "tauri build",
     "dist": "tauri build",
     "dist:win": "tauri build --target x86_64-pc-windows-msvc --bundles nsis",
-    "dist:linux": "tauri build --target x86_64-unknown-linux-gnu",
+    "dist:linux": "tauri build --target x86_64-unknown-linux-gnu --bundles deb,rpm",
     "dist:mac": "tauri build",
     "generate:icons": "tauri icon logo.png",
     "test": "node tests/tauri-config-test.mjs && node tests/config-smoke-test.mjs && node tests/feed-algorithm-test.mjs",
