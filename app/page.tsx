@@ -127,20 +127,27 @@ export default function Home() {
       const saved = readSavedState();
       const route = readRouteFromUrl();
       const stashedActiveVideo = readStashedActiveVideo(route.videoId);
-      const [selectedProfileId] = await Promise.all([
+      const [selectedProfile] = await Promise.all([
         loadProfiles(saved?.profileId),
         loadPublicConfig(),
         loadSettings()
       ]);
+      const selectedProfileId = selectedProfile?.id || "";
       const cachedFeed = selectedProfileId ? readCachedFeed(selectedProfileId) : null;
       const nextTags = cachedFeed?.tags?.length
         ? cachedFeed.tags
-        : saved?.tags?.length
+        : selectedProfile?.tags?.length
+          ? selectedProfile.tags
+          : saved?.profileId === selectedProfileId && saved.tags.length
           ? saved.tags
           : [];
       const nextChannels = cachedFeed?.channels?.length
         ? cachedFeed.channels
-        : saved?.channels || [];
+        : selectedProfile?.channels?.length
+          ? selectedProfile.channels
+          : saved?.profileId === selectedProfileId
+            ? saved.channels
+            : [];
 
       if (disposed) {
         return;
@@ -413,7 +420,7 @@ export default function Home() {
 
     setProfiles(nextProfiles);
     setProfileId(selected?.id || "");
-    return selected?.id || "";
+    return selected as Profile | undefined;
   }
 
   async function loadPublicConfig() {
@@ -501,7 +508,11 @@ export default function Home() {
       const response = await fetch("/api/profiles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: profileName })
+        body: JSON.stringify({
+          name: profileName,
+          tags: createdTags,
+          channels: createdChannels
+        })
       });
       const data = await response.json();
 
@@ -861,10 +872,13 @@ export default function Home() {
           feedRequestIdRef.current += 1;
           setLoading(false);
           setProfileId(nextProfileId);
+          const nextProfile = profiles.find((profile) => profile.id === nextProfileId);
           const cachedFeed = readCachedFeed(nextProfileId);
+          const nextTags = cachedFeed?.tags?.length ? cachedFeed.tags : nextProfile?.tags || [];
+          const nextChannels = cachedFeed?.channels?.length ? cachedFeed.channels : nextProfile?.channels || [];
           setFeed(cachedFeed);
-          setTags(cachedFeed?.tags?.length ? cachedFeed.tags : []);
-          setChannels(cachedFeed?.channels?.length ? cachedFeed.channels : []);
+          setTags(nextTags);
+          setChannels(nextChannels);
           setActiveVideo(null);
           setSection("home");
           writeRoute("home");
@@ -878,6 +892,15 @@ export default function Home() {
           void loadLikedVideos(nextProfileId).catch((caught) =>
             setError(caught instanceof Error ? caught.message : "Could not load liked videos.")
           );
+          if (nextTags.length > 0 || nextChannels.length > 0) {
+            void requestFeed({
+              nextProfileId,
+              nextTags,
+              nextChannels,
+              resetFeed: true,
+              servingOnly: Boolean(cachedFeed)
+            });
+          }
           setShowProfileMenu(false);
         }}
         onManageProfiles={() => {
