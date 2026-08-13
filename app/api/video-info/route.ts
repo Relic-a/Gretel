@@ -12,6 +12,7 @@ import {
 } from "../../../lib/feed/video-utils";
 import { hydrateChannelAvatar } from "../../../lib/feed/channel-avatar-cache";
 import type { FeedVideo } from "../../../lib/feed/types";
+import { errorFields, logError, requestFields } from "../../../lib/logger";
 
 export const runtime = "nodejs";
 
@@ -49,6 +50,11 @@ export async function GET(request: Request) {
 
     return Response.json({ video });
   } catch (error) {
+    logError("video_info.failed", requestFields(request, {
+      videoId,
+      profileId,
+      ...errorFields(error, { stack: true })
+    }));
     return Response.json(
       { error: error instanceof Error ? error.message : "Could not fetch video info." },
       { status: 500 }

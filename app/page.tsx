@@ -78,6 +78,49 @@ export default function Home() {
   const canAskForMore = section === "home" && Boolean(feed) && !loading && !feedEnd;
 
   useEffect(() => {
+    let reporting = false;
+    let lastReportedAt = 0;
+
+    function reportClientError(source: string, error: unknown, location?: { url?: string; line?: number; column?: number }) {
+      const now = Date.now();
+      if (reporting || now - lastReportedAt < 1000) return;
+      reporting = true;
+      lastReportedAt = now;
+      const normalized = error instanceof Error
+        ? { message: error.message, stack: error.stack }
+        : { message: String(error) };
+      const payload = JSON.stringify({ source, ...normalized, ...location });
+      void fetch("/api/client-errors", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: payload,
+        keepalive: true
+      }).catch(() => undefined).finally(() => {
+        reporting = false;
+      });
+    }
+
+    function handleError(event: ErrorEvent) {
+      reportClientError("window.error", event.error || event.message, {
+        url: event.filename,
+        line: event.lineno,
+        column: event.colno
+      });
+    }
+
+    function handleRejection(event: PromiseRejectionEvent) {
+      reportClientError("window.unhandled_rejection", event.reason);
+    }
+
+    window.addEventListener("error", handleError);
+    window.addEventListener("unhandledrejection", handleRejection);
+    return () => {
+      window.removeEventListener("error", handleError);
+      window.removeEventListener("unhandledrejection", handleRejection);
+    };
+  }, []);
+
+  useEffect(() => {
     let disposed = false;
 
     async function boot() {
