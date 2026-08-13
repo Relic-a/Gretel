@@ -1,5 +1,6 @@
 import { searchChannels } from "../../../../lib/feed/youtube";
 import { getProfile, listProfiles } from "../../../../lib/profile-store";
+import { errorFields, logWarn, requestFields } from "../../../../lib/logger";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,12 @@ export async function GET(request: Request) {
   try {
     const channels = await searchChannels(query, profile?.id || "setup");
     return Response.json({ channels });
-  } catch {
+  } catch (error) {
+    logWarn("channels.search_failed", requestFields(request, {
+      profileId: profile?.id || "",
+      queryLength: query.length,
+      ...errorFields(error)
+    }));
     return Response.json({ channels: [] });
   }
 }

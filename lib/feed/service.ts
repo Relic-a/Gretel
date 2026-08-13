@@ -1019,14 +1019,14 @@ function logTopServingItems(
       fastLaneImpressionPenaltyFactor: config.serving.fastLaneImpressionPenaltyFactor,
       coldStartParentEngagementWeight: config.feed.coldStartParentEngagementWeight
     },
-    topItems: videos.slice(0, 10).map((video, index) => {
+    // Keep the ranking explanation useful without persisting titles/authors
+    // (which are high-cardinality and user-visible data) in every request log.
+    topItems: videos.slice(0, 5).map((video, index) => {
       const score = describeServingScore(video, config, isColdStart);
 
       return {
         rank: index + 1,
         id: video.id,
-        title: video.title,
-        author: video.author,
         sourceNodeId: video.sourceNodeId,
         score: score.score,
         baseScore: score.baseScore,

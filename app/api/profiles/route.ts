@@ -35,6 +35,8 @@ export async function POST(request: Request) {
   }
 
   const name = typeof body.name === "string" ? body.name : "";
-  const profile = createProfile(name);
+  const tags = Array.isArray(body.tags) ? body.tags : [];
+  const channels = Array.isArray(body.channels) ? body.channels : [];
+  const profile = createProfile(name, tags, channels);
   return Response.json({ profiles: listProfiles(), profileId: profile.id });
 }

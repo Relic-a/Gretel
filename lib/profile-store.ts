@@ -13,6 +13,8 @@ import { getDataDir } from "./data-dir";
 export type GretelProfile = {
   id: string;
   name: string;
+  tags: string[];
+  channels: string[];
   createdAt: number;
   updatedAt: number;
 };
@@ -46,6 +48,8 @@ export function getDatabase() {
       CREATE TABLE IF NOT EXISTS profiles (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
+        tags_json TEXT NOT NULL DEFAULT '[]',
+        channels_json TEXT NOT NULL DEFAULT '[]',
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
@@ -142,6 +146,8 @@ export function getDatabase() {
         FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
       );
     `);
+    ensureProfileColumn("tags_json", "TEXT NOT NULL DEFAULT '[]'");
+    ensureProfileColumn("channels_json", "TEXT NOT NULL DEFAULT '[]'");
     db.pragma("wal_checkpoint(PASSIVE)");
     startCacheCleanup();
   }
@@ -151,7 +157,7 @@ export function getDatabase() {
 
 export function listProfiles() {
   const rows = getDatabase()
-    .prepare("SELECT id, name, created_at, updated_at FROM profiles ORDER BY created_at ASC")
+    .prepare("SELECT id, name, tags_json, channels_json, created_at, updated_at FROM profiles ORDER BY created_at ASC")
     .all() as Array<Record<string, number | string>>;
 
   return rows.map(toProfile);
@@ -159,26 +165,45 @@ export function listProfiles() {
 
 export function getProfile(profileId: string) {
   const row = getDatabase()
-    .prepare("SELECT id, name, created_at, updated_at FROM profiles WHERE id = ?")
+    .prepare("SELECT id, name, tags_json, channels_json, created_at, updated_at FROM profiles WHERE id = ?")
     .get(profileId) as Record<string, number | string> | undefined;
 
   return row ? toProfile(row) : null;
 }
 
-export function createProfile(name: string) {
+export function createProfile(name: string, tags: string[] = [], channels: string[] = []) {
   const now = Date.now();
   const profile: GretelProfile = {
     id: crypto.randomUUID(),
     name: cleanProfileName(name),
+    tags: cleanProfileFeedValues(tags),
+    channels: cleanProfileFeedValues(channels),
     createdAt: now,
     updatedAt: now
   };
 
   getDatabase()
-    .prepare("INSERT INTO profiles (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)")
-    .run(profile.id, profile.name, profile.createdAt, profile.updatedAt);
+    .prepare("INSERT INTO profiles (id, name, tags_json, channels_json, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)")
+    .run(
+      profile.id,
+      profile.name,
+      JSON.stringify(profile.tags),
+      JSON.stringify(profile.channels),
+      profile.createdAt,
+      profile.updatedAt
+    );
 
   return profile;
+}
+
+export function saveProfileFeedPreferences(profileId: string, tags: string[], channels: string[]) {
+  getDatabase()
+    .prepare("UPDATE profiles SET tags_json = ?, channels_json = ? WHERE id = ?")
+    .run(
+      JSON.stringify(cleanProfileFeedValues(tags)),
+      JSON.stringify(cleanProfileFeedValues(channels)),
+      profileId
+    );
 }
 
 export function deleteProfile(profileId: string) {
@@ -645,6 +670,54 @@ function cleanProfileName(name: string) {
   return cleaned.length > 0 ? cleaned.slice(0, 60) : "New profile";
 }
 
+function cleanProfileFeedValues(values: string[]) {
+  return [...new Set(
+    values
+      .filter((value): value is string => typeof value === "string")
+      .map((value) => value.replace(/\s+/g, " ").trim())
+      .filter(Boolean)
+  )];
+}
+
+function ensureProfileColumn(name: string, definition: string) {
+  const columns = db!.prepare("PRAGMA table_info(profiles)").all() as Array<{ name: string }>;
+
+  if (!columns.some((column) => column.name === name)) {
+    db!.exec(`ALTER TABLE profiles ADD COLUMN ${name} ${definition}`);
+  }
+}
+
+function parseProfileFeedValues(value: number | string | undefined) {
+  try {
+    const parsed = JSON.parse(String(value || "[]"));
+    return Array.isArray(parsed) ? cleanProfileFeedValues(parsed) : [];
+  } catch {
+    return [];
+  }
+}
+
+function inferProfileFeedPreferences(profileId: string) {
+  const row = getDatabase()
+    .prepare(
+      `SELECT pool_key
+       FROM feed_pool_state
+       WHERE profile_id = ?
+       ORDER BY updated_at DESC
+       LIMIT 1`
+    )
+    .get(profileId) as { pool_key: string } | undefined;
+
+  try {
+    const parsed = JSON.parse(row?.pool_key || "{}");
+    return {
+      tags: Array.isArray(parsed.tags) ? cleanProfileFeedValues(parsed.tags) : [],
+      channels: Array.isArray(parsed.channels) ? cleanProfileFeedValues(parsed.channels) : []
+    };
+  } catch {
+    return { tags: [], channels: [] };
+  }
+}
+
 function watchedRowToVideo(row: Record<string, string | null>): FeedVideo {
   return {
     id: row.video_id || "",
@@ -665,9 +738,17 @@ function resetYoutubeProfileCache(profileId: string) {
 }
 
 function toProfile(row: Record<string, number | string>): GretelProfile {
+  const storedTags = parseProfileFeedValues(row.tags_json);
+  const storedChannels = parseProfileFeedValues(row.channels_json);
+  const inferred = storedTags.length || storedChannels.length
+    ? { tags: storedTags, channels: storedChannels }
+    : inferProfileFeedPreferences(String(row.id));
+
   return {
     id: String(row.id),
     name: String(row.name),
+    tags: inferred.tags,
+    channels: inferred.channels,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at)
   };

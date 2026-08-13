@@ -27,6 +27,8 @@ export type FeedVideo = {
 export type Profile = {
   id: string;
   name: string;
+  tags?: string[];
+  channels?: string[];
 };
 
 export type ChannelResult = {

@@ -5,9 +5,13 @@ import path from "node:path";
 const root = process.cwd();
 const configPath = path.join(root, "src-tauri", "tauri.conf.json");
 const config = JSON.parse(readFileSync(configPath, "utf8"));
+const capability = JSON.parse(
+  readFileSync(path.join(root, "src-tauri", "capabilities", "default.json"), "utf8")
+);
 const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
 const layout = readFileSync(path.join(root, "app", "layout.tsx"), "utf8");
 const launcher = readFileSync(path.join(root, "src-tauri", "src", "lib.rs"), "utf8");
+const executable = readFileSync(path.join(root, "src-tauri", "src", "main.rs"), "utf8");
 const titleBar = readFileSync(path.join(root, "app", "components", "WindowTitleBar.tsx"), "utf8");
 const startupPage = readFileSync(path.join(root, "src-tauri", "frontend", "index.html"), "utf8");
 
@@ -19,6 +23,9 @@ assert.equal(config.build.devUrl, "http://127.0.0.1:3000");
 assert.equal(config.build.frontendDist, "frontend");
 assert.equal(config.app.windows[0].decorations, false);
 assert.equal(config.app.withGlobalTauri, true);
+assert.deepEqual(capability.remote.urls, ["http://127.0.0.1:*"]);
+assert.ok(capability.permissions.includes("core:window:allow-close"));
+assert.ok(capability.permissions.includes("core:window:allow-start-dragging"));
 assert.equal(config.bundle.resources["node-runtime/node.exe"], "node.exe");
 assert.equal(config.bundle.resources["../.next/standalone"], ".next/standalone");
 assert.ok(existsSync(path.join(root, "src-tauri", "frontend", "index.html")));
@@ -30,6 +37,7 @@ assert.ok(existsSync(path.join(root, "app", "fonts", "space-mono-regular.woff2")
 assert.ok(existsSync(path.join(root, "app", "fonts", "OFL.txt")));
 assert.match(launcher, /thread::spawn\(move \|\|/);
 assert.match(launcher, /CREATE_NO_WINDOW/);
+assert.match(executable, /windows_subsystem = "windows"/);
 assert.match(titleBar, /toggleMaximize/);
 assert.match(titleBar, /\.minimize\(\)/);
 assert.match(titleBar, /\.close\(\)/);

@@ -1,5 +1,6 @@
 import { getYoutubeClient } from "../../../lib/feed/youtube-client";
 import { getText } from "../../../lib/feed/video-utils";
+import { errorFields, logDebug, logError, requestFields } from "../../../lib/logger";
 
 export const runtime = "nodejs";
 
@@ -46,8 +47,13 @@ export async function POST(request: Request) {
       try {
         const info = await youtube.getInfo(videoId);
         description = info.secondary_info?.description?.toString() ?? "";
-      } catch {
+      } catch (error) {
         // Description is optional, proceed without it
+        logDebug("comments.description_unavailable", requestFields(request, {
+          videoId,
+          profileId,
+          ...errorFields(error)
+        }));
       }
 
       // Fetch first page of comments
@@ -105,6 +111,9 @@ export async function POST(request: Request) {
       hasMore,
     });
   } catch (error) {
+    logError("comments.failed", requestFields(request, {
+      ...errorFields(error, { stack: true })
+    }));
     return Response.json(
       { error: error instanceof Error ? error.message : "Failed to fetch comments." },
       { status: 500 }

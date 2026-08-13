@@ -11,13 +11,13 @@ import {
   updateCentroid
 } from "./algorithm-store";
 import { listPoolNodes, updatePoolSimilarities } from "./pool-store";
-import { logInfo } from "../logger";
+import { logDebug, logInfo } from "../logger";
 
 export async function updateCentroidsForPositiveEngagement(profileId: string, video: FeedVideo) {
   const config = getGretelConfig();
 
   if (!isPositiveEngagement(video, config.learning.watchSaveThreshold)) {
-    logInfo("feed.phase4.centroid_drift", {
+    logDebug("feed.phase4.centroid_drift", {
       profileId,
       videoId: video.id,
       status: "skipped",
@@ -27,7 +27,7 @@ export async function updateCentroidsForPositiveEngagement(profileId: string, vi
   }
 
   if (getVideoInteractions(profileId).size < config.feed.coldStartInteractionThreshold) {
-    logInfo("feed.phase4.centroid_drift", {
+    logDebug("feed.phase4.centroid_drift", {
       profileId,
       videoId: video.id,
       status: "skipped",
@@ -52,7 +52,7 @@ export async function updateCentroidsForPositiveEngagement(profileId: string, vi
   }
 
   if (!embedding) {
-    logInfo("feed.phase4.centroid_drift", {
+    logDebug("feed.phase4.centroid_drift", {
       profileId,
       videoId: video.id,
       status: "skipped",
