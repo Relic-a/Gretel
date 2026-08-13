@@ -10,6 +10,7 @@
     "frontendDist": "frontend"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",
@@ -18,7 +19,9 @@
         "height": 900,
         "minWidth": 960,
         "minHeight": 700,
-        "backgroundColor": "#f7f7f2",
+        "decorations": false,
+        "shadow": true,
+        "backgroundColor": "#0a0a0c",
         "url": "index.html"
       }
     ],

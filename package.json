@@ -22,6 +22,7 @@
   "description": "Gretel desktop app",
   "author": "Ezana",
   "dependencies": {
+    "@tauri-apps/api": "^2.8.0",
     "better-sqlite3": "^12.9.0",
     "lucide-react": "^1.14.0",
     "next": "latest",
@@ -31,11 +32,11 @@
     "youtubei.js": "latest"
   },
   "devDependencies": {
+    "@tauri-apps/cli": "2.11.4",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "latest",
     "@types/react": "latest",
     "@types/react-dom": "latest",
-    "@tauri-apps/cli": "2.11.4",
     "typescript": "latest"
   }
 }

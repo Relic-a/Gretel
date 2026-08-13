@@ -119,6 +119,8 @@ fn start_production_server<R: tauri::Runtime>(
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
 
+    configure_background_process(&mut command);
+
     if env::var_os("GRETEL_CONFIG").is_none() {
         let bundled_config = resource_dir.join("config").join("gretel.config.json");
         if bundled_config.is_file() {
@@ -134,6 +136,22 @@ fn start_production_server<R: tauri::Runtime>(
         .spawn()
         .map_err(|error| format!("Could not start Gretel's embedded server: {error}"))
 }
+
+#[cfg(target_os = "windows")]
+fn configure_background_process(command: &mut Command) {
+    use std::os::windows::process::CommandExt;
+
+    // Node is a console-subsystem executable. Without this flag Windows opens a
+    // terminal alongside the otherwise GUI-only Gretel executable.
+    const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+    command
+        .creation_flags(CREATE_NO_WINDOW)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+}
+
+#[cfg(not(target_os = "windows"))]
+fn configure_background_process(_command: &mut Command) {}
 
 fn resolve_data_dir<R: tauri::Runtime>(app: &tauri::App<R>) -> Result<PathBuf, String> {
     if let Some(configured) = env::var_os("GRETEL_DATA_DIR") {

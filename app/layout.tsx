@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./styles.css";
+import { WindowTitleBar } from "./components/WindowTitleBar";
 
 const spaceMono = localFont({
   src: [
@@ -25,7 +26,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={spaceMono.variable}>
-      <body>{children}</body>
+      <body>
+        <WindowTitleBar />
+        {children}
+      </body>
     </html>
   );
 }

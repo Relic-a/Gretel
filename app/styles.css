@@ -17,7 +17,12 @@
   --shadow-card: 0 4px 20px rgb(0 0 0 / 0.4);
   --radius-card: 0px;
   --radius-control: 0px;
+  --window-titlebar-height: 0px;
   --topbar-height: 90px;
+}
+
+html.tauri-app {
+  --window-titlebar-height: 38px;
 }
 
 * {
@@ -53,12 +58,115 @@ button:disabled {
 .app-shell {
   width: min(1460px, calc(100% - 64px));
   margin: 0 auto;
-  padding: calc(var(--topbar-height) + 36px) 0 56px;
+  padding: calc(var(--window-titlebar-height) + var(--topbar-height) + 36px) 0 56px;
+}
+
+.window-titlebar {
+  display: none;
+}
+
+.tauri-app .window-titlebar {
+  position: fixed;
+  inset: 0 0 auto;
+  z-index: 30;
+  display: flex;
+  height: var(--window-titlebar-height);
+  align-items: stretch;
+  justify-content: space-between;
+  color: #b8b8bd;
+  background: #0d0d10;
+  border-bottom: 1px solid #242429;
+  user-select: none;
+}
+
+.window-drag-region {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  padding-left: 12px;
+}
+
+.window-app-mark {
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  background: var(--color-brand);
+  color: white;
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 2px 2px 0 #481b17;
+}
+
+.window-title {
+  overflow: hidden;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.window-controls {
+  display: flex;
+  height: 100%;
+}
+
+.window-control {
+  display: grid;
+  width: 46px;
+  height: 100%;
+  place-items: center;
+  padding: 0;
+  background: transparent;
+  color: #a4a4aa;
+  transition: color 100ms ease, background-color 100ms ease;
+}
+
+.window-control:hover {
+  background: #27272c;
+  color: #fff;
+}
+
+.window-control.close:hover {
+  background: #d63b32;
+  color: #fff;
+}
+
+.window-control:focus-visible {
+  outline: 2px solid var(--color-brand);
+  outline-offset: -2px;
+}
+
+.restore-icon {
+  position: relative;
+  width: 11px;
+  height: 9px;
+  border: 1.5px solid currentColor;
+}
+
+.restore-icon::before {
+  content: "";
+  position: absolute;
+  top: -4px;
+  left: 3px;
+  width: 9px;
+  height: 8px;
+  border: 1.5px solid currentColor;
+  background: #0d0d10;
+}
+
+.window-control:hover .restore-icon::before {
+  background: #27272c;
 }
 
 .topbar {
   position: fixed;
-  inset: 0 0 auto;
+  inset: var(--window-titlebar-height) 0 auto;
   z-index: 20;
   display: grid;
   grid-template-columns: 220px 1fr auto;

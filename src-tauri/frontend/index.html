@@ -17,7 +17,21 @@
         height: 100vh;
         justify-content: center;
         margin: 0;
+        padding-top: 38px;
       }
+      .titlebar { align-items: stretch; background: #0d0d10; border-bottom: 1px solid #242429; color: #b8b8bd; display: flex; height: 38px; inset: 0 0 auto; justify-content: space-between; position: fixed; user-select: none; }
+      .drag-region { align-items: center; display: flex; flex: 1; gap: 9px; min-width: 0; padding-left: 12px; }
+      .app-mark { background: #e44232; box-shadow: 2px 2px 0 #481b17; color: white; display: grid; font-size: 0.68rem; font-weight: 900; height: 20px; line-height: 1; place-items: center; width: 20px; }
+      .window-title { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+      .controls { display: flex; height: 100%; }
+      .control { background: transparent; border: 0; color: #a4a4aa; cursor: pointer; display: grid; height: 100%; padding: 0; place-items: center; width: 46px; }
+      .control:hover { background: #27272c; color: white; }
+      .control.close:hover { background: #d63b32; }
+      .control:focus-visible { outline: 2px solid #e44232; outline-offset: -2px; }
+      .control svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
+      .restore { border: 1.5px solid currentColor; display: none; height: 9px; position: relative; width: 11px; }
+      .restore::before { background: #0d0d10; border: 1.5px solid currentColor; content: ""; height: 8px; left: 3px; position: absolute; top: -4px; width: 9px; }
+      .control:hover .restore::before { background: #27272c; }
       .startup { display: grid; justify-items: center; gap: 20px; }
       .brand { color: #e44232; font-size: 2rem; font-weight: 900; letter-spacing: 0.1em; margin: 0; text-transform: uppercase; text-shadow: 2px 2px 0 #421a15; }
       .indicator { background: #2a2a2a; height: 2px; overflow: hidden; width: 180px; }
@@ -30,10 +44,49 @@
     </style>
   </head>
   <body>
+    <header class="titlebar" data-tauri-drag-region>
+      <div class="drag-region" data-tauri-drag-region>
+        <span class="app-mark" aria-hidden="true">G</span>
+        <span class="window-title">Gretel</span>
+      </div>
+      <div class="controls" aria-label="Window controls">
+        <button class="control" type="button" data-action="minimize" aria-label="Minimize" title="Minimize">
+          <svg aria-hidden="true" width="16" height="16" viewBox="0 0 16 16"><path d="M3 8h10" /></svg>
+        </button>
+        <button class="control" type="button" data-action="maximize" aria-label="Maximize" title="Maximize">
+          <svg class="maximize" aria-hidden="true" width="14" height="14" viewBox="0 0 14 14"><rect x="3" y="3" width="8" height="8" /></svg>
+          <span class="restore" aria-hidden="true"></span>
+        </button>
+        <button class="control close" type="button" data-action="close" aria-label="Close" title="Close">
+          <svg aria-hidden="true" width="17" height="17" viewBox="0 0 17 17"><path d="M4 4l9 9M13 4l-9 9" /></svg>
+        </button>
+      </div>
+    </header>
     <main class="startup" role="status" aria-live="polite">
       <h1 class="brand">Gretel</h1>
       <div class="indicator" aria-hidden="true"></div>
       <p id="startup-status">Starting your feed&hellip;</p>
     </main>
+    <script>
+      const appWindow = window.__TAURI__.window.getCurrentWindow();
+      const maximizeButton = document.querySelector('[data-action="maximize"]');
+      const maximizeIcon = maximizeButton.querySelector('.maximize');
+      const restoreIcon = maximizeButton.querySelector('.restore');
+
+      async function syncWindowState() {
+        const maximized = await appWindow.isMaximized();
+        maximizeButton.setAttribute('aria-label', maximized ? 'Restore' : 'Maximize');
+        maximizeButton.title = maximized ? 'Restore' : 'Maximize';
+        maximizeIcon.style.display = maximized ? 'none' : 'block';
+        restoreIcon.style.display = maximized ? 'block' : 'none';
+      }
+
+      document.querySelector('[data-action="minimize"]').addEventListener('click', () => appWindow.minimize());
+      maximizeButton.addEventListener('click', async () => { await appWindow.toggleMaximize(); await syncWindowState(); });
+      document.querySelector('[data-action="close"]').addEventListener('click', () => appWindow.close());
+      document.querySelector('.drag-region').addEventListener('dblclick', () => appWindow.toggleMaximize());
+      appWindow.onResized(syncWindowState);
+      syncWindowState();
+    </script>
   </body>
 </html>
