@@ -3,6 +3,9 @@
   "identifier": "main-window",
   "description": "Window controls used by Gretel's custom title bar.",
   "windows": ["main"],
+  "remote": {
+    "urls": ["http://127.0.0.1:*"]
+  },
   "permissions": [
     "core:default",
     "core:window:allow-close",

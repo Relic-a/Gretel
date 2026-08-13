@@ -4,7 +4,8 @@ import { FeedProfileStaleError, serveFeedPage } from "../../../lib/feed/service"
 import { errorFields } from "../../../lib/logger";
 import {
   getProfile,
-  getWatchedVideoIds
+  getWatchedVideoIds,
+  saveProfileFeedPreferences
 } from "../../../lib/profile-store";
 
 export const runtime = "nodejs";
@@ -34,6 +35,8 @@ export async function POST(request: Request) {
         { status: 400 }
       );
     }
+
+    saveProfileFeedPreferences(profile.id, tags, channels);
 
     const watchedVideoIds = getWatchedVideoIds(profile.id);
     const feed = await serveFeedPage(
