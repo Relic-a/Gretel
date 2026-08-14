@@ -1,6 +1,11 @@
 import { getYoutubeClient } from "../../../lib/feed/youtube-client";
 import { getText } from "../../../lib/feed/video-utils";
 import { errorFields, logDebug, logError, requestFields } from "../../../lib/logger";
+import {
+  createPerformanceTrace,
+  observePerformanceOperation,
+  persistPerformanceTrace
+} from "../../../lib/performance-metrics";
 
 export const runtime = "nodejs";
 
@@ -27,17 +32,26 @@ function scheduleCleanup(videoId: string) {
 }
 
 export async function POST(request: Request) {
+  let trace = createPerformanceTrace("comments.unknown");
   try {
     const body = await request.json();
     const videoId = typeof body.videoId === "string" ? body.videoId : "";
     const profileId = typeof body.profileId === "string" ? body.profileId : "";
     const page = typeof body.page === "number" ? body.page : 0;
+    trace = createPerformanceTrace(page === 0 ? "comments.initial" : "comments.continuation", {
+      profileId
+    });
 
     if (!videoId || !profileId) {
       return Response.json({ error: "Missing videoId or profileId." }, { status: 400 });
     }
 
-    const youtube = await getYoutubeClient(profileId);
+    const youtube = await observePerformanceOperation(
+      trace,
+      "comments.youtube_client",
+      {},
+      () => getYoutubeClient(profileId)
+    );
 
     let description = "";
 
@@ -45,7 +59,12 @@ export async function POST(request: Request) {
     if (page === 0) {
       // Fetch video description
       try {
-        const info = await youtube.getInfo(videoId);
+        const info = await observePerformanceOperation(
+          trace,
+          "comments.description_fetch",
+          {},
+          () => youtube.getInfo(videoId)
+        );
         description = info.secondary_info?.description?.toString() ?? "";
       } catch (error) {
         // Description is optional, proceed without it
@@ -57,13 +76,19 @@ export async function POST(request: Request) {
       }
 
       // Fetch first page of comments
-      const commentsPage = await youtube.getComments(videoId);
+      const commentsPage = await observePerformanceOperation(
+        trace,
+        "comments.page_fetch",
+        { page: 0 },
+        () => youtube.getComments(videoId)
+      );
       commentsCache.set(videoId, { page: commentsPage, pageCount: 0 });
       scheduleCleanup(videoId);
 
       const comments = extractComments(commentsPage);
       const hasMore = commentsPage.has_continuation && commentsCache.get(videoId)!.pageCount < 10;
 
+      persistPerformanceTrace(trace, { page: 0, comments: comments.length, hasMore }, { status: "ok" });
       return Response.json({
         comments,
         description,
@@ -75,10 +100,12 @@ export async function POST(request: Request) {
     // Page > 0: advance continuation from cache
     const cached = commentsCache.get(videoId);
     if (!cached) {
+      persistPerformanceTrace(trace, { page, cacheMiss: true }, { status: "error" });
       return Response.json({ error: "Session expired. Please refresh comments." }, { status: 400 });
     }
 
     if (cached.pageCount >= 10) {
+      persistPerformanceTrace(trace, { page, comments: 0, hasMore: false, limitReached: true }, { status: "ok" });
       return Response.json({
         comments: [],
         description: "",
@@ -88,6 +115,7 @@ export async function POST(request: Request) {
     }
 
     if (!cached.page.has_continuation) {
+      persistPerformanceTrace(trace, { page, comments: 0, hasMore: false }, { status: "ok" });
       return Response.json({
         comments: [],
         description: "",
@@ -96,7 +124,12 @@ export async function POST(request: Request) {
       });
     }
 
-    const nextPage = await cached.page.getContinuation();
+    const nextPage = await observePerformanceOperation(
+      trace,
+      "comments.page_fetch",
+      { page },
+      () => cached.page.getContinuation()
+    );
     cached.page = nextPage;
     cached.pageCount++;
     scheduleCleanup(videoId);
@@ -104,6 +137,7 @@ export async function POST(request: Request) {
     const comments = extractComments(nextPage);
     const hasMore = nextPage.has_continuation && cached.pageCount < 10;
 
+    persistPerformanceTrace(trace, { page: cached.pageCount, comments: comments.length, hasMore }, { status: "ok" });
     return Response.json({
       comments,
       description: "",
@@ -111,6 +145,7 @@ export async function POST(request: Request) {
       hasMore,
     });
   } catch (error) {
+    persistPerformanceTrace(trace, { ...errorFields(error) }, { status: "error" });
     logError("comments.failed", requestFields(request, {
       ...errorFields(error, { stack: true })
     }));

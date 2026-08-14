@@ -249,6 +249,7 @@ button:disabled {
   color: var(--color-text);
   box-shadow: 2px 2px 0px var(--color-border);
   transition: transform 0.1s, box-shadow 0.1s;
+  text-decoration: none;
 }
 
 .settings-button:hover {

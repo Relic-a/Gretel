@@ -15,7 +15,7 @@ import {
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const observation = createFeedObservation();
+  const observation = createFeedObservation("feed.initial_build");
 
   try {
     const body = await request.json();
@@ -24,6 +24,7 @@ export async function POST(request: Request) {
     const channelSort = parseChannelSort(body.channelSort);
     const requestedProfileId = typeof body.profileId === "string" ? body.profileId : "";
     const profile = requestedProfileId ? getProfile(requestedProfileId) : null;
+    observation.profileId = profile?.id;
 
     if (!profile) {
       return Response.json({ error: "Create a profile before building a feed." }, { status: 400 });

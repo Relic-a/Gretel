@@ -1,0 +1,43 @@
+.shell { width: min(1500px, calc(100% - 56px)); margin: 0 auto; padding: calc(var(--window-titlebar-height) + 52px) 0 70px; }
+.header { display: flex; align-items: end; justify-content: space-between; gap: 24px; margin-bottom: 30px; }
+.header h1 { margin: 4px 0 10px; color: #fff; font-size: clamp(2rem, 5vw, 4.5rem); letter-spacing: -0.07em; }
+.header p { max-width: 760px; margin: 0; color: var(--color-muted); }
+.eyebrow { color: var(--color-brand) !important; font-size: .75rem; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
+.actions { display: flex; gap: 10px; }
+.actions select, .actions a { min-height: 44px; padding: 0 14px; border: 1px solid var(--color-border-strong); background: var(--color-surface); color: var(--color-text); text-decoration: none; }
+.actions a { display: inline-flex; align-items: center; }
+.summaryGrid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 12px; margin-bottom: 22px; }
+.metric, .metricAccent { display: grid; gap: 10px; min-height: 112px; padding: 18px; border: 1px solid var(--color-border); background: var(--color-surface); box-shadow: 3px 3px 0 var(--color-border); }
+.metricAccent { border-color: var(--color-brand); box-shadow: 3px 3px 0 var(--color-brand); }
+.metric span, .metricAccent span { color: var(--color-muted); font-size: .72rem; text-transform: uppercase; }
+.metric strong, .metricAccent strong { align-self: end; color: #fff; font-size: 1.55rem; }
+.metricAccent strong { color: var(--color-brand-strong); }
+.panel { margin-top: 22px; border: 1px solid var(--color-border); background: rgba(20, 20, 22, .94); box-shadow: 5px 5px 0 var(--color-border); }
+.panelHeading { display: flex; align-items: center; justify-content: space-between; gap: 20px; padding: 20px 22px; border-bottom: 1px solid var(--color-border); }
+.panelHeading h2 { margin: 0 0 6px; color: #fff; font-size: 1.15rem; text-transform: uppercase; }
+.panelHeading p { margin: 0; color: var(--color-muted); font-size: .76rem; }
+.workflowStats { display: flex; gap: 22px; color: var(--color-muted); font-size: .72rem; }
+.workflowStats strong { display: block; margin-top: 3px; color: #fff; font-size: 1rem; }
+.tableWrap { overflow-x: auto; }
+.tableWrap table { width: 100%; border-collapse: collapse; font-size: .76rem; }
+.tableWrap th { padding: 11px 14px; color: var(--color-muted); text-align: right; text-transform: uppercase; white-space: nowrap; }
+.tableWrap th:first-child, .tableWrap td:first-child { text-align: left; }
+.tableWrap td { padding: 13px 14px; border-top: 1px solid #242428; text-align: right; white-space: nowrap; }
+.tableWrap code { color: #ddd; }
+.tableWrap small { display: block; margin-top: 3px; color: var(--color-danger); }
+.hot { color: var(--color-brand-strong); font-weight: 800; }
+.bar { position: relative; width: 120px; height: 22px; margin-left: auto; overflow: hidden; background: #242427; text-align: center; }
+.bar i { position: absolute; inset: 0 auto 0 0; background: var(--color-brand-soft); }
+.bar span { position: relative; z-index: 1; line-height: 22px; }
+.runs { display: grid; }
+.runs article { display: grid; grid-template-columns: minmax(220px, 1fr) auto; gap: 5px 20px; padding: 15px 22px; border-top: 1px solid #242428; }
+.runs article:first-child { border-top: 0; }
+.runs article div { display: flex; gap: 12px; }
+.runs time { color: var(--color-muted); font-size: .72rem; }
+.runs b { color: var(--color-brand-strong); }
+.runs p { grid-column: 1 / -1; overflow: hidden; margin: 0; color: var(--color-muted); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
+.empty, .error, .note { padding: 18px; border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-muted); }
+.error { color: var(--color-danger); }
+.note { margin-top: 22px; font-size: .72rem; }
+@media (max-width: 1050px) { .summaryGrid { grid-template-columns: repeat(3, 1fr); } .header { align-items: start; flex-direction: column; } }
+@media (max-width: 650px) { .shell { width: min(100% - 28px, 1500px); } .summaryGrid { grid-template-columns: repeat(2, 1fr); } .workflowStats { display: none; } }

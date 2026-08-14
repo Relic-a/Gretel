@@ -5,6 +5,7 @@ import {
   listProfiles,
   resetProfile
 } from "../../../lib/profile-store";
+import { createPerformanceTrace, persistPerformanceTrace } from "../../../lib/performance-metrics";
 
 export const runtime = "nodejs";
 
@@ -37,6 +38,9 @@ export async function POST(request: Request) {
   const name = typeof body.name === "string" ? body.name : "";
   const tags = Array.isArray(body.tags) ? body.tags : [];
   const channels = Array.isArray(body.channels) ? body.channels : [];
+  const trace = createPerformanceTrace("profile.create");
   const profile = createProfile(name, tags, channels);
+  trace.profileId = profile.id;
+  persistPerformanceTrace(trace, { tags: tags.length, channels: channels.length });
   return Response.json({ profiles: listProfiles(), profileId: profile.id });
 }

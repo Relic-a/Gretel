@@ -29,7 +29,9 @@ export async function POST(request: Request) {
   let expandedPool = false;
 
   if (profile && recorded > 0 && (tags.length > 0 || channels.length > 0)) {
-    const observation = createFeedObservation();
+    const observation = createFeedObservation("feed.exhaustion_expansion", {
+      profileId: profile.id
+    });
     const expansion = await expandFeedPoolForImpressions(
       profile.id,
       tags,

@@ -857,7 +857,7 @@ function schedulePreemptiveExpansion(
   preemptiveExpansionInFlight.set(stateKey, Date.now());
 
   void (async () => {
-    const observation = createFeedObservation();
+    const observation = createFeedObservation("feed.preemptive_expansion", { profileId });
     let endProfileOperation: (() => void) | undefined;
 
     try {

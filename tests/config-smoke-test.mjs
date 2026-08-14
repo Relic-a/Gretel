@@ -11,8 +11,10 @@ const root = process.cwd();
 const buildDir = path.join(root, ".tmp", "config-smoke-test");
 const configDir = path.join(os.tmpdir(), `gretel-config-smoke-${process.pid}`);
 const originalLogFile = process.env.GRETEL_LOG_FILE;
+const originalDataDir = process.env.GRETEL_DATA_DIR;
 
 process.env.GRETEL_LOG_FILE = path.join(configDir, "gretel-test.log");
+process.env.GRETEL_DATA_DIR = path.join(configDir, "data");
 
 function compileConfigModules() {
   rmSync(buildDir, { force: true, recursive: true });
@@ -136,7 +138,8 @@ function loadRuntimeModules(fakeYoutubeClient) {
     path.join(buildDir, "app", "api", "feed", "build", "route.js"),
     path.join(buildDir, "app", "api", "profiles", "route.js"),
     path.join(buildDir, "app", "api", "watch-events", "route.js"),
-    path.join(buildDir, "lib", "profile-store.js")
+    path.join(buildDir, "lib", "profile-store.js"),
+    path.join(buildDir, "lib", "performance-metrics.js")
   ];
 
   for (const modulePath of Object.keys(require.cache)) {
@@ -159,7 +162,8 @@ function loadRuntimeModules(fakeYoutubeClient) {
     feedBuildRoute: require(routePaths[1]),
     profilesRoute: require(routePaths[2]),
     watchEventsRoute: require(routePaths[3]),
-    profileStore: require(routePaths[4])
+    profileStore: require(routePaths[4]),
+    performanceMetrics: require(routePaths[5])
   };
 }
 
@@ -323,6 +327,16 @@ after(async () => {
   } else {
     process.env.GRETEL_LOG_FILE = originalLogFile;
   }
+  if (originalDataDir === undefined) {
+    delete process.env.GRETEL_DATA_DIR;
+  } else {
+    process.env.GRETEL_DATA_DIR = originalDataDir;
+  }
+
+  try {
+    const require = createRequire(import.meta.url);
+    require(path.join(buildDir, "lib", "profile-store.js")).getDatabase().close();
+  } catch {}
 
   rmSync(buildDir, { force: true, recursive: true });
   rmSync(configDir, { force: true, recursive: true });
@@ -521,7 +535,7 @@ test("config loads OPENROUTER_API_KEY from .env", () => {
 test("runtime feed flow initializes roots with early expansion, serves fast lane, and records engagement", async () => {
   const normalConfig = writeRuntimeConfig("runtime-normal.json");
   const fakeYoutubeClient = createFakeYoutubeClient();
-  const { feedRoute, feedBuildRoute, profilesRoute, watchEventsRoute, profileStore } =
+  const { feedRoute, feedBuildRoute, profilesRoute, watchEventsRoute, profileStore, performanceMetrics } =
     loadRuntimeModules(fakeYoutubeClient);
   let profileId = "";
 
@@ -635,11 +649,22 @@ test("runtime feed flow initializes roots with early expansion, serves fast lane
 
     assert.ok(flow.firstFeed.pool.videos <= flow.firstFeed.pool.targetVideos);
     assert.ok(flow.afterWatchFetch.pool.videos <= flow.afterWatchFetch.pool.targetVideos);
+
+    const performance = performanceMetrics.getPerformanceReport({ sinceMs: Date.now() - 60_000 });
+    const initialBuild = performance.workflows.find((item) => item.workflow === "feed.initial_build");
+    const feedPage = performance.workflows.find((item) => item.workflow === "feed.page");
+    const profileCreate = performance.workflows.find((item) => item.workflow === "profile.create");
+    assert.equal(initialBuild?.runs, 2);
+    assert.equal(feedPage?.runs, 2);
+    assert.equal(profileCreate?.runs, 1);
+    assert.ok(initialBuild?.operations.some((item) => item.name.startsWith("feed.embeddings.total [")));
+    assert.ok(initialBuild?.p95Ms >= initialBuild?.p50Ms);
   } finally {
     if (profileId) {
       profileStore.resetProfile(profileId);
       profileStore.deleteProfile(profileId);
     }
+    profileStore.getDatabase().close();
   }
 });
 
@@ -678,5 +703,6 @@ test("runtime feed builds one combined root pool across all tags", async () => {
     if (profileId) {
       profileStore.deleteProfile(profileId);
     }
+    profileStore.getDatabase().close();
   }
 });

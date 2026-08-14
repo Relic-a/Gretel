@@ -1,14 +1,18 @@
 import type { FeedObservation } from "./types";
 import { logError, logInfo } from "../logger";
+import {
+  createPerformanceTrace,
+  observePerformanceOperation,
+  persistPerformanceTrace
+} from "../performance-metrics";
 
 type ObservationData = Record<string, unknown>;
 
-export function createFeedObservation(): FeedObservation {
-  return {
-    requestId: crypto.randomUUID(),
-    startedAt: performance.now(),
-    operations: []
-  };
+export function createFeedObservation(
+  workflow = "feed.unknown",
+  context: { profileId?: string } = {}
+): FeedObservation {
+  return createPerformanceTrace(workflow, context);
 }
 
 export async function observeOperation<T>(
@@ -17,28 +21,7 @@ export async function observeOperation<T>(
   input: ObservationData,
   operation: () => Promise<T | { value: T; output: ObservationData }>
 ) {
-  const startedAt = performance.now();
-  try {
-    const result = await operation();
-    const durationMs = Math.round(performance.now() - startedAt);
-
-    if (isObservedResult<T>(result)) {
-      observation.operations.push({ name, durationMs, status: "ok", input, output: result.output });
-      return result.value;
-    }
-
-    observation.operations.push({ name, durationMs, status: "ok", input });
-    return result;
-  } catch (error) {
-    observation.operations.push({
-      name,
-      durationMs: Math.round(performance.now() - startedAt),
-      status: "error",
-      input,
-      error: error instanceof Error ? error.message : String(error)
-    });
-    throw error;
-  }
+  return observePerformanceOperation(observation, name, input, operation);
 }
 
 export function logFeedObservation(
@@ -52,6 +35,10 @@ export function logFeedObservation(
     summary,
     operations: observation.operations
   };
+  persistPerformanceTrace(observation, summary, {
+    status: hasError || "error" in summary || "errorMessage" in summary ? "error" : "ok",
+    totalMs: fields.totalMs
+  });
 
   if (hasError || "error" in summary || "errorMessage" in summary) {
     logError("feed.request", fields);
@@ -59,10 +46,4 @@ export function logFeedObservation(
   }
 
   logInfo("feed.request", fields);
-}
-
-function isObservedResult<T>(
-  value: T | { value: T; output: ObservationData }
-): value is { value: T; output: ObservationData } {
-  return Boolean(value && typeof value === "object" && "value" in value && "output" in value);
 }

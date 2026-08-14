@@ -43,15 +43,6 @@ export type FeedNodeSummary = {
   outputVideos: number;
 };
 
-export type FeedObservation = {
-  requestId: string;
-  startedAt: number;
-  operations: Array<{
-    name: string;
-    durationMs: number;
-    status: "ok" | "error";
-    input?: Record<string, unknown>;
-    output?: Record<string, unknown>;
-    error?: string;
-  }>;
-};
+import type { PerformanceTrace } from "../performance-metrics";
+
+export type FeedObservation = PerformanceTrace;

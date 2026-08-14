@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Bookmark, ChevronDown, History, Home, Settings } from "lucide-react";
+import { Activity, Bookmark, ChevronDown, History, Home, Settings } from "lucide-react";
 
 import type { Profile } from "../types";
 
@@ -44,6 +44,9 @@ export function TopBar(props: TopBarProps) {
         </button>
       </nav>
       <div className="topbar-actions">
+        <a className="settings-button" href="/diagnostics" aria-label="Open performance diagnostics" title="Performance diagnostics">
+          <Activity aria-hidden="true" size={18} />
+        </a>
         <button type="button" className="settings-button" onClick={props.onOpenSettings} aria-label="Open settings">
           <Settings aria-hidden="true" size={18} />
         </button>
