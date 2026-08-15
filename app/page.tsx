@@ -1233,6 +1233,7 @@ function sanitizeFeedVideo(video: unknown): FeedVideo | null {
     publishedAt: typeof value.publishedAt === "number" ? value.publishedAt : undefined,
     viewCount: typeof value.viewCount === "number" ? value.viewCount : undefined,
     channelKey: typeof value.channelKey === "string" ? value.channelKey : undefined,
+    channelId: typeof value.channelId === "string" ? value.channelId : undefined,
     parent_video_id: typeof value.parent_video_id === "string" ? value.parent_video_id : undefined,
     parent_title: typeof value.parent_title === "string" ? value.parent_title : undefined,
     parent_author: typeof value.parent_author === "string" ? value.parent_author : undefined,

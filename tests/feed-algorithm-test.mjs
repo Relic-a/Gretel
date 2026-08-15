@@ -552,6 +552,36 @@ test("embedding input includes configured transcript introduction when available
   }
 });
 
+test("missing channel avatars are resolved from channel metadata and fetched once per channel", async () => {
+  const channelFetches = [];
+  const channelId = "UC-avatar-regression-channel";
+  const avatarUrl = "https://yt3.ggpht.com/avatar-regression=s88-c-k-c0x00ffffff-no-rj";
+  const searchVideos = ["one", "two", "three"].map((suffix) => ({
+    ...rawVideo(`avatar-${suffix}`, `alpha ${suffix}`, "Shared Creator"),
+    author: { id: channelId, name: "Shared Creator", thumbnails: [] }
+  }));
+  const modules = loadRuntimeModules({
+    youtubeClient: createFakeYoutubeClient({
+      searchVideos,
+      channelAvatarUrl: avatarUrl,
+      onGetChannel(id) {
+        channelFetches.push(id);
+      }
+    })
+  });
+  process.env.GRETEL_CONFIG = writeConfig("channel-avatar-cache.json", {
+    feed: { maxVideos: 3, minVideosPerQuery: 3 }
+  });
+
+  const first = await modules.youtube.searchVideos(["alpha"], observation(), "avatar-profile", 3);
+  const second = await modules.youtube.searchVideos(["alpha"], observation(), "avatar-profile", 3);
+
+  assert.equal(first.length, 3);
+  assert.equal(first.every((item) => item.channelAvatarUrl === avatarUrl), true);
+  assert.equal(second.every((item) => item.channelAvatarUrl === avatarUrl), true);
+  assert.deepEqual(channelFetches, [channelId]);
+});
+
 test("embedding batches run with bounded concurrency and record stage timings", async () => {
   let activeRequests = 0;
   let maxActiveRequests = 0;
@@ -1275,6 +1305,7 @@ function loadRuntimeModules({
   profileStoresForCleanup.add(profileStore);
 
   return {
+    youtube: require(path.join(buildDir, "lib", "feed", "youtube.js")),
     service: require(path.join(buildDir, "lib", "feed", "service.js")),
     poolStore: require(path.join(buildDir, "lib", "feed", "pool-store.js")),
     algorithmStore: require(path.join(buildDir, "lib", "feed", "algorithm-store.js")),
@@ -1289,7 +1320,9 @@ function createFakeYoutubeClient({
   searchResults = null,
   channelVideos = [],
   infoForSeed = () => [],
-  transcriptForVideo = () => ""
+  transcriptForVideo = () => "",
+  channelAvatarUrl = "",
+  onGetChannel = () => {}
 } = {}) {
   return {
     async search(_query, options = {}) {
@@ -1303,8 +1336,10 @@ function createFakeYoutubeClient({
 
       return { videos: searchVideos };
     },
-    async getChannel() {
+    async getChannel(channelId) {
+      onGetChannel(channelId);
       return {
+        metadata: channelAvatarUrl ? { avatar: [{ url: channelAvatarUrl }] } : {},
         async getVideos() {
           return { videos: channelVideos };
         }

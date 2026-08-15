@@ -3,6 +3,8 @@ import { getYoutubeClient } from "../../../lib/feed/youtube-client";
 import {
   getAuthor,
   getAuthorAvatarUrl,
+  getAuthorChannelId,
+  getChannelAvatarUrl,
   getDuration,
   getPublishedAt,
   getPublishedText,
@@ -10,7 +12,7 @@ import {
   getTitle,
   getViewCount
 } from "../../../lib/feed/video-utils";
-import { hydrateChannelAvatar } from "../../../lib/feed/channel-avatar-cache";
+import { resolveMissingChannelAvatars } from "../../../lib/feed/channel-avatar-cache";
 import type { FeedVideo } from "../../../lib/feed/types";
 import { errorFields, logError, requestFields } from "../../../lib/logger";
 
@@ -33,7 +35,8 @@ export async function GET(request: Request) {
     const duration = getDuration(source) || durationFromNode(source) || durationFromInfo(info);
     const thumbnailUrl = getThumbnailUrl(source) || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
-    const video: FeedVideo = hydrateChannelAvatar({
+    const channelId = getAuthorChannelId(source);
+    const [video]: FeedVideo[] = await resolveMissingChannelAvatars([{
       id: videoId,
       title: getTitle(source),
       author,
@@ -45,8 +48,9 @@ export async function GET(request: Request) {
       publishedText: getPublishedText(source),
       publishedAt: getPublishedAt(source),
       viewCount: getViewCount(source),
-      channelKey: normalizeChannelKey(author)
-    });
+      channelKey: normalizeChannelKey(author),
+      channelId
+    }], async (missingChannelId) => getChannelAvatarUrl(await youtube.getChannel(missingChannelId)));
 
     return Response.json({ video });
   } catch (error) {

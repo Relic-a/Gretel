@@ -324,13 +324,17 @@ function getMetadataTexts(video: unknown) {
 }
 
 function getThumbnailFromValue(value: unknown): string {
+  if (Array.isArray(value)) {
+    return value.map(getThumbnailFromValue).filter(Boolean).at(-1) || "";
+  }
+
   if (!value || typeof value !== "object") {
     return "";
   }
 
   const source = value as Record<string, unknown>;
 
-  for (const key of ["thumbnails", "thumbnail", "image", "author"] as const) {
+  for (const key of ["avatar", "thumbnails", "thumbnail", "image", "author"] as const) {
     if (!(key in source)) {
       continue;
     }
@@ -350,6 +354,25 @@ function getThumbnailFromValue(value: unknown): string {
   }
 
   return "";
+}
+
+export function getChannelAvatarUrl(channel: unknown): string | undefined {
+  if (!channel || typeof channel !== "object") {
+    return undefined;
+  }
+
+  const source = channel as Record<string, unknown>;
+  const metadata = source.metadata;
+
+  if (metadata && typeof metadata === "object" && "avatar" in metadata) {
+    return getThumbnailFromValue((metadata as Record<string, unknown>).avatar) || undefined;
+  }
+
+  if ("avatar" in source) {
+    return getThumbnailFromValue(source.avatar) || undefined;
+  }
+
+  return getThumbnailUrl(channel) || undefined;
 }
 
 export function getAuthorAvatarUrl(video: unknown): string | undefined {
@@ -379,6 +402,47 @@ export function getAuthorAvatarUrl(video: unknown): string | undefined {
       if (url) {
         return normalizeThumbnailUrl(url);
       }
+    }
+  }
+
+  return undefined;
+}
+
+export function getAuthorChannelId(video: unknown): string | undefined {
+  if (!video || typeof video !== "object") {
+    return undefined;
+  }
+
+  const videoSource = video as Record<string, unknown>;
+  const videoChannelId = getText(videoSource.channel_id) ||
+    getText(videoSource.channelId) ||
+    getText(videoSource.author_id);
+
+  if (videoChannelId && videoChannelId !== "N/A") {
+    return videoChannelId;
+  }
+
+  const author = videoSource.author;
+
+  if (!author || typeof author !== "object") {
+    return undefined;
+  }
+
+  const source = author as Record<string, unknown>;
+  const directId = getText(source.id) || getText(source.channel_id);
+
+  if (directId && directId !== "N/A") {
+    return directId;
+  }
+
+  const endpoint = source.endpoint;
+
+  if (endpoint && typeof endpoint === "object" && "payload" in endpoint) {
+    const payload = (endpoint as Record<string, unknown>).payload;
+
+    if (payload && typeof payload === "object" && "browseId" in payload) {
+      const browseId = getText((payload as Record<string, unknown>).browseId);
+      return browseId && browseId !== "N/A" ? browseId : undefined;
     }
   }
 

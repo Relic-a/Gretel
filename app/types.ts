@@ -11,6 +11,7 @@ export type FeedVideo = {
   publishedAt?: number;
   viewCount?: number;
   channelKey?: string;
+  channelId?: string;
   parent_video_id?: string;
   parent_title?: string;
   parent_author?: string;

@@ -6,6 +6,8 @@ import { errorFields, logWarn } from "../logger";
 import {
   getAuthor,
   getAuthorAvatarUrl,
+  getAuthorChannelId,
+  getChannelAvatarUrl,
   getDuration,
   getPublishedAt,
   getPublishedText,
@@ -16,7 +18,7 @@ import {
   shouldKeepVideo
 } from "./video-utils";
 import { getYoutubeClient } from "./youtube-client";
-import { backfillChannelAvatarsWithinVideos } from "./channel-avatar-cache";
+import { resolveMissingChannelAvatars } from "./channel-avatar-cache";
 
 export async function recommendVideosFromSeeds(
   sourceVideos: FeedVideo[],
@@ -128,6 +130,7 @@ async function recommendVideosFromLinks(
 
           seen.add(id);
           const author = getAuthor(video);
+          const channelId = getAuthorChannelId(video);
           recommendations.push({
             id,
             title: getTitle(video),
@@ -141,6 +144,7 @@ async function recommendVideosFromLinks(
             publishedAt: getPublishedAt(video),
             viewCount: getViewCount(video),
             channelKey: normalizeChannelKey(author),
+            channelId,
             parent_video_id: seedVideo.id,
             parent_title: seedVideo.title,
             parent_author: seedVideo.author,
@@ -149,7 +153,10 @@ async function recommendVideosFromLinks(
           seedVideoCount += 1;
 
           if (recommendations.length >= maxVideos) {
-            const recommendationsWithAvatars = backfillChannelAvatarsWithinVideos(recommendations);
+            const recommendationsWithAvatars = await resolveMissingChannelAvatars(
+              recommendations,
+              async (channelId) => getChannelAvatarUrl(await youtube.getChannel(channelId))
+            );
             return {
               value: recommendationsWithAvatars,
               output: { recommendationVideos: recommendationsWithAvatars.length }
@@ -162,7 +169,10 @@ async function recommendVideosFromLinks(
         }
       }
 
-      const recommendationsWithAvatars = backfillChannelAvatarsWithinVideos(recommendations);
+      const recommendationsWithAvatars = await resolveMissingChannelAvatars(
+        recommendations,
+        async (channelId) => getChannelAvatarUrl(await youtube.getChannel(channelId))
+      );
       return {
         value: recommendationsWithAvatars,
         output: { recommendationVideos: recommendationsWithAvatars.length }

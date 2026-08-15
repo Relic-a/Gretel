@@ -8,6 +8,8 @@ import { errorFields, logWarn } from "../logger";
 import {
   getAuthor,
   getAuthorAvatarUrl,
+  getAuthorChannelId,
+  getChannelAvatarUrl,
   getChannelVideoAuthor,
   getDuration,
   getPublishedAt,
@@ -20,7 +22,7 @@ import {
   getText,
   getTitle
 } from "./video-utils";
-import { rememberChannelAvatar } from "./channel-avatar-cache";
+import { rememberChannelAvatar, resolveMissingChannelAvatars } from "./channel-avatar-cache";
 
 export async function searchVideos(
   queries: string[],
@@ -59,6 +61,7 @@ export async function searchVideos(
 
           seen.add(id);
           const author = getAuthor(video);
+          const channelId = getAuthorChannelId(video);
           queryVideos.push({
             id,
             title,
@@ -71,7 +74,8 @@ export async function searchVideos(
             publishedText: getPublishedText(video),
             publishedAt: getPublishedAt(video),
             viewCount: getViewCount(video),
-            channelKey: normalizeChannelKey(author)
+            channelKey: normalizeChannelKey(author),
+            channelId
           });
 
           if (queryVideos.length >= perQueryLimit) {
@@ -93,9 +97,13 @@ export async function searchVideos(
       }
 
       const mixed = mixVideoBuckets(videosByQuery, maxVideos);
+      const videos = await resolveMissingChannelAvatars(mixed, async (channelId) => {
+        const channel = await youtube.getChannel(channelId);
+        return getChannelAvatarUrl(channel);
+      });
 
       return {
-        value: mixed,
+        value: videos,
         output: {
           keptVideos: videosByQuery.reduce((total, videos) => total + videos.length, 0),
           integratedVideos: mixed.length
@@ -151,10 +159,11 @@ export async function fetchChannelVideos(
 
         try {
           const channel = await youtube.getChannel(channelId);
-          const channelAvatarUrl = getThumbnailUrl(channel);
+          const channelAvatarUrl = getChannelAvatarUrl(channel);
           const channelNameFromPayload = getChannelName(channel);
 
           rememberChannelAvatar(channelKey, channelAvatarUrl || undefined);
+          rememberChannelAvatar(channelId, channelAvatarUrl);
           rememberChannelAvatar(channelNameFromPayload || undefined, channelAvatarUrl || undefined);
 
           const latestChannelVideos = await channel.getVideos();
@@ -187,7 +196,8 @@ export async function fetchChannelVideos(
               publishedText: getPublishedText(video),
               publishedAt: getPublishedAt(video),
               viewCount: getViewCount(video),
-              channelKey: authorChannelKey
+              channelKey: authorChannelKey,
+              channelId: getAuthorChannelId(video) || channelId
             });
 
             if (channelVideos.length >= perChannelLimit) {
