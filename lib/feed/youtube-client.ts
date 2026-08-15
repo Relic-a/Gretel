@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import { Innertube, UniversalCache } from "youtubei.js";
+import { YoutubeTranscript } from "youtube-transcript";
 import { getDataDir } from "../data-dir";
 import { getGretelConfig } from "./config";
 
@@ -55,4 +56,12 @@ export function forgetYoutubeClient(profileId: string) {
       youtubeClients.delete(cacheKey);
     }
   }
+}
+
+export async function fetchYoutubeTranscript(videoId: string, language: string) {
+  const segments = await YoutubeTranscript.fetchTranscript(videoId, {
+    ...(language ? { lang: language } : {})
+  });
+
+  return segments.map((segment) => segment.text).filter(Boolean).join(" ");
 }

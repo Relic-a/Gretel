@@ -1247,6 +1247,8 @@ function loadRuntimeModules({
   fakeYoutubeModule.loaded = true;
   fakeYoutubeModule.exports = {
     getYoutubeClient: async () => youtubeClient,
+    fetchYoutubeTranscript: async (_videoId, _language) =>
+      youtubeClient?.getTranscriptText?.(_videoId) || "",
     forgetYoutubeClient: () => {}
   };
   require.cache[youtubeClientPath] = fakeYoutubeModule;
@@ -1329,6 +1331,9 @@ function createFakeYoutubeClient({
           };
         }
       };
+    },
+    async getTranscriptText(videoId) {
+      return transcriptForVideo(videoId);
     }
   };
 }
