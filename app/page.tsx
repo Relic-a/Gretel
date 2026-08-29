@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { ProfileModal } from "./components/ProfileModal";
 import { SettingsModal } from "./components/SettingsModal";
@@ -340,69 +340,103 @@ export default function Home() {
     };
   }, []);
 
+  const watchSessionRef = useRef<{
+    videoId: string;
+    watchedSeconds: number;
+    durationSeconds: number;
+    savedHistory: boolean;
+    completed: boolean;
+  }>({
+    videoId: "",
+    watchedSeconds: 0,
+    durationSeconds: 0,
+    savedHistory: false,
+    completed: false
+  });
+
   useEffect(() => {
     if (!activeVideo || !profileId) {
       return;
     }
 
     const currentVideo = activeVideo;
-    const pollMs = config?.client.watchProgressPollMs || 2000;
-    const durationSeconds = parseDurationToSeconds(currentVideo.duration);
-    let watchedMs = 0;
-    let visible = document.visibilityState === "visible";
-    let lastSampleAt = Date.now();
-    let flushed = false;
+    const initialDuration = parseDurationToSeconds(currentVideo.duration);
 
-    const tick = () => {
-      const now = Date.now();
-
-      if (visible && isPlayingRef.current) {
-        watchedMs += Math.max(0, now - lastSampleAt);
-      }
-
-      lastSampleAt = now;
+    watchSessionRef.current = {
+      videoId: currentVideo.id,
+      watchedSeconds: 0,
+      durationSeconds: initialDuration,
+      savedHistory: false,
+      completed: false
     };
 
-    const handleVisibilityChange = () => {
-      tick();
-      visible = document.visibilityState === "visible";
-    };
-
-    const timer = window.setInterval(tick, pollMs);
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-
-    async function flushWatchProgress() {
-      if (flushed) {
-        return;
+    async function flushSession() {
+      const session = watchSessionRef.current;
+      if (session.videoId === currentVideo.id && session.watchedSeconds > 0) {
+        try {
+          const saved = await reportWatchEvent(
+            profileId,
+            currentVideo,
+            session.watchedSeconds,
+            session.durationSeconds
+          );
+          if (saved && section === "history") {
+            await loadHistoryVideos(profileId);
+          }
+        } catch {}
       }
-
-      flushed = true;
-      tick();
-
-      const watchedSeconds = Math.max(0, Math.round(watchedMs / 1000));
-
-      try {
-        const saved = await reportWatchEvent(profileId, currentVideo, watchedSeconds, durationSeconds);
-
-        if (saved && section === "history") {
-          await loadHistoryVideos(profileId);
-        }
-      } catch {}
     }
 
     const handlePageHide = () => {
-      void flushWatchProgress();
+      void flushSession();
     };
 
     window.addEventListener("pagehide", handlePageHide);
 
     return () => {
-      window.clearInterval(timer);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("pagehide", handlePageHide);
-      void flushWatchProgress();
+      void flushSession();
     };
-  }, [activeVideo, config?.client.watchProgressPollMs, profileId]);
+  }, [activeVideo, profileId, section]);
+
+  const handleWatchTimeUpdate = useCallback(
+    (currentTime: number, duration: number) => {
+      if (!activeVideo || !profileId) return;
+
+      const session = watchSessionRef.current;
+      if (session.videoId !== activeVideo.id) return;
+
+      const durationSeconds = Math.max(
+        1,
+        Math.round(duration || session.durationSeconds || parseDurationToSeconds(activeVideo.duration))
+      );
+      const watchedSeconds = Math.max(session.watchedSeconds, Math.round(currentTime));
+
+      session.watchedSeconds = watchedSeconds;
+      session.durationSeconds = durationSeconds;
+
+      const ratio = durationSeconds > 0 ? watchedSeconds / durationSeconds : 0;
+      const historyThreshold = config?.learning.watchSaveThreshold ?? 0.1;
+      const completionThreshold = config?.learning.watchCompletionThreshold ?? 0.6;
+
+      // Progressive 10% Milestone -> Save to history immediately
+      if (!session.savedHistory && ratio >= historyThreshold) {
+        session.savedHistory = true;
+        void reportWatchEvent(profileId, activeVideo, watchedSeconds, durationSeconds).then((saved) => {
+          if (saved && section === "history") {
+            void loadHistoryVideos(profileId);
+          }
+        });
+      }
+
+      // Progressive 90% Milestone -> Mark video completed for feed exclusion
+      if (!session.completed && ratio >= completionThreshold) {
+        session.completed = true;
+        void reportWatchEvent(profileId, activeVideo, watchedSeconds, durationSeconds);
+      }
+    },
+    [activeVideo, config?.learning.watchCompletionThreshold, config?.learning.watchSaveThreshold, profileId, section]
+  );
 
   useEffect(() => {
     if (channelDraft.trim().length < 2) {
@@ -966,6 +1000,7 @@ export default function Home() {
           onPlaybackStateChange={(playing) => {
             isPlayingRef.current = playing;
           }}
+          onTimeUpdate={handleWatchTimeUpdate}
         />
       )}
 

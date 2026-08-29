@@ -108,7 +108,7 @@ export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
     coldStartParentEngagementWeight: 0.15
   },
   learning: {
-    watchSaveThreshold: 0.5,
+    watchSaveThreshold: 0.1,
     watchTimeWeight: 0.5,
     likedWeight: 0.3,
     clickedWeight: 0.2,
@@ -116,7 +116,7 @@ export const DEFAULT_GRETEL_CONFIG: GretelConfig = {
     ignorePenaltyGrowth: 1.8,
     centroidLearningRate: 0.08,
     maxCentroidDrift: 0.18,
-    watchCompletionThreshold: 0.9
+    watchCompletionThreshold: 0.6
   },
   embeddings: {
     provider: "openrouter",

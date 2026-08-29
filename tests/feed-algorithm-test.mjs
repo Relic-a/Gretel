@@ -789,6 +789,9 @@ test("logs the top serving items with score breakdown and serving parameters", a
         similarityThreshold: 0.1,
         subscriptionFastLanePerSession: 0
       },
+      learning: {
+        watchCompletionThreshold: 0.9
+      },
       embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
     });
 
@@ -988,7 +991,7 @@ test("serving excludes completed watched nodes and orders unserved nodes by pare
   const { createCandidatePoolFeed } = require(path.join(buildDir, "lib", "feed", "pool.js"));
   const config = testConfig({
     feed: { coldStartInteractionThreshold: 1 },
-    learning: { watchCompletionThreshold: 0.9 }
+    learning: { watchCompletionThreshold: 0.6 }
   });
   const interactions = new Map([
     ["done", { videoId: "done", watchTimeRatio: 0.95, liked: false, clicked: false, ignoreCount: 0 }],
