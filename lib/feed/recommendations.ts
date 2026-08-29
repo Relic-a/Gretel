@@ -71,7 +71,7 @@ async function recommendVideosFromLinks(
       const maxVideos = config.expansion.maxVideosPerCycle;
       const seen = new Set<string>();
       const recommendations: FeedVideo[] = [];
-      const fetchConcurrency = 3;
+      const fetchConcurrency = Math.max(8, config.expansion.maxFetchCallsPerCycle);
       const seedRecommendations: Array<{ seedVideo: FeedVideo; feed: unknown[] } | null> = [];
       const fetchSeed = async (seedVideo: FeedVideo) => {
         const seedId = seedVideo.id;

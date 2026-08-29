@@ -44,8 +44,18 @@ export async function searchVideos(
         Math.ceil(maxVideos / queries.length)
       );
 
-      for (const query of queries) {
-        const results = await youtube.search(query, { type: "video" });
+      const searchResults = await Promise.all(
+        queries.map(async (query) => {
+          try {
+            const results = await youtube.search(query, { type: "video" });
+            return { query, results, error: null };
+          } catch (error) {
+            return { query, results: { results: [] }, error };
+          }
+        })
+      );
+
+      for (const { query, results } of searchResults) {
         const queryVideos: FeedVideo[] = [];
         const sourceVideos = getSearchVideoItems(results);
         const fetchedVideos = sourceVideos.length;
@@ -148,83 +158,123 @@ export async function fetchChannelVideos(
         Math.ceil(maxVideos / channels.length)
       );
 
-      for (const channelName of channels) {
-        const channelId = await resolveChannelId(channelName, observation, profileId);
-        const channelKey = normalizeChannelKey(channelName);
+      const channelResults = await Promise.all(
+        channels.map(async (channelName) => {
+          const channelId = await resolveChannelId(channelName, observation, profileId);
+          const channelKey = normalizeChannelKey(channelName);
 
+          if (!channelId) {
+            return {
+              channelName,
+              channelId: null,
+              channelKey,
+              sourceVideos: [],
+              channelAvatarUrl: undefined,
+              channelNameFromPayload: undefined,
+              error: null
+            };
+          }
+
+          try {
+            const channel = await youtube.getChannel(channelId);
+            const channelAvatarUrl = getChannelAvatarUrl(channel);
+            const channelNameFromPayload = getChannelName(channel);
+            const latestChannelVideos = await channel.getVideos();
+            const sourceVideos = getChannelVideoItems(latestChannelVideos);
+
+            return {
+              channelName,
+              channelId,
+              channelKey,
+              sourceVideos,
+              channelAvatarUrl,
+              channelNameFromPayload,
+              error: null
+            };
+          } catch (error) {
+            logWarn("youtube.channel_fetch_failed", {
+              requestId: observation.requestId,
+              channel: channelName,
+              sort,
+              ...errorFields(error)
+            });
+            return {
+              channelName,
+              channelId,
+              channelKey,
+              sourceVideos: [],
+              channelAvatarUrl: undefined,
+              channelNameFromPayload: undefined,
+              error
+            };
+          }
+        })
+      );
+
+      for (const {
+        channelName,
+        channelId,
+        channelKey,
+        sourceVideos,
+        channelAvatarUrl,
+        channelNameFromPayload
+      } of channelResults) {
         if (!channelId) {
           videosByChannel.push([]);
           continue;
         }
 
-        try {
-          const channel = await youtube.getChannel(channelId);
-          const channelAvatarUrl = getChannelAvatarUrl(channel);
-          const channelNameFromPayload = getChannelName(channel);
+        rememberChannelAvatar(channelKey, channelAvatarUrl || undefined);
+        rememberChannelAvatar(channelId, channelAvatarUrl);
+        rememberChannelAvatar(channelNameFromPayload || undefined, channelAvatarUrl || undefined);
 
-          rememberChannelAvatar(channelKey, channelAvatarUrl || undefined);
-          rememberChannelAvatar(channelId, channelAvatarUrl);
-          rememberChannelAvatar(channelNameFromPayload || undefined, channelAvatarUrl || undefined);
+        const channelVideos: FeedVideo[] = [];
 
-          const latestChannelVideos = await channel.getVideos();
-          const sourceVideos = getChannelVideoItems(latestChannelVideos);
+        for (const video of sourceVideos) {
+          const id = getVideoId(video);
+          const duration = getDuration(video);
 
-          const channelVideos: FeedVideo[] = [];
-
-          for (const video of sourceVideos) {
-            const id = getVideoId(video);
-            const duration = getDuration(video);
-
-            if (!shouldKeepVideo(id, seen)) {
-              continue;
-            }
-
-            seen.add(id);
-            const author = getChannelVideoAuthor(video, channelName);
-            const authorChannelKey = normalizeChannelKey(author) || channelKey;
-            const authorAvatarUrl = getAuthorAvatarUrl(video) || channelAvatarUrl || undefined;
-            rememberChannelAvatar(authorChannelKey, authorAvatarUrl);
-            channelVideos.push({
-              id,
-              title: getTitle(video),
-              author,
-              channelAvatarUrl: authorAvatarUrl,
-              duration,
-              query: channelName,
-              thumbnailUrl: getThumbnailUrl(video) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
-              thumbnailCacheUrl: `/api/thumbnails/${profileId}/${id}`,
-              publishedText: getPublishedText(video),
-              publishedAt: getPublishedAt(video),
-              viewCount: getViewCount(video),
-              channelKey: authorChannelKey,
-              channelId: getAuthorChannelId(video) || channelId
-            });
-
-            if (channelVideos.length >= perChannelLimit) {
-              break;
-            }
+          if (!shouldKeepVideo(id, seen)) {
+            continue;
           }
 
-          videosByChannel.push(channelVideos);
-          observation.operations.push({
-            name: "feed.phase1.channel_fetch",
-            durationMs: 0,
-            status: "ok",
-            input: { channel: channelName, fetchedVideos: sourceVideos.length },
-            output: {
-              keptVideos: channelVideos.length,
-              filteredVideos: sourceVideos.length - channelVideos.length
-            }
+          seen.add(id);
+          const author = getChannelVideoAuthor(video, channelName);
+          const authorChannelKey = normalizeChannelKey(author) || channelKey;
+          const authorAvatarUrl = getAuthorAvatarUrl(video) || channelAvatarUrl || undefined;
+          rememberChannelAvatar(authorChannelKey, authorAvatarUrl);
+          channelVideos.push({
+            id,
+            title: getTitle(video),
+            author,
+            channelAvatarUrl: authorAvatarUrl,
+            duration,
+            query: channelName,
+            thumbnailUrl: getThumbnailUrl(video) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+            thumbnailCacheUrl: `/api/thumbnails/${profileId}/${id}`,
+            publishedText: getPublishedText(video),
+            publishedAt: getPublishedAt(video),
+            viewCount: getViewCount(video),
+            channelKey: authorChannelKey,
+            channelId: getAuthorChannelId(video) || channelId
           });
-        } catch (error) {
-          logWarn("youtube.channel_fetch_failed", {
-            requestId: observation.requestId,
-            channel: channelName,
-            sort,
-            ...errorFields(error)
-          });
-          videosByChannel.push([]);
+
+          if (channelVideos.length >= perChannelLimit) {
+            break;
+          }
         }
+
+        videosByChannel.push(channelVideos);
+        observation.operations.push({
+          name: "feed.phase1.channel_fetch",
+          durationMs: 0,
+          status: "ok",
+          input: { channel: channelName, fetchedVideos: sourceVideos.length },
+          output: {
+            keptVideos: channelVideos.length,
+            filteredVideos: sourceVideos.length - channelVideos.length
+          }
+        });
       }
 
       const mixed = mixVideoBuckets(videosByChannel, maxVideos);
