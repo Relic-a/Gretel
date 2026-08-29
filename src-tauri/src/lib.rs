@@ -163,7 +163,7 @@ fn attach_to_job_object(child: &Child) {
     };
     unsafe {
         let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-        if job != 0 {
+        if !job.is_null() {
             let mut info = std::mem::zeroed::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>();
             info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
             SetInformationJobObject(
