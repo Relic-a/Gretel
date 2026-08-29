@@ -365,15 +365,7 @@ function tableHasColumn(tableName: string, columnName: string) {
 function runInTransaction(work: () => void) {
   const database = getDatabase();
 
-  database.exec("BEGIN");
-
-  try {
-    work();
-    database.exec("COMMIT");
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
-  }
+  database.transaction(work)();
 }
 
 function quoteIdentifier(identifier: string) {

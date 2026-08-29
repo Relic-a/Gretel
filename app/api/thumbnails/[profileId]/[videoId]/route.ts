@@ -24,6 +24,6 @@ export async function GET(
       }
     });
   } catch {
-    return Response.redirect(`https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/hqdefault.jpg`);
+    return Response.redirect(`https://i.ytimg.com/vi/${encodeURIComponent(videoId)}/maxresdefault.jpg`);
   }
 }

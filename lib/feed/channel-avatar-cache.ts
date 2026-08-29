@@ -122,8 +122,8 @@ export async function resolveMissingChannelAvatars(
 
   const pendingChannels = [...channels.values()];
 
-  for (let index = 0; index < pendingChannels.length; index += 4) {
-    await Promise.all(pendingChannels.slice(index, index + 4).map(async ({ channelId, aliases }) => {
+  for (let index = 0; index < pendingChannels.length; index += 16) {
+    await Promise.all(pendingChannels.slice(index, index + 16).map(async ({ channelId, aliases }) => {
       const avatarUrl = await getOrFetchChannelAvatar(channelId, fetchAvatar);
 
       if (!avatarUrl) {

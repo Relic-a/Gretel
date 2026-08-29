@@ -353,15 +353,7 @@ function ensureColumn(tableName: string, columnName: string, definition: string)
 function runTransaction(work: () => void) {
   const database = getDatabase();
 
-  database.exec("BEGIN");
-
-  try {
-    work();
-    database.exec("COMMIT");
-  } catch (error) {
-    database.exec("ROLLBACK");
-    throw error;
-  }
+  database.transaction(work)();
 }
 
 function normalizePoolKeyPart(value: string) {

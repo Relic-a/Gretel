@@ -789,6 +789,9 @@ test("logs the top serving items with score breakdown and serving parameters", a
         similarityThreshold: 0.1,
         subscriptionFastLanePerSession: 0
       },
+      learning: {
+        watchCompletionThreshold: 0.9
+      },
       embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
     });
 
@@ -988,7 +991,7 @@ test("serving excludes completed watched nodes and orders unserved nodes by pare
   const { createCandidatePoolFeed } = require(path.join(buildDir, "lib", "feed", "pool.js"));
   const config = testConfig({
     feed: { coldStartInteractionThreshold: 1 },
-    learning: { watchCompletionThreshold: 0.9 }
+    learning: { watchCompletionThreshold: 0.6 }
   });
   const interactions = new Map([
     ["done", { videoId: "done", watchTimeRatio: 0.95, liked: false, clicked: false, ignoreCount: 0 }],
@@ -1234,8 +1237,6 @@ function compileModules() {
       buildDir,
       "--module",
       "commonjs",
-      "--moduleResolution",
-      "node",
       "--target",
       "ES2022",
       "--ignoreConfig",
@@ -1466,3 +1467,129 @@ function normalize(vector) {
   const size = magnitude(vector);
   return size === 0 ? vector : vector.map((value) => value / size);
 }
+
+test("cosineSimilarity safely returns 0 on mismatched or empty dimensions", () => {
+  const { cosineSimilarity } = require(path.join(buildDir, "lib", "feed", "vector-math.js"));
+  assert.equal(cosineSimilarity([], [1, 2]), 0);
+  assert.equal(cosineSimilarity([1, 2], []), 0);
+  assert.equal(cosineSimilarity([1, 2], [1, 2, 3]), 0);
+  assert.equal(cosineSimilarity([1, 0], [1, 0]), 1);
+  assert.equal(cosineSimilarity([1, 0], [0, 1]), 0);
+});
+
+test("clampCentroidDrift preserves unit norm and clamps vectors exceeding maxCentroidDrift", () => {
+  const { clampCentroidDrift } = require(path.join(buildDir, "lib", "feed", "centroid-drift.js"));
+  const { cosineSimilarity } = require(path.join(buildDir, "lib", "feed", "vector-math.js"));
+
+  const original = [1, 0];
+  const withinBounds = [0.95, 0.31225]; // drift distance = 1 - 0.95 = 0.05 <= 0.18
+  const clampedWithin = clampCentroidDrift(original, withinBounds, 0.18);
+  assert.deepEqual(clampedWithin, withinBounds);
+
+  const farCandidate = [0, 1]; // orthogonal, drift = 1
+  const clamped = clampCentroidDrift(original, farCandidate, 0.18);
+  const sim = cosineSimilarity(original, clamped);
+  assert.ok(Math.abs((1 - sim) - 0.18) < 1e-6, `Drift distance should be exactly 0.18, got ${1 - sim}`);
+  const mag = Math.sqrt(clamped.reduce((sum, v) => sum + v * v, 0));
+  assert.ok(Math.abs(mag - 1) < 1e-6, "Clamped vector must have unit magnitude");
+});
+
+test("describeServingScore applies impression decay safely to negative scores without exploding", () => {
+  const { describeServingScore } = require(path.join(buildDir, "lib", "feed", "pool.js"));
+  const config = {
+    serving: { warmSemanticWeight: 0.25, impressionPenaltyFactor: 0.35 },
+    feed: { coldStartParentEngagementWeight: 0.15 }
+  };
+  const video = {
+    id: "test-video",
+    title: "Test",
+    author: "Author",
+    query: "Query",
+    similarityScore: -1,
+    engagementScore: -0.5,
+    impressionCount: 5
+  };
+  const result = describeServingScore(video, config, false);
+  assert.ok(result.baseScore < 0, "Base score should be negative");
+  assert.ok(result.score <= 0, "Score should remain non-positive");
+  assert.ok(Math.abs(result.score) < 5, `Negative score should not explode, got ${result.score}`);
+});
+
+test("getThumbnailUrl selects the highest resolution thumbnail and ignores low-res or animated previews", () => {
+  const { getThumbnailUrl, getChannelAvatarUrl, getAuthorAvatarUrl } = require(path.join(buildDir, "lib", "feed", "video-utils.js"));
+
+  // 1. YouTube descending array format: highest res is first, lowest is last
+  const videoWithOrderedThumbnails = {
+    id: "test-video-1",
+    thumbnails: [
+      { url: "https://i.ytimg.com/vi/test-video-1/hq720.jpg?sqp=abc", width: 720, height: 404 },
+      { url: "https://i.ytimg.com/vi/test-video-1/hqdefault.jpg?sqp=def", width: 336, height: 188 },
+      { url: "https://i.ytimg.com/vi/test-video-1/hqdefault.jpg?sqp=ghi", width: 168, height: 94 }
+    ]
+  };
+  assert.equal(
+    getThumbnailUrl(videoWithOrderedThumbnails),
+    "https://i.ytimg.com/vi/test-video-1/hq720.jpg?sqp=abc"
+  );
+
+  // 2. LockupView with content_image and animated preview
+  const lockupVideo = {
+    content_id: "test-lockup-1",
+    content_image: {
+      image: [
+        { url: "https://i.ytimg.com/vi/test-lockup-1/hq720.jpg?sqp=high", width: 720, height: 404 },
+        { url: "https://i.ytimg.com/vi/test-lockup-1/hq720.jpg?sqp=low", width: 360, height: 202 }
+      ],
+      overlays: [
+        {
+          thumbnail: [{ url: "https://i.ytimg.com/an_webp/test-lockup-1/mqdefault_6s.webp", width: 320, height: 180 }]
+        }
+      ]
+    }
+  };
+  assert.equal(
+    getThumbnailUrl(lockupVideo),
+    "https://i.ytimg.com/vi/test-lockup-1/hq720.jpg?sqp=high"
+  );
+
+  // 3. Fallback to maxresdefault when only low-res thumbnail is provided in payload
+  const videoWithLowResOnly = {
+    id: "test-low-res-1",
+    thumbnails: [
+      { url: "https://i.ytimg.com/vi/test-low-res-1/hqdefault.jpg", width: 336, height: 188 }
+    ]
+  };
+  assert.equal(
+    getThumbnailUrl(videoWithLowResOnly),
+    "https://i.ytimg.com/vi/test-low-res-1/maxresdefault.jpg"
+  );
+
+  // 4. Author avatar resolution selection
+  const authorWithAvatars = {
+    author: {
+      id: "UC123",
+      thumbnails: [
+        { url: "https://yt3.ggpht.com/avatar=s176-c-k", width: 176, height: 176 },
+        { url: "https://yt3.ggpht.com/avatar=s68-c-k", width: 68, height: 68 }
+      ]
+    }
+  };
+  assert.equal(
+    getAuthorAvatarUrl(authorWithAvatars),
+    "https://yt3.ggpht.com/avatar=s176-c-k"
+  );
+
+  // 5. Channel avatar resolution selection
+  const channelWithAvatars = {
+    metadata: {
+      avatar: [
+        { url: "https://yt3.ggpht.com/channel-avatar=s240-c-k", width: 240, height: 240 },
+        { url: "https://yt3.ggpht.com/channel-avatar=s88-c-k", width: 88, height: 88 }
+      ]
+    }
+  };
+  assert.equal(
+    getChannelAvatarUrl(channelWithAvatars),
+    "https://yt3.ggpht.com/channel-avatar=s240-c-k"
+  );
+});

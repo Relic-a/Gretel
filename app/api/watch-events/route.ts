@@ -1,10 +1,15 @@
 import { saveWatchedVideo } from "../../../lib/profile-store";
 import { errorFields, logError, logInfo, logWarn } from "../../../lib/logger";
 import { updateCentroidsForPositiveEngagement } from "../../../lib/feed/centroid-drift";
+import { verifyApiToken } from "../../../lib/api-auth";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  if (!verifyApiToken(request)) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   try {
     const body = await request.json();
     const video = body.video && typeof body.video === "object" ? body.video : null;
@@ -36,9 +41,11 @@ export async function POST(request: Request) {
     });
 
     if (saved) {
-      await updateCentroidsForPositiveEngagement(profileId, {
+      void updateCentroidsForPositiveEngagement(profileId, {
         ...video,
         watchTimeRatio: durationSeconds > 0 ? watchedSeconds / durationSeconds : 0
+      }).catch((error) => {
+        logWarn("watch_event.centroid_update_failed", errorFields(error));
       });
       logInfo("watch_event.saved", {
         profileId,

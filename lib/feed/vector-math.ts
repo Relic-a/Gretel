@@ -25,12 +25,15 @@ export function averageNormalizedVectors(vectors: number[][]) {
 }
 
 export function cosineSimilarity(left: number[], right: number[]) {
+  if (left.length === 0 || right.length === 0 || left.length !== right.length) {
+    return 0;
+  }
+
   let dot = 0;
   let leftMagnitude = 0;
   let rightMagnitude = 0;
-  const length = Math.min(left.length, right.length);
 
-  for (let index = 0; index < length; index += 1) {
+  for (let index = 0; index < left.length; index += 1) {
     dot += left[index] * right[index];
     leftMagnitude += left[index] * left[index];
     rightMagnitude += right[index] * right[index];

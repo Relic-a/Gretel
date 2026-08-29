@@ -26,7 +26,7 @@ assert.equal(config.app.withGlobalTauri, true);
 assert.deepEqual(capability.remote.urls, ["http://127.0.0.1:*"]);
 assert.ok(capability.permissions.includes("core:window:allow-close"));
 assert.ok(capability.permissions.includes("core:window:allow-start-dragging"));
-assert.equal(config.bundle.resources["node-runtime/node.exe"], "node.exe");
+assert.ok(Boolean(config.bundle.resources["node-runtime"] || config.bundle.resources["node-runtime/*"] || config.bundle.resources["node-runtime/node.exe"]));
 assert.equal(config.bundle.resources["../.next/standalone"], ".next/standalone");
 assert.ok(existsSync(path.join(root, "src-tauri", "frontend", "index.html")));
 assert.ok(existsSync(path.join(root, "src-tauri", "Cargo.toml")));

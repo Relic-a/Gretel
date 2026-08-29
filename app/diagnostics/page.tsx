@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useState } from "react";
 import styles from "./page.module.css";
+import { authedHeaders } from "../components/video-utils";
 
 type Summary = {
   runs: number;
@@ -59,7 +60,7 @@ export default function DiagnosticsPage() {
   useEffect(() => {
     let active = true;
     setError("");
-    fetch(`/api/performance?hours=${hours}`, { cache: "no-store" })
+    fetch(`/api/performance?hours=${hours}`, { cache: "no-store", headers: authedHeaders() })
       .then(async (response) => {
         if (!response.ok) throw new Error("Could not load performance metrics.");
         return response.json();

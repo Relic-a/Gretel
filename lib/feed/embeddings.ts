@@ -24,11 +24,13 @@ export function getEmbeddingProvider(config = getGretelConfig()): EmbeddingProvi
   const apiKey = settings.openRouterApiKey ||
     process.env[config.embeddings.openRouterApiKeyEnv] ||
     process.env.OPENROUTER_KEY ||
+    process.env.ROUTER_API_KEY ||
+    process.env.OPENROUTER_API_KEY ||
     "";
 
   if (!apiKey) {
     throw new Error(
-      `Missing OpenRouter API key in ${config.embeddings.openRouterApiKeyEnv}, OPENROUTER_KEY, or user settings`
+      `Missing OpenRouter API key in ${config.embeddings.openRouterApiKeyEnv}, OPENROUTER_KEY, ROUTER_API_KEY, or user settings`
     );
   }
 

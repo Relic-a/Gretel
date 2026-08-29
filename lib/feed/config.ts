@@ -52,7 +52,8 @@ export function getPublicGretelConfig() {
       maxVideos: config.feed.maxVideos
     },
     learning: {
-      watchSaveThreshold: config.learning.watchSaveThreshold
+      watchSaveThreshold: config.learning.watchSaveThreshold,
+      watchCompletionThreshold: config.learning.watchCompletionThreshold
     },
     embeddings: {
       provider: config.embeddings.provider,

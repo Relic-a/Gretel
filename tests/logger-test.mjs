@@ -25,7 +25,6 @@ function compileLogger() {
     path.join(root, "node_modules", "typescript", "lib", "tsc.js"),
     "--outDir", buildDir,
     "--module", "commonjs",
-    "--moduleResolution", "node",
     "--target", "ES2022",
     "--ignoreConfig",
     "--ignoreDeprecations", "6.0",

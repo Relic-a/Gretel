@@ -69,6 +69,7 @@ export type PublicGretelConfig = {
   };
   learning: {
     watchSaveThreshold: number;
+    watchCompletionThreshold: number;
   };
   embeddings: {
     provider: string;

@@ -3,11 +3,17 @@ import { parseChannelSort, parseTags } from "../../../lib/feed/input";
 import { createFeedObservation, logFeedObservation } from "../../../lib/feed/observation";
 import { expandFeedPoolForImpressions } from "../../../lib/feed/service";
 import { getProfile, getWatchedVideoIds, recordVideoImpressions } from "../../../lib/profile-store";
+import { verifyApiToken } from "../../../lib/api-auth";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
-  const body = await request.json();
+  if (!verifyApiToken(request)) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  try {
+    const body = await request.json();
   const profileId = typeof body.profileId === "string" ? body.profileId : "";
   const tags = parseTags(body.tags);
   const channels = parseTags(body.channels);
@@ -73,4 +79,7 @@ export async function POST(request: Request) {
   });
 
   return Response.json({ recorded, expandedPool });
+  } catch (error) {
+    return Response.json({ error: "Could not record impressions." }, { status: 500 });
+  }
 }

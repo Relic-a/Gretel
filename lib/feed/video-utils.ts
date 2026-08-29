@@ -237,24 +237,6 @@ export function getPublishedAt(video: unknown) {
   return Date.now() - amount * multipliers[unit];
 }
 
-export function getThumbnailUrl(video: unknown) {
-  const direct = getThumbnailFromValue(video);
-
-  if (direct) {
-    return direct;
-  }
-
-  if (video && typeof video === "object" && "content_image" in video) {
-    return getThumbnailFromValue(video.content_image);
-  }
-
-  if (video && typeof video === "object" && "metadata" in video) {
-    return getThumbnailFromValue(video.metadata);
-  }
-
-  return "";
-}
-
 function getAuthorFromMetadataRows(metadata: unknown) {
   if (!metadata || typeof metadata !== "object" || !("metadata" in metadata)) {
     return "";
@@ -323,37 +305,162 @@ function getMetadataTexts(video: unknown) {
   });
 }
 
-function getThumbnailFromValue(value: unknown): string {
-  if (Array.isArray(value)) {
-    return value.map(getThumbnailFromValue).filter(Boolean).at(-1) || "";
+type ThumbnailCandidate = {
+  url: string;
+  width?: number;
+  height?: number;
+};
+
+function scoreThumbnailCandidate(candidate: ThumbnailCandidate): number {
+  const rawUrl = candidate.url;
+  if (!rawUrl) {
+    return 0;
   }
 
-  if (!value || typeof value !== "object") {
-    return "";
+  if (rawUrl.includes("an_webp") || rawUrl.includes("mqdefault_6s.webp") || rawUrl.includes("_6s.webp")) {
+    return 1;
+  }
+
+  const width = typeof candidate.width === "number" && Number.isFinite(candidate.width) ? candidate.width : 0;
+  const height = typeof candidate.height === "number" && Number.isFinite(candidate.height) ? candidate.height : 0;
+
+  if (width > 0 && height > 0) {
+    return width * height;
+  }
+
+  if (width > 0) {
+    return width * width;
+  }
+
+  if (rawUrl.includes("maxresdefault")) return 1920 * 1080;
+  if (rawUrl.includes("hq720")) return 1280 * 720;
+  if (rawUrl.includes("sddefault")) return 640 * 480;
+  if (rawUrl.includes("hqdefault")) return 480 * 360;
+  if (rawUrl.includes("mqdefault")) return 320 * 180;
+  if (rawUrl.includes("default")) return 120 * 90;
+
+  const sMatch = rawUrl.match(/=s(\d+)/);
+  if (sMatch) {
+    const s = parseInt(sMatch[1], 10);
+    if (!Number.isNaN(s) && s > 0) {
+      return s * s;
+    }
+  }
+
+  return 10;
+}
+
+function collectThumbnailCandidates(value: unknown, collected: ThumbnailCandidate[] = []): ThumbnailCandidate[] {
+  if (!value) {
+    return collected;
+  }
+
+  if (Array.isArray(value)) {
+    for (const item of value) {
+      collectThumbnailCandidates(item, collected);
+    }
+    return collected;
+  }
+
+  if (typeof value === "string") {
+    if (value.trim()) {
+      collected.push({ url: value.trim() });
+    }
+    return collected;
+  }
+
+  if (typeof value !== "object") {
+    return collected;
   }
 
   const source = value as Record<string, unknown>;
 
-  for (const key of ["avatar", "thumbnails", "thumbnail", "image", "author"] as const) {
-    if (!(key in source)) {
-      continue;
-    }
+  if ("url" in source && typeof source.url === "string" && source.url.trim()) {
+    collected.push({
+      url: source.url.trim(),
+      width: typeof source.width === "number" && Number.isFinite(source.width) ? source.width : undefined,
+      height: typeof source.height === "number" && Number.isFinite(source.height) ? source.height : undefined
+    });
+  }
 
-    const candidate = source[key];
-    const thumbnail = Array.isArray(candidate)
-      ? candidate.map(getThumbnailFromValue).filter(Boolean).at(-1) || ""
-      : getThumbnailFromValue(candidate);
-
-    if (thumbnail) {
-      return normalizeThumbnailUrl(thumbnail);
+  for (const key of ["thumbnails", "thumbnail", "image", "avatar", "content_image", "metadata"] as const) {
+    if (key in source && source[key]) {
+      collectThumbnailCandidates(source[key], collected);
     }
   }
 
-  if ("url" in value) {
-    return normalizeThumbnailUrl(getText(source.url));
+  return collected;
+}
+
+function getThumbnailFromValue(value: unknown): string {
+  const candidates = collectThumbnailCandidates(value);
+  if (candidates.length === 0) {
+    return "";
   }
 
-  return "";
+  let best = candidates[0];
+  let bestScore = scoreThumbnailCandidate(best);
+
+  for (let i = 1; i < candidates.length; i += 1) {
+    const candidate = candidates[i];
+    const score = scoreThumbnailCandidate(candidate);
+    if (score > bestScore) {
+      best = candidate;
+      bestScore = score;
+    }
+  }
+
+  return bestScore > 0 ? normalizeThumbnailUrl(best.url) : "";
+}
+
+export function getThumbnailUrl(video: unknown, explicitId?: string) {
+  const id = explicitId || getVideoId(video);
+  const direct = getThumbnailFromValue(video);
+
+  if (direct) {
+    const isHighRes =
+      direct.includes("maxresdefault") ||
+      direct.includes("hq720") ||
+      direct.includes("sddefault");
+
+    if (isHighRes) {
+      return direct;
+    }
+  }
+
+  if (video && typeof video === "object" && "content_image" in video) {
+    const contentThumb = getThumbnailFromValue(video.content_image);
+    if (contentThumb) {
+      const isHighRes =
+        contentThumb.includes("maxresdefault") ||
+        contentThumb.includes("hq720") ||
+        contentThumb.includes("sddefault");
+
+      if (isHighRes) {
+        return contentThumb;
+      }
+    }
+  }
+
+  if (video && typeof video === "object" && "metadata" in video) {
+    const metaThumb = getThumbnailFromValue(video.metadata);
+    if (metaThumb) {
+      const isHighRes =
+        metaThumb.includes("maxresdefault") ||
+        metaThumb.includes("hq720") ||
+        metaThumb.includes("sddefault");
+
+      if (isHighRes) {
+        return metaThumb;
+      }
+    }
+  }
+
+  if (id) {
+    return `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`;
+  }
+
+  return direct || "";
 }
 
 export function getChannelAvatarUrl(channel: unknown): string | undefined {
@@ -372,6 +479,10 @@ export function getChannelAvatarUrl(channel: unknown): string | undefined {
     return getThumbnailFromValue(source.avatar) || undefined;
   }
 
+  if ("thumbnails" in source) {
+    return getThumbnailFromValue(source.thumbnails) || undefined;
+  }
+
   return getThumbnailUrl(channel) || undefined;
 }
 
@@ -386,26 +497,24 @@ export function getAuthorAvatarUrl(video: unknown): string | undefined {
     return undefined;
   }
 
-  if (!("thumbnails" in author)) {
-    return undefined;
-  }
+  const source = author as Record<string, unknown>;
 
-  const thumbnails = (author as Record<string, unknown>).thumbnails;
-
-  if (!Array.isArray(thumbnails) || thumbnails.length === 0) {
-    return undefined;
-  }
-
-  for (const thumb of thumbnails) {
-    if (thumb && typeof thumb === "object" && "url" in thumb) {
-      const url = getText((thumb as Record<string, unknown>).url);
-      if (url) {
-        return normalizeThumbnailUrl(url);
-      }
+  if ("thumbnails" in source && source.thumbnails) {
+    const thumb = getThumbnailFromValue(source.thumbnails);
+    if (thumb) {
+      return thumb;
     }
   }
 
-  return undefined;
+  if ("avatar" in source && source.avatar) {
+    const thumb = getThumbnailFromValue(source.avatar);
+    if (thumb) {
+      return thumb;
+    }
+  }
+
+  const fallback = getThumbnailFromValue(author);
+  return fallback || undefined;
 }
 
 export function getAuthorChannelId(video: unknown): string | undefined {

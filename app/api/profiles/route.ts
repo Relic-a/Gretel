@@ -6,41 +6,54 @@ import {
   resetProfile
 } from "../../../lib/profile-store";
 import { createPerformanceTrace, persistPerformanceTrace } from "../../../lib/performance-metrics";
+import { verifyApiToken } from "../../../lib/api-auth";
 
 export const runtime = "nodejs";
 
-export async function GET() {
+export async function GET(request: Request) {
+  if (!verifyApiToken(request)) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   return Response.json({ profiles: listProfiles() });
 }
 
 export async function POST(request: Request) {
-  const body = await request.json();
-  const action = typeof body.action === "string" ? body.action : "create";
+  if (!verifyApiToken(request)) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
 
-  if (action === "reset") {
-    const profileId = typeof body.profileId === "string" ? body.profileId : "";
-    const profile = getProfile(profileId);
+  try {
+    const body = await request.json();
+    const action = typeof body.action === "string" ? body.action : "create";
 
-    if (!profile) {
-      return Response.json({ error: "Profile not found." }, { status: 404 });
+    if (action === "reset") {
+      const profileId = typeof body.profileId === "string" ? body.profileId : "";
+      const profile = getProfile(profileId);
+
+      if (!profile) {
+        return Response.json({ error: "Profile not found." }, { status: 404 });
+      }
+
+      resetProfile(profile.id);
+      return Response.json({ profiles: listProfiles(), profileId: profile.id });
     }
 
-    resetProfile(profile.id);
+    if (action === "delete") {
+      const profileId = typeof body.profileId === "string" ? body.profileId : "";
+      const fallbackProfile = deleteProfile(profileId);
+      return Response.json({ profiles: listProfiles(), profileId: fallbackProfile?.id || "" });
+    }
+
+    const name = typeof body.name === "string" ? body.name : "";
+    const tags = Array.isArray(body.tags) ? body.tags : [];
+    const channels = Array.isArray(body.channels) ? body.channels : [];
+    const trace = createPerformanceTrace("profile.create");
+    const profile = createProfile(name, tags, channels);
+    trace.profileId = profile.id;
+    persistPerformanceTrace(trace, { tags: tags.length, channels: channels.length });
     return Response.json({ profiles: listProfiles(), profileId: profile.id });
+  } catch (error) {
+    return Response.json({ error: "Profile operation failed." }, { status: 500 });
   }
-
-  if (action === "delete") {
-    const profileId = typeof body.profileId === "string" ? body.profileId : "";
-    const fallbackProfile = deleteProfile(profileId);
-    return Response.json({ profiles: listProfiles(), profileId: fallbackProfile?.id || "" });
-  }
-
-  const name = typeof body.name === "string" ? body.name : "";
-  const tags = Array.isArray(body.tags) ? body.tags : [];
-  const channels = Array.isArray(body.channels) ? body.channels : [];
-  const trace = createPerformanceTrace("profile.create");
-  const profile = createProfile(name, tags, channels);
-  trace.profileId = profile.id;
-  persistPerformanceTrace(trace, { tags: tags.length, channels: channels.length });
-  return Response.json({ profiles: listProfiles(), profileId: profile.id });
 }

@@ -15,10 +15,15 @@ import {
 import { resolveMissingChannelAvatars } from "../../../lib/feed/channel-avatar-cache";
 import type { FeedVideo } from "../../../lib/feed/types";
 import { errorFields, logError, requestFields } from "../../../lib/logger";
+import { verifyApiToken } from "../../../lib/api-auth";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
+  if (!verifyApiToken(request)) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const videoId = searchParams.get("videoId") || "";
   const profileId = searchParams.get("profileId") || "";
@@ -33,7 +38,7 @@ export async function GET(request: Request) {
     const source = pickSourceNode(info, videoId);
     const author = getAuthor(source);
     const duration = getDuration(source) || durationFromNode(source) || durationFromInfo(info);
-    const thumbnailUrl = getThumbnailUrl(source) || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+    const thumbnailUrl = getThumbnailUrl(source, videoId) || `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
 
     const channelId = getAuthorChannelId(source);
     const [video]: FeedVideo[] = await resolveMissingChannelAvatars([{

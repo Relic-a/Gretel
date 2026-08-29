@@ -9,7 +9,71 @@ import {
 } from "lucide-react";
 
 import type { FeedVideo } from "../types";
-import { formatPublished, normalize, thumbnailFor } from "./video-utils";
+import { formatPublished, handleThumbnailError, normalize, thumbnailFor, authedHeaders } from "./video-utils";
+
+declare global {
+  interface Window {
+    YT?: {
+      Player: new (
+        elementId: string | HTMLElement,
+        config: {
+          videoId?: string;
+          playerVars?: Record<string, unknown>;
+          events?: {
+            onReady?: (event: { target: YTPlayerInstance }) => void;
+            onStateChange?: (event: { data: number; target: YTPlayerInstance }) => void;
+            onError?: (event: { data: number }) => void;
+          };
+        }
+      ) => YTPlayerInstance;
+      PlayerState: {
+        UNSTARTED: number;
+        ENDED: number;
+        PLAYING: number;
+        PAUSED: number;
+        BUFFERING: number;
+        CUED: number;
+      };
+    };
+    onYouTubeIframeAPIReady?: () => void;
+  }
+}
+
+export type YTPlayerInstance = {
+  playVideo: () => void;
+  pauseVideo: () => void;
+  stopVideo: () => void;
+  seekTo: (seconds: number, allowSeekAhead?: boolean) => void;
+  getCurrentTime: () => number;
+  getDuration: () => number;
+  getPlayerState: () => number;
+  loadVideoById: (videoId: string, startSeconds?: number) => void;
+  destroy: () => void;
+  getIframe: () => HTMLIFrameElement;
+};
+
+function loadYouTubeIframeApi(): Promise<void> {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined") return;
+    if (window.YT && window.YT.Player) {
+      resolve();
+      return;
+    }
+
+    const previousCallback = window.onYouTubeIframeAPIReady;
+    window.onYouTubeIframeAPIReady = () => {
+      previousCallback?.();
+      resolve();
+    };
+
+    if (!document.getElementById("gretel-yt-iframe-api")) {
+      const tag = document.createElement("script");
+      tag.id = "gretel-yt-iframe-api";
+      tag.src = "https://www.youtube.com/iframe_api";
+      document.head.appendChild(tag);
+    }
+  });
+}
 
 type WatchViewProps = {
   activeVideo: FeedVideo;
@@ -20,13 +84,15 @@ type WatchViewProps = {
   savedVideoIds: Set<string>;
   likedVideoIds: Set<string>;
   profileId: string;
-  videoRef: React.RefObject<HTMLIFrameElement | null>;
+  videoRef?: React.RefObject<HTMLIFrameElement | null>;
   onSelectVideo: (video: FeedVideo) => void;
   onLoadMoreSideVideos: () => void;
   onSaveVideo: (video: FeedVideo) => void;
   onLikeVideo: (video: FeedVideo) => void;
   onAddChannel: (channel: string) => void;
   onRemoveChannel: (channel: string) => void;
+  onPlaybackStateChange?: (playing: boolean) => void;
+  onTimeUpdate?: (currentTime: number, duration: number) => void;
 };
 
 type YtComment = {
@@ -41,6 +107,10 @@ type YtComment = {
 
 export function WatchView(props: WatchViewProps) {
   const sidePageSize = 12;
+  const playerContainerRef = useRef<HTMLDivElement | null>(null);
+  const playerRef = useRef<YTPlayerInstance | null>(null);
+  const timePollIntervalRef = useRef<number | null>(null);
+
   const [description, setDescription] = useState("");
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [displayLimit, setDisplayLimit] = useState(sidePageSize);
@@ -63,16 +133,108 @@ export function WatchView(props: WatchViewProps) {
   const saved = props.savedVideoIds.has(props.activeVideo.id);
   const liked = props.likedVideoIds.has(props.activeVideo.id);
 
-  const embedUrl = `https://www.youtube-nocookie.com/embed/${props.activeVideo.id}?autoplay=1&rel=0`;
   const visibleSideVideos = props.sideVideos.slice(0, displayLimit);
 
   useEffect(() => {
+    let destroyed = false;
+
+    setDescription("");
+    setDescriptionExpanded(false);
     setDisplayLimit(sidePageSize);
+    setComments([]);
+    setLoading(false);
+    setLoadingMore(false);
+    setError("");
+    setHasMore(true);
+    setPage(0);
+    setCommentsLoaded(false);
+    fetchInProgress.current = false;
     if (sideLoadDebounceRef.current !== null) {
       window.clearTimeout(sideLoadDebounceRef.current);
       sideLoadDebounceRef.current = null;
     }
     sideLoadRequestedRef.current = false;
+    props.onPlaybackStateChange?.(false);
+
+    function stopPolling() {
+      if (timePollIntervalRef.current !== null) {
+        window.clearInterval(timePollIntervalRef.current);
+        timePollIntervalRef.current = null;
+      }
+    }
+
+    function startPolling(player: YTPlayerInstance) {
+      stopPolling();
+      timePollIntervalRef.current = window.setInterval(() => {
+        try {
+          const currentTime = player.getCurrentTime() || 0;
+          const duration = player.getDuration() || 0;
+          if (currentTime > 0 || duration > 0) {
+            props.onTimeUpdate?.(currentTime, duration);
+          }
+        } catch {}
+      }, 500);
+    }
+
+    void loadYouTubeIframeApi().then(() => {
+      if (destroyed || !playerContainerRef.current || !window.YT?.Player) {
+        return;
+      }
+
+      try {
+        const origin = typeof window !== "undefined" ? window.location.origin : "";
+        playerRef.current = new window.YT.Player(playerContainerRef.current, {
+          videoId: props.activeVideo.id,
+          playerVars: {
+            autoplay: 1,
+            rel: 0,
+            enablejsapi: 1,
+            origin: origin
+          },
+          events: {
+            onReady: (event) => {
+              if (destroyed) return;
+              try {
+                const duration = event.target.getDuration();
+                const currentTime = event.target.getCurrentTime();
+                if (currentTime > 0 || duration > 0) {
+                  props.onTimeUpdate?.(currentTime, duration);
+                }
+              } catch {}
+            },
+            onStateChange: (event) => {
+              if (destroyed) return;
+              const isPlaying = (event.data === window.YT?.PlayerState.PLAYING);
+              props.onPlaybackStateChange?.(isPlaying);
+
+              if (isPlaying && playerRef.current) {
+                startPolling(playerRef.current);
+              } else {
+                stopPolling();
+                try {
+                  const currentTime = playerRef.current?.getCurrentTime() || 0;
+                  const duration = playerRef.current?.getDuration() || 0;
+                  if (currentTime > 0 || duration > 0) {
+                    props.onTimeUpdate?.(currentTime, duration);
+                  }
+                } catch {}
+              }
+            }
+          }
+        });
+      } catch {}
+    });
+
+    return () => {
+      destroyed = true;
+      stopPolling();
+      if (playerRef.current) {
+        try {
+          playerRef.current.destroy();
+        } catch {}
+        playerRef.current = null;
+      }
+    };
   }, [props.activeVideo.id]);
 
   useEffect(() => {
@@ -199,7 +361,7 @@ export function WatchView(props: WatchViewProps) {
     try {
       const res = await fetch("/api/comments", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authedHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           videoId: props.activeVideo.id,
           profileId: props.profileId,
@@ -235,15 +397,9 @@ export function WatchView(props: WatchViewProps) {
     <section className="watch-layout open">
       <div className="watch-player">
         <div className="player-shell">
-          <iframe
-            ref={props.videoRef}
-            src={embedUrl}
-            width="100%"
-            height="100%"
-            allow="autoplay; encrypted-media; fullscreen"
-            allowFullScreen
-            style={{ border: 0, display: "block" }}
-            title={props.activeVideo.title}
+          <div
+            ref={playerContainerRef}
+            style={{ width: "100%", height: "100%", border: 0 }}
           />
         </div>
         <div className="watch-meta">
@@ -392,7 +548,7 @@ export function WatchView(props: WatchViewProps) {
         {visibleSideVideos.map((video) => (
           <button type="button" className="side-video" key={video.id} onClick={() => props.onSelectVideo(video)}>
             <span className="side-thumb">
-              <img src={thumbnailFor(video)} loading="lazy" alt="" />
+              <img src={thumbnailFor(video)} loading="lazy" alt="" onError={(e) => handleThumbnailError(e, video.id)} />
               {video.duration && <span className="duration-pill">{video.duration}</span>}
             </span>
             <span className="side-copy">

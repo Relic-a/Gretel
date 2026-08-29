@@ -1150,10 +1150,12 @@ dependencies = [
 
 [[package]]
 name = "gretel"
-version = "0.2.0-alpha.4"
+version = "0.2.0-alpha.5"
 dependencies = [
+ "libc",
  "tauri",
  "tauri-build",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

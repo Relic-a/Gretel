@@ -36,7 +36,7 @@
     "coldStartParentEngagementWeight": 0.05
   },
   "learning": {
-    "watchSaveThreshold": 0.5,
+    "watchSaveThreshold": 0.1,
     "watchTimeWeight": 0.5,
     "likedWeight": 0.3,
     "clickedWeight": 0.2,
@@ -44,7 +44,7 @@
     "ignorePenaltyGrowth": 1.8,
     "centroidLearningRate": 0.08,
     "maxCentroidDrift": 0.18,
-    "watchCompletionThreshold": 0.9
+    "watchCompletionThreshold": 0.6
   },
   "embeddings": {
     "provider": "openrouter",
@@ -55,7 +55,7 @@
     "openRouterAppNameEnv": "OPENROUTER_APP_NAME",
     "model": "qwen/qwen3-embedding-8b",
     "dimensions": 1024,
-    "batchSize": 8,
+    "batchSize": 16,
     "maxConcurrentRequests": 13,
     "requestTimeoutMs": 30000,
     "mockSeed": 20260503

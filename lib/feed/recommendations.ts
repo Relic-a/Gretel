@@ -71,7 +71,7 @@ async function recommendVideosFromLinks(
       const maxVideos = config.expansion.maxVideosPerCycle;
       const seen = new Set<string>();
       const recommendations: FeedVideo[] = [];
-      const fetchConcurrency = 3;
+      const fetchConcurrency = Math.max(8, config.expansion.maxFetchCallsPerCycle);
       const seedRecommendations: Array<{ seedVideo: FeedVideo; feed: unknown[] } | null> = [];
       const fetchSeed = async (seedVideo: FeedVideo) => {
         const seedId = seedVideo.id;
@@ -138,7 +138,7 @@ async function recommendVideosFromLinks(
             channelAvatarUrl: getAuthorAvatarUrl(video),
             duration,
             query: sourceLabel,
-            thumbnailUrl: getThumbnailUrl(video) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+            thumbnailUrl: getThumbnailUrl(video, id) || `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
             thumbnailCacheUrl: `/api/thumbnails/${profileId}/${id}`,
             publishedText: getPublishedText(video),
             publishedAt: getPublishedAt(video),

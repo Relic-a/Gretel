@@ -368,6 +368,14 @@ function isSensitiveKey(key: string) {
 function installProcessErrorHandlers() {
   if (typeof process === "undefined" || loggerState.processHandlersInstalled) return;
   loggerState.processHandlersInstalled = true;
+
+  if (process.stdin && !process.stdin.isTTY) {
+    process.stdin.resume();
+    process.stdin.on("end", () => {
+      process.exit(0);
+    });
+  }
+
   // Monitor without installing an uncaughtException handler: a regular handler
   // would override Node's default crash behavior and could leave corrupted state
   // running. Unhandled rejections that Node promotes to uncaught exceptions also

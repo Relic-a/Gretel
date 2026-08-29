@@ -1,6 +1,6 @@
 {
   "name": "gretel",
-  "version": "0.2.0-alpha.4",
+  "version": "0.2.0-alpha.5",
   "private": true,
   "type": "module",
   "scripts": {
@@ -39,5 +39,8 @@
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "typescript": "latest"
-  }
+  },
+  "onlyBuiltDependencies": [
+    "better-sqlite3"
+  ]
 }

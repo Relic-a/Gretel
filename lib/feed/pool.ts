@@ -178,7 +178,7 @@ export function describeServingScore(video: FeedVideo, config: GretelConfig, isC
     ? baseScore
     : baseScore >= 0
       ? baseScore * impressionDecay
-      : baseScore / Math.max(impressionDecay, Number.EPSILON);
+      : baseScore * (2 - impressionDecay);
 
   return {
     score,

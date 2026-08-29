@@ -1,8 +1,8 @@
-import { useEffect, useRef } from "react";
+import React, { useEffect, useRef } from "react";
 
 import type { FeedVideo } from "../types";
 import { VideoActions } from "./VideoActions";
-import { formatPublished, thumbnailFor } from "./video-utils";
+import { formatPublished, handleThumbnailError, thumbnailFor } from "./video-utils";
 
 type VideoCardProps = {
   video: FeedVideo;
@@ -19,9 +19,11 @@ type VideoCardProps = {
   onRemoveChannel: (channel: string) => void;
 };
 
-export function VideoCard(props: VideoCardProps) {
+export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
   const cardRef = useRef<HTMLElement | null>(null);
   const reportedRef = useRef("");
+  const videoRef = useRef(props.video);
+  videoRef.current = props.video;
 
   useEffect(() => {
     reportedRef.current = "";
@@ -36,25 +38,30 @@ export function VideoCard(props: VideoCardProps) {
 
     const observer = new IntersectionObserver(
       (entries) => {
-        if (!entries[0].isIntersecting || reportedRef.current === props.video.id) {
+        if (!entries[0].isIntersecting || reportedRef.current === videoRef.current.id) {
           return;
         }
 
-        reportedRef.current = props.video.id;
-        props.onImpression?.(props.video);
+        reportedRef.current = videoRef.current.id;
+        props.onImpression?.(videoRef.current);
       },
       { threshold: 0 }
     );
 
     observer.observe(card);
     return () => observer.disconnect();
-  }, [props.video, props.onImpression]);
+  }, [props.video.id, props.onImpression]);
 
   return (
     <article ref={cardRef} className={props.compact ? "video-card compact" : "video-card"}>
       <div className="thumbnail-wrap">
         <button type="button" className="thumbnail-button" onClick={() => props.onSelectVideo(props.video)}>
-          <img src={thumbnailFor(props.video)} loading="lazy" alt="" />
+          <img
+            src={thumbnailFor(props.video)}
+            loading="lazy"
+            alt=""
+            onError={(e) => handleThumbnailError(e, props.video.id)}
+          />
           {props.video.duration && <span className="duration-pill">{props.video.duration}</span>}
         </button>
         <VideoActions
@@ -91,4 +98,4 @@ export function VideoCard(props: VideoCardProps) {
       </div>
     </article>
   );
-}
+});
