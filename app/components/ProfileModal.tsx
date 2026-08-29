@@ -1,7 +1,11 @@
-import { FormEvent } from "react";
+import { FormEvent, useEffect, useMemo, useState } from "react";
 
 import type { ChannelResult, Profile, UserSettings } from "../types";
+import { normalize } from "./video-utils";
 import { TagEditor } from "./TagEditor";
+import { FeedBuildProgress } from "./FeedBuildProgress";
+
+type StepId = "name" | "topics" | "channels" | "key";
 
 type ProfileModalProps = {
   manageProfiles: boolean;
@@ -14,9 +18,11 @@ type ProfileModalProps = {
   channelDraft: string;
   channelResults: ChannelResult[];
   loading: boolean;
+  loadingLabel: string;
   error: string;
   needsOpenRouterKey: boolean;
   settings: UserSettings;
+  topicSuggestions: string[];
   onClose: () => void;
   onSubmit: (event: FormEvent) => void;
   onSettingsChange: (settings: UserSettings) => void;
@@ -30,7 +36,103 @@ type ProfileModalProps = {
   onDeleteProfile: (profileId: string) => void;
 };
 
+const stepCopy: Record<StepId, { title: string; help: string }> = {
+  name: {
+    title: "Name this profile",
+    help: "You can run several profiles side by side — one per project, mood, or person."
+  },
+  topics: {
+    title: "What are you into?",
+    help: "Add topics and Gretel will hunt for videos around them. You can add more later."
+  },
+  channels: {
+    title: "Any channels you already trust?",
+    help: "Optional. Channels you follow seed your feed with videos they publish."
+  },
+  key: {
+    title: "Connect OpenRouter",
+    help: "Gretel needs your API key to build the first feed. It stays on your machine."
+  }
+};
+
 export function ProfileModal(props: ProfileModalProps) {
+  const steps = useMemo(() => {
+    const list: { id: StepId; label: string }[] = [
+      { id: "name", label: "Name" },
+      { id: "topics", label: "Topics" },
+      { id: "channels", label: "Channels" }
+    ];
+
+    if (props.needsOpenRouterKey) {
+      list.push({ id: "key", label: "API key" });
+    }
+
+    return list;
+  }, [props.needsOpenRouterKey]);
+  const [step, setStep] = useState(0);
+
+  useEffect(() => {
+    setStep((current) => Math.min(current, steps.length - 1));
+  }, [steps.length]);
+
+  const activeStep = steps[Math.min(step, steps.length - 1)];
+  const isLast = step === steps.length - 1;
+
+  function canContinue() {
+    if (activeStep.id === "name") {
+      return props.profileName.trim().length > 0;
+    }
+
+    if (activeStep.id === "key") {
+      return (
+        props.settings.openRouterApiKey === "set" ||
+        (props.settings.openRouterApiKey || "").trim().length > 0
+      );
+    }
+
+    return true;
+  }
+
+  function stepIsEmpty() {
+    if (activeStep.id === "topics") {
+      return props.tags.length === 0 && !props.tagDraft.trim();
+    }
+
+    if (activeStep.id === "channels") {
+      return props.channels.length === 0 && !props.channelDraft.trim();
+    }
+
+    return false;
+  }
+
+  function handleSubmit(event: FormEvent) {
+    event.preventDefault();
+
+    if (props.loading) {
+      return;
+    }
+
+    if (!isLast) {
+      if (canContinue()) {
+        setStep(step + 1);
+      }
+      return;
+    }
+
+    props.onSubmit(event);
+  }
+
+  const topicSuggestions = props.topicSuggestions.filter(
+    (suggestion) => !props.tags.some((tag) => normalize(tag) === normalize(suggestion))
+  );
+  const nextLabel = isLast
+    ? props.manageProfiles
+      ? "Add profile"
+      : "Create profile"
+    : stepIsEmpty()
+      ? "Skip"
+      : "Next";
+
   return (
     <div className="modal-backdrop">
       <section className="profile-modal">
@@ -57,102 +159,153 @@ export function ProfileModal(props: ProfileModalProps) {
           </div>
         )}
 
-        <form onSubmit={props.onSubmit} className="setup-form">
-          {props.manageProfiles && <h2>Add a new profile</h2>}
-          {!props.manageProfiles && <p className="modal-copy">Tell us what you're into. We'll build your personalized feed.</p>}
-          <label>
-            <span>Profile name</span>
-            <small>Give your profile a name so you can easily switch between them.</small>
-            <input
-              value={props.profileName}
-              onChange={(event) => props.onProfileNameChange(event.target.value)}
-              placeholder="Profile name"
-            />
-          </label>
-
-          {props.needsOpenRouterKey && (
-            <>
-              <label>
-                <span>OpenRouter API key</span>
-                <small>Required before Gretel can build your first feed.</small>
-                <input
-                  type="password"
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={props.settings.openRouterApiKey === "set" ? "" : props.settings.openRouterApiKey || ""}
-                  onChange={(event) =>
-                    props.onSettingsChange({
-                      ...props.settings,
-                      openRouterApiKey: event.target.value
-                    })
-                  }
-                  placeholder={props.settings.openRouterApiKey === "set" ? "API key already saved" : "sk-or-v1-..."}
-                />
-              </label>
-
-              <label>
-                <span>OpenRouter model</span>
-                <small>Optional. Leave blank to use the default embedding model.</small>
-                <input
-                  type="text"
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={props.settings.openRouterModel || ""}
-                  onChange={(event) =>
-                    props.onSettingsChange({
-                      ...props.settings,
-                      openRouterModel: event.target.value
-                    })
-                  }
-                  placeholder="qwen/qwen3-embedding-8b"
-                />
-              </label>
-            </>
-          )}
-
-          <TagEditor
-            label="Topics"
-            helperText="Separate your tags with commas. Click a tag to remove it."
-            values={props.tags}
-            draft={props.tagDraft}
-            setDraft={props.onTagDraftChange}
-            addValue={props.onAddTag}
-            removeValue={props.onRemoveTag}
-            placeholder="Add a topic"
+        {props.loading ? (
+          <FeedBuildProgress
+            variant="compact"
+            profileName={props.profileName}
+            tags={props.tags}
+            channels={props.channels}
+            loadingLabel={props.loadingLabel}
           />
-
-          <TagEditor
-            label="Subscriptions"
-            values={props.channels}
-            draft={props.channelDraft}
-            setDraft={props.onChannelDraftChange}
-            addValue={props.onAddChannel}
-            removeValue={props.onRemoveChannel}
-            placeholder="Search channel"
-          />
-
-          {props.channelResults.length > 0 && (
-            <div className="channel-results">
-              {props.channelResults.map((channel) => (
-                <button
-                  type="button"
-                  key={channel.id}
-                  onMouseDown={(event) => event.preventDefault()}
-                  onClick={() => props.onAddChannel(channel.name)}
+        ) : (
+          <form onSubmit={handleSubmit} className="setup-form">
+            <ol className="wizard-tracker" aria-label="Setup steps">
+              {steps.map((entry, index) => (
+                <li
+                  key={entry.id}
+                  className={index < step ? "done" : index === step ? "current" : ""}
+                  aria-current={index === step ? "step" : undefined}
                 >
-                  {channel.thumbnailUrl && <img src={channel.thumbnailUrl} alt="" />}
-                  <span>{channel.name}</span>
-                </button>
+                  <span className="wizard-dot" aria-hidden="true">
+                    {index < step ? "✓" : index + 1}
+                  </span>
+                  <span className="wizard-label">{entry.label}</span>
+                </li>
               ))}
-            </div>
-          )}
+            </ol>
 
-          <button type="submit" disabled={props.loading}>
-            {props.loading ? "Building feed..." : "Add profile"}
-          </button>
-          {props.loading && <div className="progress-bar" />}
-          {props.error && <p className="error">{props.error}</p>}
-        </form>
+            <div className="wizard-body">
+              <div className="wizard-step-head">
+                <h2>{stepCopy[activeStep.id].title}</h2>
+                <p>{stepCopy[activeStep.id].help}</p>
+              </div>
+
+              {activeStep.id === "name" && (
+                <label>
+                  <span>Profile name</span>
+                  <input
+                    autoFocus
+                    value={props.profileName}
+                    onChange={(event) => props.onProfileNameChange(event.target.value)}
+                    placeholder="e.g. Systems design"
+                  />
+                </label>
+              )}
+
+              {activeStep.id === "topics" && (
+                <>
+                  <TagEditor
+                    label="Topics"
+                    helperText="Press Enter or comma after each topic. Click a tag to remove it."
+                    values={props.tags}
+                    draft={props.tagDraft}
+                    setDraft={props.onTagDraftChange}
+                    addValue={props.onAddTag}
+                    removeValue={props.onRemoveTag}
+                    placeholder="Add a topic"
+                    suggestions={topicSuggestions}
+                  />
+                </>
+              )}
+
+              {activeStep.id === "channels" && (
+                <>
+                  <TagEditor
+                    label="Subscriptions"
+                    helperText="Search for a channel, then click it to add it."
+                    values={props.channels}
+                    draft={props.channelDraft}
+                    setDraft={props.onChannelDraftChange}
+                    addValue={props.onAddChannel}
+                    removeValue={props.onRemoveChannel}
+                    placeholder="Search channel"
+                  />
+                  {props.channelResults.length > 0 && (
+                    <div className="channel-results">
+                      {props.channelResults.map((channel) => (
+                        <button
+                          type="button"
+                          key={channel.id}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => props.onAddChannel(channel.name)}
+                        >
+                          {channel.thumbnailUrl && <img src={channel.thumbnailUrl} alt="" />}
+                          <span>{channel.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+
+              {activeStep.id === "key" && (
+                <>
+                  <label>
+                    <span>OpenRouter API key</span>
+                    <input
+                      autoFocus
+                      type="password"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={props.settings.openRouterApiKey === "set" ? "" : props.settings.openRouterApiKey || ""}
+                      onChange={(event) =>
+                        props.onSettingsChange({
+                          ...props.settings,
+                          openRouterApiKey: event.target.value
+                        })
+                      }
+                      placeholder={props.settings.openRouterApiKey === "set" ? "API key already saved" : "sk-or-v1-..."}
+                    />
+                  </label>
+
+                  <label>
+                    <span>OpenRouter model</span>
+                    <small>Optional. Leave blank to use the default embedding model.</small>
+                    <input
+                      type="text"
+                      autoComplete="off"
+                      spellCheck={false}
+                      value={props.settings.openRouterModel || ""}
+                      onChange={(event) =>
+                        props.onSettingsChange({
+                          ...props.settings,
+                          openRouterModel: event.target.value
+                        })
+                      }
+                      placeholder="qwen/qwen3-embedding-8b"
+                    />
+                  </label>
+                </>
+              )}
+            </div>
+
+            <div className="wizard-nav">
+              <span className="wizard-count">
+                {step + 1} / {steps.length}
+              </span>
+              {step > 0 && (
+                <button type="button" className="secondary-button" onClick={() => setStep(step - 1)}>
+                  Back
+                </button>
+              )}
+              <button type="submit" className="wizard-next" disabled={!canContinue()}>
+                {nextLabel}
+              </button>
+            </div>
+
+            {props.error && <p className="error">{props.error}</p>}
+          </form>
+        )}
       </section>
     </div>
   );

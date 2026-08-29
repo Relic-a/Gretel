@@ -3,6 +3,7 @@ import { useCallback, useEffect, useRef } from "react";
 import type { FeedVideo } from "../types";
 import { normalize } from "./video-utils";
 import { VideoCard } from "./VideoCard";
+import { FeedBuildProgress } from "./FeedBuildProgress";
 
 type FeedViewProps = {
   title: string;
@@ -13,6 +14,10 @@ type FeedViewProps = {
   likedVideoIds: Set<string>;
   loading: boolean;
   canAskForMore: boolean;
+  profileName?: string;
+  tags?: string[];
+  channels?: string[];
+  loadingLabel?: string;
   onLoadMore: () => void;
   onSelectVideo: (video: FeedVideo) => void;
   onSaveVideo: (video: FeedVideo) => void;
@@ -83,8 +88,19 @@ export function FeedView(props: FeedViewProps) {
     };
   }, [loadMore, props.videos.length]);
 
+  const isInitialBuild = props.videos.length === 0 && props.loading;
+
   return (
     <section className="feed-view" aria-live="polite">
+      {isInitialBuild && (
+        <FeedBuildProgress
+          profileName={props.profileName}
+          tags={props.tags}
+          channels={props.channels}
+          loadingLabel={props.loadingLabel}
+        />
+      )}
+
       <div className="feed-heading">
         {props.title && (
           <div>
@@ -116,14 +132,14 @@ export function FeedView(props: FeedViewProps) {
           );
         })}
         {props.loading &&
-          Array.from({ length: props.videos.length === 0 ? 12 : 4 }).map((_, index) => (
+          Array.from({ length: props.videos.length === 0 ? 8 : 4 }).map((_, index) => (
             <VideoCardSkeleton key={`feed-skeleton-${index}`} />
           ))}
       </div>
 
       <div ref={loaderRef} className="feed-loader">
         <span className="loader-copy">
-          {props.loading ? "Loading more videos..." : ""}
+          {props.loading && props.videos.length > 0 ? "Loading more videos..." : ""}
         </span>
       </div>
     </section>

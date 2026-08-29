@@ -71,6 +71,7 @@ export default function Home() {
   const [activeVideo, setActiveVideo] = useState<FeedVideo | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [buildingLabel, setBuildingLabel] = useState("");
   const [feedEnd, setFeedEnd] = useState(false);
   const [booted, setBooted] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -515,6 +516,7 @@ export default function Home() {
 
     setError("");
     setLoading(true);
+    setBuildingLabel(needsOpenRouterKey ? "Saving your API key..." : "Creating your profile...");
 
     try {
       if (needsOpenRouterKey && hasKey) {
@@ -532,6 +534,7 @@ export default function Home() {
         setSettings(savedSettings);
       }
 
+      setBuildingLabel("Creating your profile...");
       const response = await authedFetch("/api/profiles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -565,6 +568,7 @@ export default function Home() {
       clearCachedFeed(data.profileId || "");
       writeRoute("home");
 
+      setBuildingLabel("Finding videos for your feed...");
       await requestFeed({
         nextProfileId: data.profileId || "",
         nextTags: createdTags,
@@ -983,6 +987,10 @@ export default function Home() {
           likedVideoIds={likedVideoIds}
           loading={loading}
           canAskForMore={canAskForMore}
+          profileName={activeProfile?.name || profileName}
+          tags={tags}
+          channels={channels}
+          loadingLabel={buildingLabel}
           onLoadMore={() => requestFeed()}
           onSelectVideo={openVideo}
           onSaveVideo={saveVideo}
@@ -1009,9 +1017,11 @@ export default function Home() {
           channelDraft={channelDraft}
           channelResults={channelResults}
           loading={loading}
+          loadingLabel={buildingLabel}
           error={error}
           needsOpenRouterKey={needsOpenRouterKey}
           settings={settings}
+          topicSuggestions={starterTagSuggestions}
           onClose={() => setManageProfiles(false)}
           onSubmit={createProfileAndBuild}
           onSettingsChange={setSettings}

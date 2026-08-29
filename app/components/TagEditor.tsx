@@ -7,6 +7,7 @@ type TagEditorProps = {
   addValue: (value: string) => void;
   removeValue: (value: string) => void;
   placeholder: string;
+  suggestions?: string[];
 };
 
 export function TagEditor(props: TagEditorProps) {
@@ -33,6 +34,15 @@ export function TagEditor(props: TagEditorProps) {
           placeholder={props.placeholder}
         />
       </div>
+      {props.suggestions && props.suggestions.length > 0 && (
+        <div className="suggestion-row">
+          {props.suggestions.map((suggestion) => (
+            <button type="button" key={suggestion} onClick={() => props.addValue(suggestion)}>
+              + {suggestion}
+            </button>
+          ))}
+        </div>
+      )}
     </label>
   );
 }
