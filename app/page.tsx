@@ -929,6 +929,7 @@ export default function Home() {
         profiles={profiles}
         activeSection={section}
         showProfileMenu={showProfileMenu}
+        developerAnalytics={settings.developerAnalytics === true}
         onHome={buildFeed}
         onSaved={openSaved}
         onHistory={openHistory}

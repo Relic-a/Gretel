@@ -116,7 +116,7 @@ Notes:
 
 ## Performance Diagnostics
 
-Open `/diagnostics` (or use the activity icon in the app header) to inspect locally persisted performance telemetry. Gretel records initial feed builds, load-more and exhaustion expansions, preemptive expansions, profile creation, and comment fetching. The dashboard reports run counts, errors, total measured time, p50/p95/p99 latency, and operation-level hotspots.
+Performance analytics are off by default. Enable **Developer analytics** in Settings, then open `/diagnostics` (or use the activity icon in the app header) to inspect locally persisted performance telemetry. When enabled, Gretel records initial feed builds, load-more and exhaustion expansions, preemptive expansions, profile creation, and comment fetching. The dashboard reports run counts, errors, total measured time, p50/p95/p99 latency, and operation-level hotspots.
 
 Metrics are stored in `data/gretel.sqlite` and retained for 30 days by default. Set `GRETEL_METRICS_RETENTION_DAYS` to change the retention window. A machine-readable report is available at `/api/performance?hours=168`; optional `workflow` and `profileId` parameters narrow it.
 

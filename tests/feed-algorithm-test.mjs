@@ -1432,7 +1432,13 @@ function video(id, fields = {}) {
 }
 
 function observation() {
-  return { requestId: crypto.randomUUID(), startedAt: Date.now(), operations: [] };
+  return {
+    enabled: true,
+    requestId: crypto.randomUUID(),
+    workflow: "test.feed",
+    startedAt: Date.now(),
+    operations: []
+  };
 }
 
 async function captureConsoleLogs(work) {

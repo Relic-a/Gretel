@@ -29,7 +29,8 @@ export async function POST(request: Request) {
 
     setUserSettings({
       openRouterApiKey,
-      openRouterModel: typeof body.openRouterModel === "string" ? body.openRouterModel : ""
+      openRouterModel: typeof body.openRouterModel === "string" ? body.openRouterModel : "",
+      developerAnalytics: body.developerAnalytics === true
     });
 
     return Response.json(toClientSettings(getUserSettings()));
@@ -41,6 +42,7 @@ export async function POST(request: Request) {
 function toClientSettings(settings: ReturnType<typeof getUserSettings>) {
   return {
     openRouterApiKey: settings.openRouterApiKey ? "set" : "",
-    openRouterModel: settings.openRouterModel || ""
+    openRouterModel: settings.openRouterModel || "",
+    developerAnalytics: settings.developerAnalytics === true
   };
 }

@@ -8,6 +8,7 @@ type TopBarProps = {
   profiles: Profile[];
   activeSection: "home" | "saved" | "history";
   showProfileMenu: boolean;
+  developerAnalytics: boolean;
   onHome: () => void;
   onSaved: () => void;
   onHistory: () => void;
@@ -44,9 +45,11 @@ export function TopBar(props: TopBarProps) {
         </button>
       </nav>
       <div className="topbar-actions">
-        <a className="settings-button" href="/diagnostics" aria-label="Open performance diagnostics" title="Performance diagnostics">
-          <Activity aria-hidden="true" size={18} />
-        </a>
+        {props.developerAnalytics && (
+          <a className="settings-button" href="/diagnostics" aria-label="Open performance diagnostics" title="Performance diagnostics">
+            <Activity aria-hidden="true" size={18} />
+          </a>
+        )}
         <button type="button" className="settings-button" onClick={props.onOpenSettings} aria-label="Open settings">
           <Settings aria-hidden="true" size={18} />
         </button>

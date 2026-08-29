@@ -1,11 +1,19 @@
 import { getPerformanceReport } from "../../../lib/performance-metrics";
 import { verifyApiToken } from "../../../lib/api-auth";
+import { getUserSettings } from "../../../lib/settings";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
   if (!verifyApiToken(request)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  if (getUserSettings().developerAnalytics !== true) {
+    return Response.json(
+      { error: "Developer analytics are disabled. Enable them in Settings to collect performance traces." },
+      { status: 403 }
+    );
   }
 
   const url = new URL(request.url);

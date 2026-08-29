@@ -1,4 +1,5 @@
 import { getDatabase } from "./profile-store";
+import { getUserSettings } from "./settings";
 
 export type PerformanceOperation = {
   name: string;
@@ -10,6 +11,7 @@ export type PerformanceOperation = {
 };
 
 export type PerformanceTrace = {
+  enabled: boolean;
   requestId: string;
   workflow: string;
   profileId?: string;
@@ -40,12 +42,15 @@ export function createPerformanceTrace(
   workflow: string,
   context: { profileId?: string; requestId?: string } = {}
 ): PerformanceTrace {
+  const enabled = getUserSettings().developerAnalytics === true;
+
   return {
+    enabled,
     requestId: context.requestId || crypto.randomUUID(),
     workflow,
     profileId: context.profileId,
     startedAt: performance.now(),
-    operations: []
+    operations: createOperationBuffer(enabled)
   };
 }
 
@@ -55,6 +60,11 @@ export async function observePerformanceOperation<T>(
   input: Record<string, unknown>,
   operation: () => T | { value: T; output: Record<string, unknown> } | Promise<T | { value: T; output: Record<string, unknown> }>
 ) {
+  if (!trace.enabled) {
+    const result = await operation();
+    return isObservedResult<T>(result) ? result.value : result;
+  }
+
   const startedAt = performance.now();
   try {
     const result = await operation();
@@ -84,6 +94,10 @@ export function persistPerformanceTrace(
   summary: Record<string, unknown>,
   options: { status?: "ok" | "error"; totalMs?: number } = {}
 ) {
+  if (!trace.enabled) {
+    return;
+  }
+
   try {
     persistPerformanceTraceUnsafe(trace, summary, options);
   } catch (error) {
@@ -343,4 +357,14 @@ function isObservedResult<T>(
   value: T | { value: T; output: Record<string, unknown> }
 ): value is { value: T; output: Record<string, unknown> } {
   return Boolean(value && typeof value === "object" && "value" in value && "output" in value);
+}
+
+function createOperationBuffer(enabled: boolean) {
+  const operations: PerformanceOperation[] = [];
+
+  if (!enabled) {
+    operations.push = () => 0;
+  }
+
+  return operations;
 }

@@ -63,6 +63,29 @@ export function SettingsModal(props: SettingsModalProps) {
             />
           </label>
 
+          <div className="developer-setting">
+            <div>
+              <span>Developer analytics</span>
+              <small>Record local performance traces and show the diagnostics shortcut. Off by default.</small>
+            </div>
+            <label className="toggle-control">
+              <input
+                type="checkbox"
+                checked={props.settings.developerAnalytics === true}
+                onChange={(event) =>
+                  props.onChange({
+                    ...props.settings,
+                    developerAnalytics: event.target.checked
+                  })
+                }
+              />
+              <span className="toggle-track" aria-hidden="true">
+                <span className="toggle-knob" />
+              </span>
+              <span className="sr-only">Enable developer analytics</span>
+            </label>
+          </div>
+
           <button type="submit" disabled={props.saving}>
             {props.saving ? "Saving..." : "Save settings"}
           </button>

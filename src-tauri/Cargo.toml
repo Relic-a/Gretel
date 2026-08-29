@@ -1,6 +1,6 @@
 [package]
 name = "gretel"
-version = "0.2.0-alpha.5"
+version = "0.3.0-beta.1"
 description = "Gretel desktop app"
 authors = ["Ezana"]
 edition = "2021"

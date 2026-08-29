@@ -1104,6 +1104,94 @@ img.avatar {
   margin: -12px 0 8px;
 }
 
+.developer-setting {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 20px;
+  margin-top: 4px;
+  padding: 16px;
+  border: 1px solid var(--color-border);
+  background: #101012;
+  box-shadow: 3px 3px 0 var(--color-border);
+}
+
+.developer-setting > div {
+  display: grid;
+  gap: 6px;
+}
+
+.developer-setting > div > span {
+  font-weight: 800;
+}
+
+.developer-setting small {
+  color: var(--color-muted);
+  font-weight: 650;
+  line-height: 1.45;
+}
+
+.toggle-control {
+  position: relative;
+  display: inline-flex;
+  cursor: pointer;
+}
+
+.toggle-control input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.toggle-track {
+  position: relative;
+  display: block;
+  width: 48px;
+  height: 26px;
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface-soft);
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.toggle-knob {
+  position: absolute;
+  top: 4px;
+  left: 4px;
+  width: 16px;
+  height: 16px;
+  background: var(--color-muted);
+  box-shadow: 2px 2px 0 #09090a;
+  transition: transform 120ms ease, background-color 120ms ease;
+}
+
+.toggle-control input:checked + .toggle-track {
+  border-color: var(--color-brand);
+  background: var(--color-brand-soft);
+}
+
+.toggle-control input:checked + .toggle-track .toggle-knob {
+  transform: translateX(22px);
+  background: var(--color-brand-strong);
+}
+
+.toggle-control input:focus-visible + .toggle-track {
+  outline: 2px solid var(--color-brand-strong);
+  outline-offset: 3px;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 .wizard-tracker {
   display: flex;
   gap: 10px;

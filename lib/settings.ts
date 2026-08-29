@@ -6,6 +6,7 @@ import { getDataDir } from "./data-dir";
 export type UserSettings = {
   openRouterApiKey?: string;
   openRouterModel?: string;
+  developerAnalytics?: boolean;
 };
 
 const dataDir = getDataDir();
@@ -47,9 +48,11 @@ function sanitizeUserSettings(value: unknown): UserSettings {
     typeof input.openRouterApiKey === "string" ? input.openRouterApiKey.trim() : "";
   const openRouterModel =
     typeof input.openRouterModel === "string" ? input.openRouterModel.trim() : "";
+  const developerAnalytics = input.developerAnalytics === true;
 
   return {
     ...(openRouterApiKey ? { openRouterApiKey } : {}),
-    ...(openRouterModel ? { openRouterModel } : {})
+    ...(openRouterModel ? { openRouterModel } : {}),
+    ...(developerAnalytics ? { developerAnalytics: true } : {})
   };
 }

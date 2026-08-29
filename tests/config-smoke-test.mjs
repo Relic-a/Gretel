@@ -137,7 +137,8 @@ function loadRuntimeModules(fakeYoutubeClient) {
     path.join(buildDir, "app", "api", "profiles", "route.js"),
     path.join(buildDir, "app", "api", "watch-events", "route.js"),
     path.join(buildDir, "lib", "profile-store.js"),
-    path.join(buildDir, "lib", "performance-metrics.js")
+    path.join(buildDir, "lib", "performance-metrics.js"),
+    path.join(buildDir, "lib", "settings.js")
   ];
 
   for (const modulePath of Object.keys(require.cache)) {
@@ -161,7 +162,8 @@ function loadRuntimeModules(fakeYoutubeClient) {
     profilesRoute: require(routePaths[2]),
     watchEventsRoute: require(routePaths[3]),
     profileStore: require(routePaths[4]),
-    performanceMetrics: require(routePaths[5])
+    performanceMetrics: require(routePaths[5]),
+    settings: require(routePaths[6])
   };
 }
 
@@ -533,11 +535,19 @@ test("config loads OPENROUTER_API_KEY from .env", () => {
 test("runtime feed flow initializes roots with early expansion, serves fast lane, and records engagement", async () => {
   const normalConfig = writeRuntimeConfig("runtime-normal.json");
   const fakeYoutubeClient = createFakeYoutubeClient();
-  const { feedRoute, feedBuildRoute, profilesRoute, watchEventsRoute, profileStore, performanceMetrics } =
+  const { feedRoute, feedBuildRoute, profilesRoute, watchEventsRoute, profileStore, performanceMetrics, settings } =
     loadRuntimeModules(fakeYoutubeClient);
   let profileId = "";
 
   try {
+    settings.setUserSettings({});
+    const disabledTrace = performanceMetrics.createPerformanceTrace("test.disabled");
+    assert.equal(disabledTrace.enabled, false);
+    disabledTrace.operations.push({ name: "ignored", durationMs: 1, status: "ok" });
+    assert.equal(disabledTrace.operations.length, 0);
+    settings.setUserSettings({ developerAnalytics: true });
+    assert.equal(performanceMetrics.createPerformanceTrace("test.enabled").enabled, true);
+
     const { value: flow, logs } = await captureLogs(async () => {
       process.env.GRETEL_CONFIG = normalConfig;
       const created = await postJson(profilesRoute, { name: "Config Smoke Profile" });
@@ -658,6 +668,7 @@ test("runtime feed flow initializes roots with early expansion, serves fast lane
     assert.ok(initialBuild?.operations.some((item) => item.name.startsWith("feed.embeddings.total [")));
     assert.ok(initialBuild?.p95Ms >= initialBuild?.p50Ms);
   } finally {
+    settings.setUserSettings({});
     if (profileId) {
       profileStore.resetProfile(profileId);
       profileStore.deleteProfile(profileId);
