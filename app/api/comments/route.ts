@@ -194,9 +194,12 @@ function extractComments(page: any) {
 }
 
 function extractThumbnailUrl(thumbnails: unknown) {
-  if (!Array.isArray(thumbnails)) {
+  if (!Array.isArray(thumbnails) || thumbnails.length === 0) {
     return undefined;
   }
+
+  let bestUrl = "";
+  let bestScore = -1;
 
   for (const thumbnail of thumbnails) {
     if (!thumbnail || typeof thumbnail !== "object") {
@@ -206,12 +209,35 @@ function extractThumbnailUrl(thumbnails: unknown) {
     const rawUrl = "url" in thumbnail ? getText((thumbnail as Record<string, unknown>).url) : "";
     const normalizedUrl = normalizeThumbnailUrl(rawUrl);
 
-    if (normalizedUrl) {
-      return normalizedUrl;
+    if (!normalizedUrl) {
+      continue;
+    }
+
+    const width = typeof (thumbnail as Record<string, unknown>).width === "number"
+      ? ((thumbnail as Record<string, unknown>).width as number)
+      : 0;
+    const height = typeof (thumbnail as Record<string, unknown>).height === "number"
+      ? ((thumbnail as Record<string, unknown>).height as number)
+      : 0;
+
+    let score = width * height || width;
+    if (score === 0) {
+      const sMatch = normalizedUrl.match(/=s(\d+)/);
+      if (sMatch) {
+        const s = parseInt(sMatch[1], 10);
+        if (!Number.isNaN(s)) {
+          score = s * s;
+        }
+      }
+    }
+
+    if (score > bestScore) {
+      bestScore = score;
+      bestUrl = normalizedUrl;
     }
   }
 
-  return undefined;
+  return bestUrl || undefined;
 }
 
 function normalizeThumbnailUrl(url: string) {

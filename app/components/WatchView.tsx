@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 
 import type { FeedVideo } from "../types";
-import { formatPublished, normalize, thumbnailFor, authedHeaders } from "./video-utils";
+import { formatPublished, handleThumbnailError, normalize, thumbnailFor, authedHeaders } from "./video-utils";
 
 type WatchViewProps = {
   activeVideo: FeedVideo;
@@ -423,7 +423,7 @@ export function WatchView(props: WatchViewProps) {
         {visibleSideVideos.map((video) => (
           <button type="button" className="side-video" key={video.id} onClick={() => props.onSelectVideo(video)}>
             <span className="side-thumb">
-              <img src={thumbnailFor(video)} loading="lazy" alt="" />
+              <img src={thumbnailFor(video)} loading="lazy" alt="" onError={(e) => handleThumbnailError(e, video.id)} />
               {video.duration && <span className="duration-pill">{video.duration}</span>}
             </span>
             <span className="side-copy">

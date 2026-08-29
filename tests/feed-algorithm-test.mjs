@@ -1511,3 +1511,82 @@ test("describeServingScore applies impression decay safely to negative scores wi
   assert.ok(result.score <= 0, "Score should remain non-positive");
   assert.ok(Math.abs(result.score) < 5, `Negative score should not explode, got ${result.score}`);
 });
+
+test("getThumbnailUrl selects the highest resolution thumbnail and ignores low-res or animated previews", () => {
+  const { getThumbnailUrl, getChannelAvatarUrl, getAuthorAvatarUrl } = require(path.join(buildDir, "lib", "feed", "video-utils.js"));
+
+  // 1. YouTube descending array format: highest res is first, lowest is last
+  const videoWithOrderedThumbnails = {
+    id: "test-video-1",
+    thumbnails: [
+      { url: "https://i.ytimg.com/vi/test-video-1/hq720.jpg?sqp=abc", width: 720, height: 404 },
+      { url: "https://i.ytimg.com/vi/test-video-1/hqdefault.jpg?sqp=def", width: 336, height: 188 },
+      { url: "https://i.ytimg.com/vi/test-video-1/hqdefault.jpg?sqp=ghi", width: 168, height: 94 }
+    ]
+  };
+  assert.equal(
+    getThumbnailUrl(videoWithOrderedThumbnails),
+    "https://i.ytimg.com/vi/test-video-1/hq720.jpg?sqp=abc"
+  );
+
+  // 2. LockupView with content_image and animated preview
+  const lockupVideo = {
+    content_id: "test-lockup-1",
+    content_image: {
+      image: [
+        { url: "https://i.ytimg.com/vi/test-lockup-1/hq720.jpg?sqp=high", width: 720, height: 404 },
+        { url: "https://i.ytimg.com/vi/test-lockup-1/hq720.jpg?sqp=low", width: 360, height: 202 }
+      ],
+      overlays: [
+        {
+          thumbnail: [{ url: "https://i.ytimg.com/an_webp/test-lockup-1/mqdefault_6s.webp", width: 320, height: 180 }]
+        }
+      ]
+    }
+  };
+  assert.equal(
+    getThumbnailUrl(lockupVideo),
+    "https://i.ytimg.com/vi/test-lockup-1/hq720.jpg?sqp=high"
+  );
+
+  // 3. Fallback to maxresdefault when only low-res thumbnail is provided in payload
+  const videoWithLowResOnly = {
+    id: "test-low-res-1",
+    thumbnails: [
+      { url: "https://i.ytimg.com/vi/test-low-res-1/hqdefault.jpg", width: 336, height: 188 }
+    ]
+  };
+  assert.equal(
+    getThumbnailUrl(videoWithLowResOnly),
+    "https://i.ytimg.com/vi/test-low-res-1/maxresdefault.jpg"
+  );
+
+  // 4. Author avatar resolution selection
+  const authorWithAvatars = {
+    author: {
+      id: "UC123",
+      thumbnails: [
+        { url: "https://yt3.ggpht.com/avatar=s176-c-k", width: 176, height: 176 },
+        { url: "https://yt3.ggpht.com/avatar=s68-c-k", width: 68, height: 68 }
+      ]
+    }
+  };
+  assert.equal(
+    getAuthorAvatarUrl(authorWithAvatars),
+    "https://yt3.ggpht.com/avatar=s176-c-k"
+  );
+
+  // 5. Channel avatar resolution selection
+  const channelWithAvatars = {
+    metadata: {
+      avatar: [
+        { url: "https://yt3.ggpht.com/channel-avatar=s240-c-k", width: 240, height: 240 },
+        { url: "https://yt3.ggpht.com/channel-avatar=s88-c-k", width: 88, height: 88 }
+      ]
+    }
+  };
+  assert.equal(
+    getChannelAvatarUrl(channelWithAvatars),
+    "https://yt3.ggpht.com/channel-avatar=s240-c-k"
+  );
+});

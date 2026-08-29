@@ -38,7 +38,7 @@ export async function GET(request: Request) {
     const source = pickSourceNode(info, videoId);
     const author = getAuthor(source);
     const duration = getDuration(source) || durationFromNode(source) || durationFromInfo(info);
-    const thumbnailUrl = getThumbnailUrl(source) || `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
+    const thumbnailUrl = getThumbnailUrl(source, videoId) || `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
 
     const channelId = getAuthorChannelId(source);
     const [video]: FeedVideo[] = await resolveMissingChannelAvatars([{

@@ -2,7 +2,7 @@ import React, { useEffect, useRef } from "react";
 
 import type { FeedVideo } from "../types";
 import { VideoActions } from "./VideoActions";
-import { formatPublished, thumbnailFor } from "./video-utils";
+import { formatPublished, handleThumbnailError, thumbnailFor } from "./video-utils";
 
 type VideoCardProps = {
   video: FeedVideo;
@@ -60,9 +60,7 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
             src={thumbnailFor(props.video)}
             loading="lazy"
             alt=""
-            onError={(e) => {
-              e.currentTarget.src = `https://i.ytimg.com/vi/${props.video.id}/hqdefault.jpg`;
-            }}
+            onError={(e) => handleThumbnailError(e, props.video.id)}
           />
           {props.video.duration && <span className="duration-pill">{props.video.duration}</span>}
         </button>

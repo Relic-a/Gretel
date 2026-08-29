@@ -138,7 +138,7 @@ async function recommendVideosFromLinks(
             channelAvatarUrl: getAuthorAvatarUrl(video),
             duration,
             query: sourceLabel,
-            thumbnailUrl: getThumbnailUrl(video) || `https://i.ytimg.com/vi/${id}/hqdefault.jpg`,
+            thumbnailUrl: getThumbnailUrl(video, id) || `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
             thumbnailCacheUrl: `/api/thumbnails/${profileId}/${id}`,
             publishedText: getPublishedText(video),
             publishedAt: getPublishedAt(video),
