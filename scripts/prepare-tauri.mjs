@@ -9,6 +9,7 @@ const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "
 const nextBin = path.join(projectRoot, "node_modules", "next", "dist", "bin", "next");
 const standaloneDir = path.join(projectRoot, ".next", "standalone");
 const runtimeDir = path.join(projectRoot, "src-tauri", "node-runtime");
+const runtimeNetworkSmokeTest = path.join(projectRoot, "scripts", "smoke-test-bundled-network.mjs");
 
 async function exists(target) {
   try {
@@ -81,6 +82,8 @@ if (!isWindows) {
   const { chmod } = await import("node:fs/promises");
   await chmod(path.join(runtimeDir, nodeExeName), 0o755);
 }
+
+await run(path.join(runtimeDir, nodeExeName), [runtimeNetworkSmokeTest]);
 
 console.log(`Prepared Next.js standalone output and bundled Node.js runtime (${nodeExeName}) for Tauri.`);
 

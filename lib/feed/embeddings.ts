@@ -1,5 +1,6 @@
 import { getGretelConfig } from "./config";
 import { loadDotEnvFile } from "../env";
+import { fetchWithNetworkRetry } from "../network-retry";
 import { getUserSettings } from "../settings";
 import { normalizeVector } from "./vector-math";
 
@@ -63,11 +64,9 @@ class OpenRouterEmbeddingProvider implements EmbeddingProvider {
       return [];
     }
 
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
-
-    try {
-      const response = await fetch(`${this.baseUrl.replace(/\/$/, "")}/embeddings`, {
+    const response = await fetchWithNetworkRetry(
+      `${this.baseUrl.replace(/\/$/, "")}/embeddings`,
+      {
         method: "POST",
         headers: {
           Authorization: `Bearer ${this.apiKey}`,
@@ -75,41 +74,39 @@ class OpenRouterEmbeddingProvider implements EmbeddingProvider {
           ...(this.siteUrl ? { "HTTP-Referer": this.siteUrl } : {}),
           ...(this.appName ? { "X-Title": this.appName } : {})
         },
-        body: JSON.stringify({ model: this.model, input: texts, dimensions: this.dimensions }),
-        signal: controller.signal
-      });
+        body: JSON.stringify({ model: this.model, input: texts, dimensions: this.dimensions })
+      },
+      { timeoutMs: this.timeoutMs }
+    );
 
-      if (!response.ok) {
-        throw new Error(`OpenRouter embedding request failed with ${response.status}`);
-      }
+    if (!response.ok) {
+      throw new Error(`OpenRouter embedding request failed with ${response.status}`);
+    }
 
-      const payload = await response.json() as {
-        data?: Array<{ embedding?: number[]; index?: number }>;
-      };
-      const data = [...(payload.data || [])].sort(
-        (left, right) => (left.index ?? 0) - (right.index ?? 0)
+    const payload = await response.json() as {
+      data?: Array<{ embedding?: number[]; index?: number }>;
+    };
+    const data = [...(payload.data || [])].sort(
+      (left, right) => (left.index ?? 0) - (right.index ?? 0)
+    );
+
+    if (data.length !== texts.length) {
+      throw new Error(
+        `OpenRouter returned ${data.length} embeddings for ${texts.length} inputs`
       );
+    }
 
-      if (data.length !== texts.length) {
+    return data.map((item, index) => {
+      const vector = normalizeVector(item.embedding || []);
+
+      if (vector.length !== this.dimensions) {
         throw new Error(
-          `OpenRouter returned ${data.length} embeddings for ${texts.length} inputs`
+          `OpenRouter embedding ${index} has ${vector.length} dimensions; expected ${this.dimensions}`
         );
       }
 
-      return data.map((item, index) => {
-        const vector = normalizeVector(item.embedding || []);
-
-        if (vector.length !== this.dimensions) {
-          throw new Error(
-            `OpenRouter embedding ${index} has ${vector.length} dimensions; expected ${this.dimensions}`
-          );
-        }
-
-        return vector;
-      });
-    } finally {
-      clearTimeout(timeout);
-    }
+      return vector;
+    });
   }
 }
 
