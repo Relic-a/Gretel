@@ -34,6 +34,9 @@ export function getYoutubeClient(profileId: string) {
     cache: new UniversalCache(true, cacheDirectory),
     enable_session_cache: true,
     lang: language
+  }).catch((error) => {
+    youtubeClients.delete(cacheKey);
+    throw error;
   });
 
   while (youtubeClients.size >= maxCachedClients) {

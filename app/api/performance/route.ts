@@ -1,8 +1,13 @@
 import { getPerformanceReport } from "../../../lib/performance-metrics";
+import { verifyApiToken } from "../../../lib/api-auth";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
+  if (!verifyApiToken(request)) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const url = new URL(request.url);
   const requestedHours = Number(url.searchParams.get("hours") || 24);
   const hours = Number.isFinite(requestedHours)

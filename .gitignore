@@ -43,6 +43,7 @@ pnpm-debug.log*
 .agents/
 .codex/
 .tmp/
+scratch/
 
 # app/design scratch
 gretel_design/

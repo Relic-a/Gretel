@@ -9,7 +9,7 @@ import {
 } from "lucide-react";
 
 import type { FeedVideo } from "../types";
-import { formatPublished, normalize, thumbnailFor } from "./video-utils";
+import { formatPublished, normalize, thumbnailFor, authedHeaders } from "./video-utils";
 
 type WatchViewProps = {
   activeVideo: FeedVideo;
@@ -27,6 +27,7 @@ type WatchViewProps = {
   onLikeVideo: (video: FeedVideo) => void;
   onAddChannel: (channel: string) => void;
   onRemoveChannel: (channel: string) => void;
+  onPlaybackStateChange?: (playing: boolean) => void;
 };
 
 type YtComment = {
@@ -63,17 +64,47 @@ export function WatchView(props: WatchViewProps) {
   const saved = props.savedVideoIds.has(props.activeVideo.id);
   const liked = props.likedVideoIds.has(props.activeVideo.id);
 
-  const embedUrl = `https://www.youtube-nocookie.com/embed/${props.activeVideo.id}?autoplay=1&rel=0`;
+  const embedUrl = `https://www.youtube-nocookie.com/embed/${props.activeVideo.id}?autoplay=1&rel=0&enablejsapi=1`;
   const visibleSideVideos = props.sideVideos.slice(0, displayLimit);
 
   useEffect(() => {
+    setDescription("");
+    setDescriptionExpanded(false);
     setDisplayLimit(sidePageSize);
+    setComments([]);
+    setLoading(false);
+    setLoadingMore(false);
+    setError("");
+    setHasMore(true);
+    setPage(0);
+    setCommentsLoaded(false);
+    fetchInProgress.current = false;
     if (sideLoadDebounceRef.current !== null) {
       window.clearTimeout(sideLoadDebounceRef.current);
       sideLoadDebounceRef.current = null;
     }
     sideLoadRequestedRef.current = false;
+    props.onPlaybackStateChange?.(false);
   }, [props.activeVideo.id]);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      try {
+        if (!event.data) return;
+        const data = typeof event.data === "string" ? JSON.parse(event.data) : event.data;
+        if (data && typeof data === "object") {
+          if (data.event === "onStateChange") {
+            props.onPlaybackStateChange?.(data.info === 1);
+          } else if (data.event === "infoDelivery" && data.info && typeof data.info.playerState === "number") {
+            props.onPlaybackStateChange?.(data.info.playerState === 1);
+          }
+        }
+      } catch {}
+    };
+
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [props.onPlaybackStateChange]);
 
   useEffect(() => {
     displayLimitRef.current = displayLimit;
@@ -199,7 +230,7 @@ export function WatchView(props: WatchViewProps) {
     try {
       const res = await fetch("/api/comments", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: authedHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify({
           videoId: props.activeVideo.id,
           profileId: props.profileId,

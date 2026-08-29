@@ -68,9 +68,21 @@ await rm(path.join(standaloneDir, "logs"), { recursive: true, force: true });
 await materializeStandaloneModuleAliases();
 
 await mkdir(runtimeDir, { recursive: true });
-await cp(process.execPath, path.join(runtimeDir, "node.exe"), { force: true });
+const isWindows = process.platform === "win32" || (requestedTarget && requestedTarget.includes("windows"));
+const nodeExeName = isWindows ? "node.exe" : "node";
 
-console.log("Prepared Next.js standalone output and bundled Node.js runtime for Tauri.");
+// Clear previous binaries
+await rm(path.join(runtimeDir, "node.exe"), { force: true });
+await rm(path.join(runtimeDir, "node"), { force: true });
+
+await cp(process.execPath, path.join(runtimeDir, nodeExeName), { force: true });
+
+if (!isWindows) {
+  const { chmod } = await import("node:fs/promises");
+  await chmod(path.join(runtimeDir, nodeExeName), 0o755);
+}
+
+console.log(`Prepared Next.js standalone output and bundled Node.js runtime (${nodeExeName}) for Tauri.`);
 
 async function materializeStandaloneModuleAliases() {
   const aliasesDir = path.join(standaloneDir, ".next", "node_modules");

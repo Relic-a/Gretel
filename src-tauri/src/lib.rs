@@ -24,17 +24,19 @@ pub fn run() {
             }
 
             let port = find_available_port().map_err(to_boxed_error)?;
+            let api_token = generate_api_token();
             let window = app
                 .get_webview_window("main")
                 .ok_or_else(|| "The Gretel main window was not created.".to_string())?;
-            let server = start_production_server(app, port).map_err(to_boxed_error)?;
+            let server = start_production_server(app, port, &api_token).map_err(to_boxed_error)?;
             app.manage(ServerProcess(Mutex::new(Some(server))));
 
             // Returning from setup lets the bundled startup page paint immediately
             // while Node and Next.js warm up away from Tauri's setup thread.
+            let token_clone = api_token.clone();
             thread::spawn(move || {
                 let result = wait_for_server(port, Duration::from_secs(30))
-                    .and_then(|_| navigate_to_server(&window, port));
+                    .and_then(|_| navigate_to_server(&window, port, &token_clone));
 
                 if let Err(error) = result {
                     eprintln!("Gretel startup failed: {error}");
@@ -87,6 +89,7 @@ fn to_boxed_error(error: String) -> Box<dyn std::error::Error> {
 fn start_production_server<R: tauri::Runtime>(
     app: &tauri::App<R>,
     port: u16,
+    api_token: &str,
 ) -> Result<Child, String> {
     let resource_dir = app
         .path()
@@ -112,8 +115,9 @@ fn start_production_server<R: tauri::Runtime>(
         .env("HOSTNAME", "127.0.0.1")
         .env("PORT", port.to_string())
         .env("GRETEL_DATA_DIR", data_dir)
+        .env("GRETEL_API_TOKEN", api_token)
         .env("NEXT_TELEMETRY_DISABLED", "1")
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::inherit())
         .stderr(Stdio::inherit());
 
@@ -130,9 +134,47 @@ fn start_production_server<R: tauri::Runtime>(
         command.env("GRETEL_LOG_FILE", log_file);
     }
 
-    command
+    #[cfg(target_os = "linux")]
+    unsafe {
+        use std::os::unix::process::CommandExt;
+        command.pre_exec(|| {
+            libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL);
+            Ok(())
+        });
+    }
+
+    let child = command
         .spawn()
-        .map_err(|error| format!("Could not start Gretel's embedded server: {error}"))
+        .map_err(|error| format!("Could not start Gretel's embedded server: {error}"))?;
+
+    #[cfg(target_os = "windows")]
+    attach_to_job_object(&child);
+
+    Ok(child)
+}
+
+#[cfg(target_os = "windows")]
+fn attach_to_job_object(child: &Child) {
+    use std::os::windows::io::AsRawHandle;
+    use windows_sys::Win32::System::JobObjects::{
+        CreateJobObjectW, SetInformationJobObject, AssignProcessToJobObject,
+        JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+    unsafe {
+        let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+        if job != 0 {
+            let mut info = std::mem::zeroed::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>();
+            info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+            SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                &info as *const _ as *const _,
+                std::mem::size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+            );
+            AssignProcessToJobObject(job, child.as_raw_handle() as _);
+        }
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -226,7 +268,12 @@ fn find_server_root(resource_dir: &Path) -> Result<PathBuf, String> {
 }
 
 fn find_node_runtime(resource_dir: &Path) -> Result<PathBuf, String> {
-    let candidates = [resource_dir.join("node.exe"), resource_dir.join("node")];
+    let candidates = [
+        resource_dir.join("node-runtime").join("node.exe"),
+        resource_dir.join("node-runtime").join("node"),
+        resource_dir.join("node.exe"),
+        resource_dir.join("node"),
+    ];
 
     candidates
         .into_iter()
@@ -244,6 +291,16 @@ fn find_available_port() -> Result<u16, String> {
         .and_then(|listener| listener.local_addr())
         .map(|address| address.port())
         .map_err(|error| format!("Could not find an available local port: {error}"))
+}
+
+fn generate_api_token() -> String {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    let nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let pid = std::process::id();
+    format!("gretel_{:x}{:x}", nanos, pid)
 }
 
 fn wait_for_server(port: u16, timeout: Duration) -> Result<(), String> {
@@ -277,8 +334,9 @@ fn wait_for_server(port: u16, timeout: Duration) -> Result<(), String> {
 fn navigate_to_server<R: tauri::Runtime>(
     window: &WebviewWindow<R>,
     port: u16,
+    api_token: &str,
 ) -> Result<(), String> {
-    let url = Url::parse(&format!("http://127.0.0.1:{port}"))
+    let url = Url::parse(&format!("http://127.0.0.1:{port}/?token={api_token}"))
         .map_err(|error| format!("Could not build Gretel server URL: {error}"))?;
     window
         .navigate(url)

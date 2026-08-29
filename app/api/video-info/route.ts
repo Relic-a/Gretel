@@ -15,10 +15,15 @@ import {
 import { resolveMissingChannelAvatars } from "../../../lib/feed/channel-avatar-cache";
 import type { FeedVideo } from "../../../lib/feed/types";
 import { errorFields, logError, requestFields } from "../../../lib/logger";
+import { verifyApiToken } from "../../../lib/api-auth";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
+  if (!verifyApiToken(request)) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const { searchParams } = new URL(request.url);
   const videoId = searchParams.get("videoId") || "";
   const profileId = searchParams.get("profileId") || "";

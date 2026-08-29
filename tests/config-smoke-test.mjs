@@ -29,8 +29,6 @@ function compileConfigModules() {
       buildDir,
       "--module",
       "commonjs",
-      "--moduleResolution",
-      "node",
       "--target",
       "ES2022",
       "--ignoreConfig",

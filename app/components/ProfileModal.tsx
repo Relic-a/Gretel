@@ -79,14 +79,14 @@ export function ProfileModal(props: ProfileModalProps) {
                   type="password"
                   autoComplete="off"
                   spellCheck={false}
-                  value={props.settings.openRouterApiKey || ""}
+                  value={props.settings.openRouterApiKey === "set" ? "" : props.settings.openRouterApiKey || ""}
                   onChange={(event) =>
                     props.onSettingsChange({
                       ...props.settings,
                       openRouterApiKey: event.target.value
                     })
                   }
-                  placeholder="sk-or-v1-..."
+                  placeholder={props.settings.openRouterApiKey === "set" ? "API key already saved" : "sk-or-v1-..."}
                 />
               </label>
 
@@ -134,7 +134,12 @@ export function ProfileModal(props: ProfileModalProps) {
           {props.channelResults.length > 0 && (
             <div className="channel-results">
               {props.channelResults.map((channel) => (
-                <button type="button" key={channel.id} onClick={() => props.onAddChannel(channel.name)}>
+                <button
+                  type="button"
+                  key={channel.id}
+                  onMouseDown={(event) => event.preventDefault()}
+                  onClick={() => props.onAddChannel(channel.name)}
+                >
                   {channel.thumbnailUrl && <img src={channel.thumbnailUrl} alt="" />}
                   <span>{channel.name}</span>
                 </button>

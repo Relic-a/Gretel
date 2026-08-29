@@ -45,7 +45,7 @@
     "resources": {
       "../.next/standalone": ".next/standalone",
       "../config": "config",
-      "node-runtime/node.exe": "node.exe"
+      "node-runtime": "node-runtime"
     },
     "windows": {
       "webviewInstallMode": {

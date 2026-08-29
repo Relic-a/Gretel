@@ -11,10 +11,15 @@ import {
   getWatchedVideoIds,
   saveProfileFeedPreferences
 } from "../../../../lib/profile-store";
+import { verifyApiToken } from "../../../../lib/api-auth";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  if (!verifyApiToken(request)) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   const observation = createFeedObservation("feed.initial_build");
 
   try {

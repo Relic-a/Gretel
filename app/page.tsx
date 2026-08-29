@@ -7,7 +7,7 @@ import { SettingsModal } from "./components/SettingsModal";
 import { TopBar } from "./components/TopBar";
 import { FeedView } from "./components/FeedView";
 import { WatchView } from "./components/WatchView";
-import { normalize } from "./components/video-utils";
+import { authedHeaders, normalize } from "./components/video-utils";
 import type {
   ChannelResult,
   FeedResponse,
@@ -16,6 +16,27 @@ import type {
   PublicGretelConfig,
   UserSettings
 } from "./types";
+
+function authedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const customHeaders: Record<string, string> = {};
+  if (init?.headers) {
+    if (init.headers instanceof Headers) {
+      init.headers.forEach((val, key) => {
+        customHeaders[key] = val;
+      });
+    } else if (Array.isArray(init.headers)) {
+      for (const [key, val] of init.headers) {
+        customHeaders[key] = val;
+      }
+    } else {
+      Object.assign(customHeaders, init.headers);
+    }
+  }
+  return fetch(input, {
+    ...init,
+    headers: authedHeaders(customHeaders)
+  });
+}
 
 const clientStateKey = "gretel.clientState.v2";
 const feedCachePrefix = "gretel.feedCache.v1";
@@ -64,6 +85,7 @@ export default function Home() {
   const feedRequestIdRef = useRef(0);
   const pendingImpressionIdsRef = useRef<Set<string>>(new Set());
   const impressionTimerRef = useRef<number | null>(null);
+  const isPlayingRef = useRef(false);
   const subscriptions = useMemo(
     () => new Set(channels.map((channel) => normalize(channel))),
     [channels]
@@ -90,7 +112,7 @@ export default function Home() {
         ? { message: error.message, stack: error.stack }
         : { message: String(error) };
       const payload = JSON.stringify({ source, ...normalized, ...location });
-      void fetch("/api/client-errors", {
+      void authedFetch("/api/client-errors", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: payload,
@@ -333,7 +355,7 @@ export default function Home() {
     const tick = () => {
       const now = Date.now();
 
-      if (visible) {
+      if (visible && isPlayingRef.current) {
         watchedMs += Math.max(0, now - lastSampleAt);
       }
 
@@ -379,7 +401,7 @@ export default function Home() {
       window.removeEventListener("pagehide", handlePageHide);
       void flushWatchProgress();
     };
-  }, [activeVideo, config?.client.watchProgressPollMs, profileId, section]);
+  }, [activeVideo, config?.client.watchProgressPollMs, profileId]);
 
   useEffect(() => {
     if (channelDraft.trim().length < 2) {
@@ -390,7 +412,7 @@ export default function Home() {
     let ignore = false;
     const timer = window.setTimeout(async () => {
       try {
-        const response = await fetch(
+        const response = await authedFetch(
           `/api/channels/search?q=${encodeURIComponent(channelDraft)}&profileId=${encodeURIComponent(profileId)}`
         );
         const data = await response.json();
@@ -412,7 +434,7 @@ export default function Home() {
   }, [channelDraft, profileId]);
 
   async function loadProfiles(nextProfileId?: string) {
-    const response = await fetch("/api/profiles");
+    const response = await authedFetch("/api/profiles");
     const data = await response.json();
     const nextProfiles = data.profiles || [];
     const selected =
@@ -424,7 +446,7 @@ export default function Home() {
   }
 
   async function loadPublicConfig() {
-    const response = await fetch("/api/config");
+    const response = await authedFetch("/api/config");
     const data = await response.json();
 
     if (!response.ok) {
@@ -435,7 +457,7 @@ export default function Home() {
   }
 
   async function loadSettings() {
-    const response = await fetch("/api/settings");
+    const response = await authedFetch("/api/settings");
     const data = await response.json();
 
     if (!response.ok) {
@@ -451,7 +473,7 @@ export default function Home() {
     setSavingSettings(true);
 
     try {
-      const response = await fetch("/api/settings", {
+      const response = await authedFetch("/api/settings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(settings)
@@ -481,7 +503,12 @@ export default function Home() {
     const createdTags = newProfileTags;
     const createdChannels = newProfileChannels;
 
-    if (needsOpenRouterKey && !settings.openRouterApiKey?.trim()) {
+    const hasKey =
+      Boolean(settings.openRouterApiKey) &&
+      settings.openRouterApiKey !== "set" &&
+      (settings.openRouterApiKey || "").trim().length > 0;
+
+    if (needsOpenRouterKey && !hasKey) {
       setError("Enter your OpenRouter API key before creating a profile.");
       return;
     }
@@ -490,8 +517,8 @@ export default function Home() {
     setLoading(true);
 
     try {
-      if (needsOpenRouterKey) {
-        const settingsResponse = await fetch("/api/settings", {
+      if (needsOpenRouterKey && hasKey) {
+        const settingsResponse = await authedFetch("/api/settings", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(settings)
@@ -505,7 +532,7 @@ export default function Home() {
         setSettings(savedSettings);
       }
 
-      const response = await fetch("/api/profiles", {
+      const response = await authedFetch("/api/profiles", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -554,7 +581,7 @@ export default function Home() {
     feedRequestIdRef.current += 1;
     setLoading(false);
 
-    const response = await fetch("/api/profiles", {
+    const response = await authedFetch("/api/profiles", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action: "delete", profileId: id })
@@ -609,7 +636,7 @@ export default function Home() {
       return;
     }
 
-    const response = await fetch(`/api/saved-videos?profileId=${encodeURIComponent(nextProfileId)}`);
+    const response = await authedFetch(`/api/saved-videos?profileId=${encodeURIComponent(nextProfileId)}`);
     const data = await response.json();
 
     if (!response.ok) {
@@ -625,7 +652,7 @@ export default function Home() {
       return;
     }
 
-    const response = await fetch(`/api/liked-videos?profileId=${encodeURIComponent(nextProfileId)}`);
+    const response = await authedFetch(`/api/liked-videos?profileId=${encodeURIComponent(nextProfileId)}`);
     const data = await response.json();
 
     if (!response.ok) {
@@ -640,7 +667,7 @@ export default function Home() {
       return;
     }
 
-    const response = await fetch(`/api/history?profileId=${encodeURIComponent(nextProfileId)}`);
+    const response = await authedFetch(`/api/history?profileId=${encodeURIComponent(nextProfileId)}`);
     const data = await response.json();
 
     if (!response.ok) {
@@ -655,7 +682,7 @@ export default function Home() {
       return;
     }
 
-    const response = await fetch("/api/saved-videos", {
+    const response = await authedFetch("/api/saved-videos", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -681,7 +708,7 @@ export default function Home() {
       return;
     }
 
-    const response = await fetch("/api/liked-videos", {
+    const response = await authedFetch("/api/liked-videos", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -723,7 +750,7 @@ export default function Home() {
       }
 
       try {
-        await fetch("/api/impressions", {
+        await authedFetch("/api/impressions", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -762,7 +789,7 @@ export default function Home() {
     }
 
     try {
-      const response = await fetch(servingOnly ? "/api/feed" : "/api/feed/build", {
+      const response = await authedFetch(servingOnly ? "/api/feed" : "/api/feed/build", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -916,6 +943,7 @@ export default function Home() {
 
       {activeVideo && (
         <WatchView
+          key={activeVideo.id}
           activeVideo={activeVideo}
           sideVideos={sideVideos}
           loadingFeed={loading}
@@ -931,6 +959,9 @@ export default function Home() {
           onLikeVideo={likeVideo}
           onAddChannel={addChannel}
           onRemoveChannel={removeChannel}
+          onPlaybackStateChange={(playing) => {
+            isPlayingRef.current = playing;
+          }}
         />
       )}
 
@@ -1167,7 +1198,7 @@ function clearStashedActiveVideo() {
 
 async function fetchVideoInfo(profileId: string, videoId: string) {
   try {
-    const response = await fetch(
+    const response = await authedFetch(
       `/api/video-info?profileId=${encodeURIComponent(profileId)}&videoId=${encodeURIComponent(videoId)}`
     );
     const data = await response.json();
@@ -1189,7 +1220,7 @@ async function reportWatchEvent(
   durationSeconds: number
 ) {
   const safeDurationSeconds = Math.max(1, Math.round(durationSeconds));
-  const response = await fetch("/api/watch-events", {
+  const response = await authedFetch("/api/watch-events", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({

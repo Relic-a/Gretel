@@ -39,5 +39,8 @@
     "@types/react": "latest",
     "@types/react-dom": "latest",
     "typescript": "latest"
-  }
+  },
+  "onlyBuiltDependencies": [
+    "better-sqlite3"
+  ]
 }

@@ -6,6 +6,7 @@ import {
   observePerformanceOperation,
   persistPerformanceTrace
 } from "../../../lib/performance-metrics";
+import { verifyApiToken } from "../../../lib/api-auth";
 
 export const runtime = "nodejs";
 
@@ -32,6 +33,10 @@ function scheduleCleanup(videoId: string) {
 }
 
 export async function POST(request: Request) {
+  if (!verifyApiToken(request)) {
+    return Response.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
   let trace = createPerformanceTrace("comments.unknown");
   try {
     const body = await request.json();

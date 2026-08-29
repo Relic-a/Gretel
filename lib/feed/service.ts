@@ -7,8 +7,7 @@ import {
   listPoolNodes,
   markPoolExpanded,
   markRootDiscovered,
-  prunePool,
-  updatePoolSimilarities
+  prunePool
 } from "./pool-store";
 import { getGretelConfig } from "./config";
 import { createEmbeddingInput, getEmbeddingProvider } from "./embeddings";
@@ -965,8 +964,6 @@ function scorePoolVideos(profileId: string, poolKey: string, videos: FeedVideo[]
       config
     )
   );
-
-  updatePoolSimilarities(profileId, poolKey, rescored);
 
   return hydrateChannelAvatars(rescored);
 }

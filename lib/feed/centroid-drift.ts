@@ -3,7 +3,7 @@ import { createEmbeddingInput, getEmbeddingProvider } from "./embeddings";
 import { createEmbeddingInputWithTranscript, fetchTranscriptIntroduction } from "./transcription";
 import { getVideoInteractions } from "../profile-store";
 import type { FeedVideo } from "./types";
-import { cosineSimilarity, driftCentroid } from "./vector-math";
+import { cosineSimilarity, driftCentroid, normalizeVector } from "./vector-math";
 import {
   getRetainedEmbedding,
   listCentroids,
@@ -72,15 +72,11 @@ export async function updateCentroidsForPositiveEngagement(profileId: string, vi
     }
 
     const proposed = driftCentroid(row.current, embedding, config.learning.centroidLearningRate);
-    const driftDistance = 1 - cosineSimilarity(row.original, proposed);
+    const nextCentroid = clampCentroidDrift(row.original, proposed, config.learning.maxCentroidDrift);
 
-    if (driftDistance <= config.learning.maxCentroidDrift) {
-      updateCentroid(profileId, row.cacheKey, proposed, updatedAt);
-      recomputePoolSimilarities(profileId, row.cacheKey, proposed);
-      updatedCentroids += 1;
-    } else {
-      rejectedCentroids += 1;
-    }
+    updateCentroid(profileId, row.cacheKey, nextCentroid, updatedAt);
+    recomputePoolSimilarities(profileId, row.cacheKey, nextCentroid);
+    updatedCentroids += 1;
   }
 
   logInfo("feed.phase4.centroid_drift", {
@@ -89,8 +85,30 @@ export async function updateCentroidsForPositiveEngagement(profileId: string, vi
     status: updatedCentroids > 0 ? "updated" : "unchanged",
     centroidsChecked: rows.length,
     updatedCentroids,
-    rejectedCentroids
+    rejectedCentroids: 0
   });
+}
+
+export function clampCentroidDrift(original: number[], candidate: number[], maxDrift: number) {
+  const sim = cosineSimilarity(original, candidate);
+  const driftDistance = 1 - sim;
+
+  if (driftDistance <= maxDrift) {
+    return candidate;
+  }
+
+  const minSim = Math.max(-1, Math.min(1, 1 - maxDrift));
+  const perp = candidate.map((val, i) => val - sim * original[i]);
+  const perpNorm = Math.sqrt(perp.reduce((sum, val) => sum + val * val, 0));
+
+  if (perpNorm === 0) {
+    return original;
+  }
+
+  const sinAngle = Math.sqrt(Math.max(0, 1 - minSim * minSim));
+  const clamped = original.map((val, i) => minSim * val + sinAngle * (perp[i] / perpNorm));
+
+  return normalizeVector(clamped);
 }
 
 function isPositiveEngagement(video: FeedVideo, watchSaveThreshold: number) {

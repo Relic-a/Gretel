@@ -1234,8 +1234,6 @@ function compileModules() {
       buildDir,
       "--module",
       "commonjs",
-      "--moduleResolution",
-      "node",
       "--target",
       "ES2022",
       "--ignoreConfig",
@@ -1466,3 +1464,50 @@ function normalize(vector) {
   const size = magnitude(vector);
   return size === 0 ? vector : vector.map((value) => value / size);
 }
+
+test("cosineSimilarity safely returns 0 on mismatched or empty dimensions", () => {
+  const { cosineSimilarity } = require(path.join(buildDir, "lib", "feed", "vector-math.js"));
+  assert.equal(cosineSimilarity([], [1, 2]), 0);
+  assert.equal(cosineSimilarity([1, 2], []), 0);
+  assert.equal(cosineSimilarity([1, 2], [1, 2, 3]), 0);
+  assert.equal(cosineSimilarity([1, 0], [1, 0]), 1);
+  assert.equal(cosineSimilarity([1, 0], [0, 1]), 0);
+});
+
+test("clampCentroidDrift preserves unit norm and clamps vectors exceeding maxCentroidDrift", () => {
+  const { clampCentroidDrift } = require(path.join(buildDir, "lib", "feed", "centroid-drift.js"));
+  const { cosineSimilarity } = require(path.join(buildDir, "lib", "feed", "vector-math.js"));
+
+  const original = [1, 0];
+  const withinBounds = [0.95, 0.31225]; // drift distance = 1 - 0.95 = 0.05 <= 0.18
+  const clampedWithin = clampCentroidDrift(original, withinBounds, 0.18);
+  assert.deepEqual(clampedWithin, withinBounds);
+
+  const farCandidate = [0, 1]; // orthogonal, drift = 1
+  const clamped = clampCentroidDrift(original, farCandidate, 0.18);
+  const sim = cosineSimilarity(original, clamped);
+  assert.ok(Math.abs((1 - sim) - 0.18) < 1e-6, `Drift distance should be exactly 0.18, got ${1 - sim}`);
+  const mag = Math.sqrt(clamped.reduce((sum, v) => sum + v * v, 0));
+  assert.ok(Math.abs(mag - 1) < 1e-6, "Clamped vector must have unit magnitude");
+});
+
+test("describeServingScore applies impression decay safely to negative scores without exploding", () => {
+  const { describeServingScore } = require(path.join(buildDir, "lib", "feed", "pool.js"));
+  const config = {
+    serving: { warmSemanticWeight: 0.25, impressionPenaltyFactor: 0.35 },
+    feed: { coldStartParentEngagementWeight: 0.15 }
+  };
+  const video = {
+    id: "test-video",
+    title: "Test",
+    author: "Author",
+    query: "Query",
+    similarityScore: -1,
+    engagementScore: -0.5,
+    impressionCount: 5
+  };
+  const result = describeServingScore(video, config, false);
+  assert.ok(result.baseScore < 0, "Base score should be negative");
+  assert.ok(result.score <= 0, "Score should remain non-positive");
+  assert.ok(Math.abs(result.score) < 5, `Negative score should not explode, got ${result.score}`);
+});

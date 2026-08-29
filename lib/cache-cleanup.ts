@@ -1,4 +1,4 @@
-import { readdirSync, rmSync, statSync } from "node:fs";
+import { readdirSync, rmdirSync, statSync, unlinkSync } from "node:fs";
 import path from "node:path";
 
 import { getDataDir } from "./data-dir";
@@ -43,12 +43,13 @@ function removeOldEntries(root: string, cutoff: number) {
 
       if (stats.isDirectory()) {
         removeOldEntries(entryPath, cutoff);
-      }
-
-      const currentStats = statSync(entryPath);
-
-      if (currentStats.mtimeMs < cutoff) {
-        rmSync(entryPath, { recursive: true, force: true });
+        try {
+          if (readdirSync(entryPath).length === 0) {
+            rmdirSync(entryPath);
+          }
+        } catch {}
+      } else if (stats.isFile() && stats.mtimeMs < cutoff) {
+        unlinkSync(entryPath);
       }
     } catch {
       // Cache cleanup is best effort.

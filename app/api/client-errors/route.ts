@@ -1,8 +1,13 @@
 import { errorFields, logError, requestFields } from "../../../lib/logger";
+import { verifyApiToken } from "../../../lib/api-auth";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  if (!verifyApiToken(request)) {
+    return new Response(null, { status: 401 });
+  }
+
   try {
     const body = await request.json();
     const message = typeof body?.message === "string" ? body.message : "Unknown client error";
