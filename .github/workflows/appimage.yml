@@ -23,12 +23,12 @@ jobs:
 
     steps:
       - name: Check out release tag
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           ref: ${{ github.event.release.tag_name || inputs.release_tag }}
 
       - name: Set up Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
           cache: npm
@@ -50,8 +50,32 @@ jobs:
       - name: Generate package icons
         run: npm run generate:icons
 
+      - name: Prepare AppImage resources
+        run: |
+          npm run tauri:prepare
+          node -e '
+            const { existsSync, readdirSync, rmSync } = require("node:fs");
+            const path = require("node:path");
+            const roots = [
+              path.resolve(".next/standalone/node_modules/@img"),
+              path.resolve(".next/standalone/.next/node_modules/@img")
+            ];
+            let removed = 0;
+            for (const root of roots) {
+              if (!existsSync(root)) continue;
+              for (const entry of readdirSync(root, { withFileTypes: true })) {
+                if (!entry.isDirectory() || !entry.name.includes("linuxmusl")) continue;
+                const target = path.join(root, entry.name);
+                rmSync(target, { recursive: true, force: true });
+                console.log(`Removed unused AppImage resource: ${path.relative(process.cwd(), target)}`);
+                removed += 1;
+              }
+            }
+            if (removed === 0) throw new Error("No musl-only Sharp resources were found.");
+          '
+
       - name: Build AppImage
-        run: npm run tauri -- build --target x86_64-unknown-linux-gnu --bundles appimage --verbose
+        run: npm run tauri -- build --target x86_64-unknown-linux-gnu --bundles appimage --config '{"build":{"beforeBuildCommand":"true"}}' --verbose
 
       - name: Verify AppImage
         shell: bash
@@ -77,7 +101,7 @@ jobs:
 
     steps:
       - name: Check out packaging tools
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install packaging dependencies
         run: pacman -Syu --noconfirm --needed curl git
@@ -112,7 +136,7 @@ jobs:
           packages=(arch-package/*-x86_64.pkg.tar.zst)
           test "${#packages[@]}" -eq 1
           test -s "${packages[0]}"
-          pacman --query --print-format '%n %v %a' --file "${packages[0]}"
+          pacman --query --file "${packages[0]}"
           bsdtar -tf "${packages[0]}" | grep -Fxq '.PKGINFO'
           bsdtar -tf "${packages[0]}" | grep -Fxq 'usr/bin/gretel'
 
