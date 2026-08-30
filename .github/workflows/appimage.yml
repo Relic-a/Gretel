@@ -39,7 +39,7 @@ jobs:
       - name: Install Tauri dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
 
       - name: Install dependencies
         run: npm ci
@@ -84,6 +84,9 @@ jobs:
           test "${#appimages[@]}" -eq 1
           test -s "${appimages[0]}"
           file "${appimages[0]}"
+          "${appimages[0]}" --appimage-extract >/dev/null
+          test -d squashfs-root/usr/lib/gstreamer-1.0
+          find squashfs-root/usr/lib/gstreamer-1.0 -type f -name 'libgst*.so' -print -quit | grep -q .
 
       - name: Attach AppImage to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -139,6 +142,10 @@ jobs:
           pacman --query --file "${packages[0]}"
           bsdtar -tf "${packages[0]}" | grep -Fxq '.PKGINFO'
           bsdtar -tf "${packages[0]}" | grep -Fxq 'usr/bin/gretel'
+          package_info=$(bsdtar -xOf "${packages[0]}" .PKGINFO)
+          for dependency in gst-plugins-good gst-plugins-bad gst-libav; do
+            grep -Fxq "depend = ${dependency}" <<< "$package_info"
+          done
 
       - name: Attach pacman package to GitHub Release
         uses: softprops/action-gh-release@v2

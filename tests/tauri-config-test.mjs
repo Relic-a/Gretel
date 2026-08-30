@@ -14,6 +14,9 @@ const launcher = readFileSync(path.join(root, "src-tauri", "src", "lib.rs"), "ut
 const executable = readFileSync(path.join(root, "src-tauri", "src", "main.rs"), "utf8");
 const titleBar = readFileSync(path.join(root, "app", "components", "WindowTitleBar.tsx"), "utf8");
 const startupPage = readFileSync(path.join(root, "src-tauri", "frontend", "index.html"), "utf8");
+const archPackageScript = readFileSync(path.join(root, "scripts", "package-arch-release.sh"), "utf8");
+const appImageWorkflow = readFileSync(path.join(root, ".github", "workflows", "appimage.yml"), "utf8");
+const releaseWorkflow = readFileSync(path.join(root, ".github", "workflows", "release.yml"), "utf8");
 
 assert.equal(config.identifier, "com.ezana.gretel");
 assert.equal(config.version, packageJson.version);
@@ -26,8 +29,39 @@ assert.equal(config.app.withGlobalTauri, true);
 assert.deepEqual(capability.remote.urls, ["http://127.0.0.1:*"]);
 assert.ok(capability.permissions.includes("core:window:allow-close"));
 assert.ok(capability.permissions.includes("core:window:allow-start-dragging"));
+assert.ok(
+  capability.permissions.some((permission) =>
+    typeof permission === "object" &&
+    permission.identifier === "opener:allow-open-url" &&
+    permission.allow?.some((scope) => scope.url === "https://www.youtube.com/*")
+  )
+);
 assert.ok(Boolean(config.bundle.resources["node-runtime"] || config.bundle.resources["node-runtime/*"] || config.bundle.resources["node-runtime/node.exe"]));
 assert.equal(config.bundle.resources["../.next/standalone"], ".next/standalone");
+assert.equal(config.bundle.linux.appimage.bundleMediaFramework, true);
+for (const dependency of [
+  "gstreamer1.0-plugins-base",
+  "gstreamer1.0-plugins-good",
+  "gstreamer1.0-plugins-bad",
+  "gstreamer1.0-libav"
+]) {
+  assert.ok(config.bundle.linux.deb.depends.includes(dependency));
+}
+for (const dependency of [
+  "gstreamer1-plugins-base",
+  "gstreamer1-plugins-good",
+  "gstreamer1-plugins-bad-free",
+  "gstreamer1-plugin-openh264"
+]) {
+  assert.ok(config.bundle.linux.rpm.depends.includes(dependency));
+}
+assert.ok(config.bundle.linux.rpm.recommends.includes("gstreamer1-plugin-libav"));
+for (const dependency of ["gst-plugins-good", "gst-plugins-bad", "gst-libav"]) {
+  assert.match(archPackageScript, new RegExp(`'${dependency}'`));
+}
+assert.match(appImageWorkflow, /gstreamer1\.0-plugins-good/);
+assert.match(appImageWorkflow, /squashfs-root\/usr\/lib\/gstreamer-1\.0/);
+assert.match(releaseWorkflow, /Verify Linux package media dependencies/);
 assert.ok(existsSync(path.join(root, "src-tauri", "frontend", "index.html")));
 assert.ok(existsSync(path.join(root, "src-tauri", "Cargo.toml")));
 assert.ok(existsSync(path.join(root, "src-tauri", "icons", "icon.ico")));
@@ -36,6 +70,7 @@ assert.match(layout, /from "next\/font\/local"/);
 assert.ok(existsSync(path.join(root, "app", "fonts", "space-mono-regular.woff2")));
 assert.ok(existsSync(path.join(root, "app", "fonts", "OFL.txt")));
 assert.match(launcher, /thread::spawn\(move \|\|/);
+assert.match(launcher, /tauri_plugin_opener::init\(\)/);
 assert.match(launcher, /CREATE_NO_WINDOW/);
 assert.match(launcher, /GRETEL_RENDER_MODE/);
 assert.match(launcher, /__NV_DISABLE_EXPLICIT_SYNC/);

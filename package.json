@@ -1,6 +1,6 @@
 {
   "name": "gretel",
-  "version": "0.3.0-beta.3",
+  "version": "0.3.0-beta.4",
   "private": true,
   "type": "module",
   "engines": {
@@ -18,7 +18,7 @@
     "dist:linux": "tauri build --target x86_64-unknown-linux-gnu --bundles deb,rpm",
     "dist:mac": "tauri build",
     "generate:icons": "tauri icon logo.png",
-    "test": "node tests/tauri-config-test.mjs && node tests/logger-test.mjs && node tests/network-retry-test.mjs && node tests/config-smoke-test.mjs && node tests/feed-algorithm-test.mjs",
+    "test": "node tests/tauri-config-test.mjs && node tests/youtube-player-error-test.mjs && node tests/logger-test.mjs && node tests/network-retry-test.mjs && node tests/config-smoke-test.mjs && node tests/feed-algorithm-test.mjs",
     "start": "next start",
     "lint": "tsc --noEmit"
   },
@@ -26,6 +26,7 @@
   "author": "Ezana",
   "dependencies": {
     "@tauri-apps/api": "^2.11.0",
+    "@tauri-apps/plugin-opener": "^2.5.4",
     "better-sqlite3": "^12.9.0",
     "lucide-react": "^1.14.0",
     "next": "latest",

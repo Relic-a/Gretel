@@ -1,15 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import {
   Bookmark,
+  CircleAlert,
+  ExternalLink,
   Heart,
   MessageCircle,
   ChevronDown,
   Loader2,
   Pin,
 } from "lucide-react";
+import { isTauri } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 
 import type { FeedVideo } from "../types";
 import { formatPublished, handleThumbnailError, normalize, thumbnailFor, authedHeaders } from "./video-utils";
+import {
+  describeYouTubePlayerError,
+  type YouTubePlayerErrorInfo,
+  youtubeWatchUrl
+} from "./youtube-player-error";
 
 declare global {
   interface Window {
@@ -121,6 +130,7 @@ export function WatchView(props: WatchViewProps) {
   const [hasMore, setHasMore] = useState(true);
   const [page, setPage] = useState(0);
   const [commentsLoaded, setCommentsLoaded] = useState(false);
+  const [playerError, setPlayerError] = useState<YouTubePlayerErrorInfo | null>(null);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const sideSentinelRef = useRef<HTMLDivElement | null>(null);
   const commentsSectionRef = useRef<HTMLDivElement | null>(null);
@@ -148,6 +158,7 @@ export function WatchView(props: WatchViewProps) {
     setHasMore(true);
     setPage(0);
     setCommentsLoaded(false);
+    setPlayerError(null);
     fetchInProgress.current = false;
     if (sideLoadDebounceRef.current !== null) {
       window.clearTimeout(sideLoadDebounceRef.current);
@@ -208,6 +219,7 @@ export function WatchView(props: WatchViewProps) {
               props.onPlaybackStateChange?.(isPlaying);
 
               if (isPlaying && playerRef.current) {
+                setPlayerError(null);
                 startPolling(playerRef.current);
               } else {
                 stopPolling();
@@ -219,6 +231,41 @@ export function WatchView(props: WatchViewProps) {
                   }
                 } catch {}
               }
+            },
+            onError: (event) => {
+              if (destroyed) return;
+
+              const playerFailure = describeYouTubePlayerError(event.data);
+              let playerUrl: string | undefined;
+              try {
+                playerUrl = playerRef.current?.getIframe().src;
+              } catch {}
+              const details = {
+                youtubeErrorCode: playerFailure.code,
+                youtubeErrorKind: playerFailure.kind,
+                videoId: props.activeVideo.id,
+                documentOrigin: window.location.origin,
+                userAgent: window.navigator.userAgent,
+                platform: window.navigator.platform,
+                tauri: isTauri()
+              };
+
+              stopPolling();
+              props.onPlaybackStateChange?.(false);
+              setPlayerError(playerFailure);
+              console.error("YouTube iframe player error", details);
+
+              void fetch("/api/client-errors", {
+                method: "POST",
+                headers: authedHeaders({ "Content-Type": "application/json" }),
+                body: JSON.stringify({
+                  source: "youtube.iframe_player",
+                  message: `${playerFailure.title} (YouTube error ${playerFailure.code}, ${playerFailure.kind})`,
+                  url: playerUrl,
+                  details
+                }),
+                keepalive: true
+              }).catch(() => undefined);
             }
           }
         });
@@ -236,6 +283,21 @@ export function WatchView(props: WatchViewProps) {
       }
     };
   }, [props.activeVideo.id]);
+
+  async function openActiveVideoOnYouTube() {
+    const url = youtubeWatchUrl(props.activeVideo.id);
+
+    if (isTauri()) {
+      try {
+        await openUrl(url);
+        return;
+      } catch (caught) {
+        console.error("Could not open YouTube in the default browser", caught);
+      }
+    }
+
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
 
   useEffect(() => {
     displayLimitRef.current = displayLimit;
@@ -401,6 +463,20 @@ export function WatchView(props: WatchViewProps) {
             ref={playerContainerRef}
             style={{ width: "100%", height: "100%", border: 0 }}
           />
+          {playerError && (
+            <div className="player-fallback" role="alert">
+              <CircleAlert aria-hidden="true" size={30} />
+              <div className="player-fallback-copy">
+                <strong>{playerError.title}</strong>
+                <p>{playerError.message}</p>
+                <small>Player error {playerError.code}</small>
+              </div>
+              <button type="button" onClick={() => void openActiveVideoOnYouTube()}>
+                Open on YouTube
+                <ExternalLink aria-hidden="true" size={16} />
+              </button>
+            </div>
+          )}
         </div>
         <div className="watch-meta">
           <h1>{props.activeVideo.title}</h1>

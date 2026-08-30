@@ -767,6 +767,73 @@ img.avatar {
   background: #05060a;
 }
 
+.player-fallback {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 18px;
+  padding: clamp(20px, 5vw, 48px);
+  background: linear-gradient(135deg, #17171b 0%, #0a0a0d 68%);
+  color: var(--color-text);
+}
+
+.player-fallback > svg {
+  align-self: start;
+  color: var(--color-brand-strong);
+}
+
+.player-fallback-copy {
+  display: grid;
+  gap: 9px;
+}
+
+.player-fallback-copy strong {
+  font-size: clamp(1rem, 2vw, 1.35rem);
+  line-height: 1.2;
+}
+
+.player-fallback-copy p {
+  max-width: 62ch;
+  margin: 0;
+  color: #aaaab1;
+  font-size: 0.88rem;
+  line-height: 1.5;
+}
+
+.player-fallback-copy small {
+  color: var(--color-faint);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+}
+
+.player-fallback button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--color-brand);
+  background: var(--color-brand);
+  color: white;
+  font-weight: 800;
+  white-space: nowrap;
+  box-shadow: 3px 3px 0 #5b1d16;
+}
+
+.player-fallback button:hover {
+  transform: translate(-1px, -1px);
+  box-shadow: 4px 4px 0 #5b1d16;
+}
+
+.player-fallback button:focus-visible {
+  outline: 2px solid white;
+  outline-offset: 3px;
+}
+
 .watch-meta {
   position: relative;
   display: grid;
@@ -2088,6 +2155,23 @@ select:focus {
 
   .watch-channel {
     min-width: 100%;
+  }
+
+  .player-fallback {
+    grid-template-columns: 1fr;
+    align-content: center;
+    gap: 10px;
+    padding: 16px;
+  }
+
+  .player-fallback > svg,
+  .player-fallback-copy p {
+    display: none;
+  }
+
+  .player-fallback button {
+    justify-self: start;
+    min-height: 38px;
   }
 
   .side-video {

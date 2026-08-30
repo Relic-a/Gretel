@@ -19,6 +19,7 @@ pub fn run() {
     configure_linux_rendering();
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             if cfg!(debug_assertions) || tauri_debug_mode() {
                 // `tauri dev` (including `tauri dev --release`) starts Next.js through

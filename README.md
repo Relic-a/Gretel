@@ -125,7 +125,8 @@ npm run dist:mac
 
 Notes:
 
-- Linux release builds produce `.deb` and `.rpm` installers. AppImage packaging is currently excluded because Tauri's upstream `linuxdeploy` step is unreliable on GitHub's Linux runners.
+- Linux release builds produce `.deb` and `.rpm` installers, followed by a separately verified AppImage and Arch package. The native packages declare the GStreamer demuxer and software-decoder plugins needed by WebKitGTK; the AppImage bundles its media framework.
+- Linux source/development environments must provide WebKitGTK plus GStreamer's base, good, bad, and libav plugin sets. The package names vary by distribution.
 - Windows builds produce `.exe` installers. Prerelease builds use Tauri's NSIS target because MSI only accepts numeric prerelease identifiers.
 - macOS builds require macOS for best results.
 - Local builds are unsigned by default.

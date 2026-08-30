@@ -52,7 +52,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf rpm
 
       - name: Install dependencies
         run: npm ci
@@ -65,6 +65,25 @@ jobs:
 
       - name: Build package
         run: ${{ matrix.command }}
+
+      - name: Verify Linux package media dependencies
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          debs=(src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb)
+          rpms=(src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/*.rpm)
+          test "${#debs[@]}" -eq 1
+          test "${#rpms[@]}" -eq 1
+
+          deb_dependencies=$(dpkg-deb --field "${debs[0]}" Depends)
+          for dependency in gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav; do
+            grep -Eq "(^|, )${dependency}(,|$)" <<< "$deb_dependencies"
+          done
+
+          rpm_requirements=$(rpm --query --package --requires "${rpms[0]}")
+          for dependency in gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-plugin-openh264; do
+            grep -Fxq "$dependency" <<< "$rpm_requirements"
+          done
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
