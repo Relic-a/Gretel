@@ -13,6 +13,7 @@ type FeedViewProps = {
   savedVideoIds: Set<string>;
   likedVideoIds: Set<string>;
   loading: boolean;
+  isBuilding?: boolean;
   canAskForMore: boolean;
   profileName?: string;
   tags?: string[];
@@ -87,7 +88,7 @@ export function FeedView(props: FeedViewProps) {
     };
   }, []);
 
-  const isInitialBuild = props.videos.length === 0 && props.loading;
+  const isInitialBuild = Boolean(props.isBuilding) && props.videos.length === 0 && props.loading;
 
   return (
     <section className="feed-view" aria-live="polite">

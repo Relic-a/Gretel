@@ -72,6 +72,7 @@ export default function Home() {
   const [activeVideo, setActiveVideo] = useState<FeedVideo | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isBuilding, setIsBuilding] = useState(false);
   const [buildingLabel, setBuildingLabel] = useState("");
   const [feedEnd, setFeedEnd] = useState(false);
   const [booted, setBooted] = useState(false);
@@ -619,6 +620,7 @@ export default function Home() {
   async function deleteProfile(id: string) {
     feedRequestIdRef.current += 1;
     setLoading(false);
+    setIsBuilding(false);
 
     const response = await authedFetch("/api/profiles", {
       method: "POST",
@@ -635,6 +637,24 @@ export default function Home() {
     setSavedVideoIds(new Set());
     setLikedVideoIds(new Set());
     writeRoute("home");
+  }
+
+  function openHome() {
+    setError("");
+    setSection("home");
+    setActiveVideo(null);
+    writeRoute("home");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+
+    if (!feed?.videos?.length && profileId && (tags.length > 0 || channels.length > 0)) {
+      void requestFeed({
+        nextProfileId: profileId,
+        nextTags: tags,
+        nextChannels: channels,
+        resetFeed: true,
+        buildIfMissing: true
+      });
+    }
   }
 
   async function buildFeed(event?: FormEvent) {
@@ -822,6 +842,9 @@ export default function Home() {
 
     setError("");
     setLoading(true);
+    if (!servingOnly) {
+      setIsBuilding(true);
+    }
     if (resetFeed && !servingOnly) {
       setFeed(null);
       setFeedEnd(false);
@@ -882,6 +905,7 @@ export default function Home() {
     } finally {
       if (requestId === feedRequestIdRef.current) {
         setLoading(false);
+        setIsBuilding(false);
       }
     }
   }
@@ -940,13 +964,14 @@ export default function Home() {
         activeSection={section}
         showProfileMenu={showProfileMenu}
         developerAnalytics={settings.developerAnalytics === true}
-        onHome={buildFeed}
+        onHome={openHome}
         onSaved={openSaved}
         onHistory={openHistory}
         onToggleProfileMenu={() => setShowProfileMenu(!showProfileMenu)}
         onSelectProfile={(nextProfileId) => {
           feedRequestIdRef.current += 1;
           setLoading(false);
+          setIsBuilding(false);
           setProfileId(nextProfileId);
           const nextProfile = profiles.find((profile) => profile.id === nextProfileId);
           const cachedFeed = readCachedFeed(nextProfileId);
@@ -1036,6 +1061,7 @@ export default function Home() {
           savedVideoIds={savedVideoIds}
           likedVideoIds={likedVideoIds}
           loading={loading}
+          isBuilding={isBuilding}
           canAskForMore={canAskForMore}
           profileName={activeProfile?.name || profileName}
           tags={tags}
