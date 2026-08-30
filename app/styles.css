@@ -380,6 +380,8 @@ button:disabled {
 .video-card {
   min-width: 0;
   overflow: hidden;
+  content-visibility: auto;
+  contain-intrinsic-size: auto 360px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
   background: var(--color-surface);
@@ -391,6 +393,16 @@ button:disabled {
   transform: translate(-4px, -4px);
   border-color: var(--color-brand);
   box-shadow: 8px 8px 0px var(--color-brand-soft);
+}
+
+.is-scrolling .video-card {
+  transition: none;
+}
+
+.is-scrolling .video-card:hover {
+  transform: none;
+  border-color: var(--color-border);
+  box-shadow: 4px 4px 0px var(--color-border);
 }
 
 .video-card.compact {

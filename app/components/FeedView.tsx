@@ -69,24 +69,23 @@ export function FeedView(props: FeedViewProps) {
   }, [loadMore]);
 
   useEffect(() => {
-    function requestWhenNearBottom() {
-      const documentHeight = document.documentElement.scrollHeight;
-      const viewportBottom = window.scrollY + window.innerHeight;
+    let scrollEndTimer = 0;
 
-      if (documentHeight - viewportBottom <= 720) {
-        loadMore();
-      }
+    function markActiveScroll() {
+      document.documentElement.classList.add("is-scrolling");
+      window.clearTimeout(scrollEndTimer);
+      scrollEndTimer = window.setTimeout(() => {
+        document.documentElement.classList.remove("is-scrolling");
+      }, 140);
     }
 
-    requestWhenNearBottom();
-    window.addEventListener("scroll", requestWhenNearBottom, { passive: true });
-    window.addEventListener("resize", requestWhenNearBottom);
-
+    window.addEventListener("scroll", markActiveScroll, { passive: true });
     return () => {
-      window.removeEventListener("scroll", requestWhenNearBottom);
-      window.removeEventListener("resize", requestWhenNearBottom);
+      window.removeEventListener("scroll", markActiveScroll);
+      window.clearTimeout(scrollEndTimer);
+      document.documentElement.classList.remove("is-scrolling");
     };
-  }, [loadMore, props.videos.length]);
+  }, []);
 
   const isInitialBuild = props.videos.length === 0 && props.loading;
 

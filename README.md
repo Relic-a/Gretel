@@ -83,6 +83,22 @@ Approximate data locations:
 
 Existing Electron data in the previous `Gretel/data` location is reused automatically when the new Tauri data directory is empty.
 
+### Linux rendering compatibility
+
+Gretel leaves WebKitGTK's renderer defaults unchanged. If an NVIDIA system running Wayland crashes in `libnvidia-gpucomp` or `libEGL_nvidia`, launch Gretel with the narrow explicit-sync workaround first:
+
+```bash
+GRETEL_RENDER_MODE=nvidia-wayland gretel
+```
+
+This mode sets `__NV_DISABLE_EXPLICIT_SYNC=1` only when Gretel detects both Wayland and an NVIDIA GPU. If the problem continues, use the stronger and potentially slower DMA-BUF fallback:
+
+```bash
+GRETEL_RENDER_MODE=disable-dmabuf gretel
+```
+
+The fallback sets `WEBKIT_DISABLE_DMABUF_RENDERER=1`. On Linux, startup logs include the display protocol, detected GPU vendors, discoverable WebKitGTK version, requested mode, and selected mode. Unset `GRETEL_RENDER_MODE` (or set it to `default`) to use normal rendering.
+
 ## Build Locally
 
 Tauri bundles the Next.js standalone server and a matching Node.js runtime, so installed desktop builds do not require Node.js on the end user's machine. Rust (with the platform's Tauri prerequisites) and Node.js are required when building from source.

@@ -15,6 +15,9 @@ struct ServerProcess(Mutex<Option<Child>>);
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(target_os = "linux")]
+    configure_linux_rendering();
+
     tauri::Builder::default()
         .setup(|app| {
             if cfg!(debug_assertions) || tauri_debug_mode() {
@@ -59,6 +62,153 @@ pub fn run() {
                 }
             }
         });
+}
+
+#[cfg(target_os = "linux")]
+#[derive(Debug, PartialEq, Eq)]
+enum LinuxRenderingMode {
+    Default,
+    NvidiaWayland,
+    DisableDmabuf,
+}
+
+#[cfg(target_os = "linux")]
+impl LinuxRenderingMode {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::Default => "default",
+            Self::NvidiaWayland => "nvidia-wayland",
+            Self::DisableDmabuf => "disable-dmabuf",
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn configure_linux_rendering() {
+    let session = linux_display_session();
+    let gpu_vendors = detect_linux_gpu_vendors();
+    let requested = env::var("GRETEL_RENDER_MODE").unwrap_or_else(|_| "default".to_string());
+    let selected = select_linux_rendering_mode(&requested, &session, &gpu_vendors);
+
+    match selected {
+        LinuxRenderingMode::NvidiaWayland => {
+            if env::var_os("__NV_DISABLE_EXPLICIT_SYNC").is_none() {
+                env::set_var("__NV_DISABLE_EXPLICIT_SYNC", "1");
+            }
+        }
+        LinuxRenderingMode::DisableDmabuf => {
+            if env::var_os("WEBKIT_DISABLE_DMABUF_RENDERER").is_none() {
+                env::set_var("WEBKIT_DISABLE_DMABUF_RENDERER", "1");
+            }
+        }
+        LinuxRenderingMode::Default => {}
+    }
+
+    let webkit_version = detect_webkit_version().unwrap_or_else(|| "unknown".to_string());
+    eprintln!(
+        "{{\"event\":\"gretel.renderer_config\",\"session\":\"{}\",\"gpuVendors\":\"{}\",\"webkitVersion\":\"{}\",\"requestedMode\":\"{}\",\"renderingMode\":\"{}\"}}",
+        log_value(&session),
+        log_value(&gpu_vendors.join("+")),
+        log_value(&webkit_version),
+        log_value(&requested),
+        selected.as_str()
+    );
+}
+
+#[cfg(target_os = "linux")]
+fn select_linux_rendering_mode(
+    requested: &str,
+    session: &str,
+    gpu_vendors: &[String],
+) -> LinuxRenderingMode {
+    match requested.trim().to_ascii_lowercase().as_str() {
+        "nvidia-wayland"
+            if session == "wayland" && gpu_vendors.iter().any(|vendor| vendor == "nvidia") =>
+        {
+            LinuxRenderingMode::NvidiaWayland
+        }
+        "disable-dmabuf" => LinuxRenderingMode::DisableDmabuf,
+        _ => LinuxRenderingMode::Default,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_display_session() -> String {
+    let session_type = env::var("XDG_SESSION_TYPE")
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+
+    if session_type == "wayland" || env::var_os("WAYLAND_DISPLAY").is_some() {
+        "wayland".to_string()
+    } else if session_type == "x11" || env::var_os("DISPLAY").is_some() {
+        "x11".to_string()
+    } else {
+        "unknown".to_string()
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn detect_linux_gpu_vendors() -> Vec<String> {
+    let mut vendors = Vec::new();
+    let Ok(cards) = std::fs::read_dir("/sys/class/drm") else {
+        return vec!["unknown".to_string()];
+    };
+
+    for card in cards.flatten() {
+        let card_name = card.file_name();
+        let card_name = card_name.to_string_lossy();
+        if !card_name.starts_with("card") || card_name.contains('-') {
+            continue;
+        }
+
+        let Ok(vendor) = std::fs::read_to_string(card.path().join("device/vendor")) else {
+            continue;
+        };
+        let vendor = match vendor.trim().to_ascii_lowercase().as_str() {
+            "0x10de" => "nvidia",
+            "0x1002" => "amd",
+            "0x8086" => "intel",
+            _ => "other",
+        };
+        if !vendors.iter().any(|existing| existing == vendor) {
+            vendors.push(vendor.to_string());
+        }
+    }
+
+    vendors.sort();
+    if vendors.is_empty() {
+        vendors.push("unknown".to_string());
+    }
+    vendors
+}
+
+#[cfg(target_os = "linux")]
+fn detect_webkit_version() -> Option<String> {
+    ["webkit2gtk-4.1", "webkit2gtk-4.0"]
+        .into_iter()
+        .find_map(|package| {
+            let output = Command::new("pkg-config")
+                .args(["--modversion", package])
+                .output()
+                .ok()?;
+            output
+                .status
+                .success()
+                .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+        })
+        .filter(|version| !version.is_empty())
+}
+
+#[cfg(target_os = "linux")]
+fn log_value(value: &str) -> String {
+    value
+        .chars()
+        .map(|character| match character {
+            '"' | '\\' => ' ',
+            other if other.is_control() => ' ',
+            other => other,
+        })
+        .collect()
 }
 
 fn stop_managed_server(server: &ServerProcess) {
@@ -157,8 +307,8 @@ fn start_production_server<R: tauri::Runtime>(
 fn attach_to_job_object(child: &Child) {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::System::JobObjects::{
-        CreateJobObjectW, SetInformationJobObject, AssignProcessToJobObject,
-        JobObjectExtendedLimitInformation, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
         JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
     };
     unsafe {
@@ -354,4 +504,40 @@ fn startup_error_script(error: &str) -> String {
     format!(
         "document.body.dataset.state='error';document.getElementById('startup-status').textContent=`{escaped}`;"
     )
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::{select_linux_rendering_mode, LinuxRenderingMode};
+
+    #[test]
+    fn nvidia_workaround_requires_nvidia_and_wayland() {
+        let nvidia = vec!["amd".to_string(), "nvidia".to_string()];
+        let amd = vec!["amd".to_string()];
+
+        assert_eq!(
+            select_linux_rendering_mode("nvidia-wayland", "wayland", &nvidia),
+            LinuxRenderingMode::NvidiaWayland
+        );
+        assert_eq!(
+            select_linux_rendering_mode("nvidia-wayland", "x11", &nvidia),
+            LinuxRenderingMode::Default
+        );
+        assert_eq!(
+            select_linux_rendering_mode("nvidia-wayland", "wayland", &amd),
+            LinuxRenderingMode::Default
+        );
+    }
+
+    #[test]
+    fn dmabuf_fallback_is_explicit_and_vendor_independent() {
+        assert_eq!(
+            select_linux_rendering_mode("disable-dmabuf", "x11", &["intel".to_string()]),
+            LinuxRenderingMode::DisableDmabuf
+        );
+        assert_eq!(
+            select_linux_rendering_mode("unexpected", "wayland", &["nvidia".to_string()]),
+            LinuxRenderingMode::Default
+        );
+    }
 }

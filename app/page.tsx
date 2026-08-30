@@ -8,6 +8,7 @@ import { TopBar } from "./components/TopBar";
 import { FeedView } from "./components/FeedView";
 import { WatchView } from "./components/WatchView";
 import { authedHeaders, normalize } from "./components/video-utils";
+import { fetchStartupFeed } from "../lib/feed/startup-request";
 import type {
   ChannelResult,
   FeedResponse,
@@ -157,20 +158,20 @@ export default function Home() {
       ]);
       const selectedProfileId = selectedProfile?.id || "";
       const cachedFeed = selectedProfileId ? readCachedFeed(selectedProfileId) : null;
-      const nextTags = cachedFeed?.tags?.length
-        ? cachedFeed.tags
-        : selectedProfile?.tags?.length
-          ? selectedProfile.tags
-          : saved?.profileId === selectedProfileId && saved.tags.length
+      const nextTags = selectedProfile?.tags?.length
+        ? selectedProfile.tags
+        : saved?.profileId === selectedProfileId && saved.tags.length
           ? saved.tags
           : [];
-      const nextChannels = cachedFeed?.channels?.length
-        ? cachedFeed.channels
-        : selectedProfile?.channels?.length
-          ? selectedProfile.channels
-          : saved?.profileId === selectedProfileId
-            ? saved.channels
-            : [];
+      const nextChannels = selectedProfile?.channels?.length
+        ? selectedProfile.channels
+        : saved?.profileId === selectedProfileId
+          ? saved.channels
+          : [];
+      const paintCache =
+        cachedFeed && feedPreferencesMatch(cachedFeed, nextTags, nextChannels)
+          ? cachedFeed
+          : null;
 
       if (disposed) {
         return;
@@ -187,8 +188,8 @@ export default function Home() {
         pendingVideoIdRef.current = null;
       }
 
-      if (cachedFeed) {
-        setFeed(cachedFeed);
+      if (paintCache) {
+        setFeed(paintCache);
       }
 
       if (selectedProfileId) {
@@ -210,7 +211,7 @@ export default function Home() {
             nextTags,
             nextChannels,
             resetFeed: true,
-            servingOnly: Boolean(cachedFeed)
+            buildIfMissing: true
           });
         }
       }
@@ -807,13 +808,13 @@ export default function Home() {
     nextTags?: string[];
     nextChannels?: string[];
     resetFeed?: boolean;
-    servingOnly?: boolean;
+    buildIfMissing?: boolean;
   } = {}) {
     const nextTags = input.nextTags || tags;
     const nextChannels = input.nextChannels || channels;
     const nextProfileId = input.nextProfileId || profileId;
     const resetFeed = input.resetFeed === true;
-    const servingOnly = input.servingOnly ?? !resetFeed;
+    const servingOnly = input.buildIfMissing || !resetFeed;
     const sessionId = resetFeed ? undefined : feed?.sessionId;
     const servedVideoIds = !resetFeed && feed?.videos?.length ? feed.videos.map((video) => video.id) : [];
     const requestId = feedRequestIdRef.current + 1;
@@ -827,21 +828,30 @@ export default function Home() {
     }
 
     try {
-      const response = await authedFetch(servingOnly ? "/api/feed" : "/api/feed/build", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          tags: nextTags,
-          channels: nextChannels,
-          profileId: nextProfileId,
-          sessionId,
-          servedVideoIds: servingOnly ? servedVideoIds : []
-        })
-      });
-      const data = await response.json();
+      const requestBody = {
+        tags: nextTags,
+        channels: nextChannels,
+        profileId: nextProfileId,
+        sessionId,
+        servedVideoIds: servingOnly ? servedVideoIds : []
+      };
+      let response: Response;
+      let responseData: any;
+      if (input.buildIfMissing) {
+        const result = await fetchStartupFeed(authedFetch, requestBody);
+        response = result.response;
+        responseData = result.data;
+      } else {
+        response = await authedFetch(servingOnly ? "/api/feed" : "/api/feed/build", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody)
+        });
+        responseData = await response.json();
+      }
 
       if (!response.ok) {
-        throw new Error(data.error || "Could not build this feed.");
+        throw new Error(responseData.error || "Could not build this feed.");
       }
 
       if (requestId !== feedRequestIdRef.current) {
@@ -851,17 +861,17 @@ export default function Home() {
       setFeed((current) => {
         if (!resetFeed && current?.videos?.length) {
           const seen = new Set(current.videos.map((video) => video.id));
-          const nextVideos = (data.videos || []).filter((video: FeedVideo) => !seen.has(video.id));
+          const nextVideos = (responseData.videos || []).filter((video: FeedVideo) => !seen.has(video.id));
           setFeedEnd(nextVideos.length === 0);
 
           return {
-            ...data,
+            ...responseData,
             videos: [...current.videos, ...nextVideos]
           };
         }
 
         setFeedEnd(false);
-        return data;
+        return responseData;
       });
     } catch (caught) {
       if (requestId !== feedRequestIdRef.current) {
@@ -940,9 +950,13 @@ export default function Home() {
           setProfileId(nextProfileId);
           const nextProfile = profiles.find((profile) => profile.id === nextProfileId);
           const cachedFeed = readCachedFeed(nextProfileId);
-          const nextTags = cachedFeed?.tags?.length ? cachedFeed.tags : nextProfile?.tags || [];
-          const nextChannels = cachedFeed?.channels?.length ? cachedFeed.channels : nextProfile?.channels || [];
-          setFeed(cachedFeed);
+          const nextTags = nextProfile?.tags || [];
+          const nextChannels = nextProfile?.channels || [];
+          const paintCache =
+            cachedFeed && feedPreferencesMatch(cachedFeed, nextTags, nextChannels)
+              ? cachedFeed
+              : null;
+          setFeed(paintCache);
           setTags(nextTags);
           setChannels(nextChannels);
           setActiveVideo(null);
@@ -964,7 +978,7 @@ export default function Home() {
               nextTags,
               nextChannels,
               resetFeed: true,
-              servingOnly: Boolean(cachedFeed)
+              buildIfMissing: true
             });
           }
           setShowProfileMenu(false);
@@ -1139,6 +1153,19 @@ function readSavedState() {
 
 function feedCacheKey(profileId: string) {
   return `${feedCachePrefix}.${profileId}`;
+}
+
+function feedPreferencesMatch(feed: CachedFeed, tags: string[], channels: string[]) {
+  return sameNormalizedValues(feed.tags || [], tags) && sameNormalizedValues(feed.channels || [], channels);
+}
+
+function sameNormalizedValues(left: string[], right: string[]) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  const normalizedRight = new Set(right.map(normalize));
+  return left.every((value) => normalizedRight.has(normalize(value)));
 }
 
 function readCachedFeed(profileId: string) {

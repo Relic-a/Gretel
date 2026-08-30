@@ -84,6 +84,16 @@ export class FeedProfileStaleError extends Error {
   }
 }
 
+export class FeedPoolMissingError extends Error {
+  readonly poolKey: string;
+
+  constructor(poolKey: string) {
+    super("This feed has not been built yet.");
+    this.name = "FeedPoolMissingError";
+    this.poolKey = poolKey;
+  }
+}
+
 export async function serveFeedPage(
   profileId: string,
   tags: string[],
@@ -101,7 +111,7 @@ export async function serveFeedPage(
   const poolState = getFeedPoolState(profileId, poolKey);
 
   if (!poolState) {
-    throw new Error("This feed has not been built yet.");
+    throw new FeedPoolMissingError(poolKey);
   }
 
   const session = getOrCreateServingSession(options.sessionId, profileId, poolKey, options.servedVideoIds);

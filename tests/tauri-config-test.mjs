@@ -37,6 +37,13 @@ assert.ok(existsSync(path.join(root, "app", "fonts", "space-mono-regular.woff2")
 assert.ok(existsSync(path.join(root, "app", "fonts", "OFL.txt")));
 assert.match(launcher, /thread::spawn\(move \|\|/);
 assert.match(launcher, /CREATE_NO_WINDOW/);
+assert.match(launcher, /GRETEL_RENDER_MODE/);
+assert.match(launcher, /__NV_DISABLE_EXPLICIT_SYNC/);
+assert.match(launcher, /WEBKIT_DISABLE_DMABUF_RENDERER/);
+assert.ok(
+  launcher.indexOf("configure_linux_rendering();") < launcher.indexOf("tauri::Builder::default()"),
+  "Linux renderer environment must be configured before WebKit starts"
+);
 assert.match(executable, /windows_subsystem = "windows"/);
 assert.match(titleBar, /toggleMaximize/);
 assert.match(titleBar, /\.minimize\(\)/);

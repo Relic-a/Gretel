@@ -36,6 +36,81 @@ after(() => {
   rmSync(workDir, { force: true, recursive: true });
 });
 
+test("startup serves the persisted pool first and builds only for an explicit missing-pool response", async () => {
+  const { fetchStartupFeed, FEED_POOL_MISSING_CODE } = require(path.join(
+    buildDir,
+    "lib",
+    "feed",
+    "startup-request.js"
+  ));
+  const calls = [];
+  const persisted = await fetchStartupFeed(async (endpoint) => {
+    calls.push(endpoint);
+    return Response.json({ videos: [{ id: "persisted" }] });
+  }, { profileId: "profile", tags: ["alpha"], channels: [] });
+
+  assert.deepEqual(calls, ["/api/feed"]);
+  assert.equal(persisted.source, "persisted_pool");
+  assert.equal(persisted.data.videos[0].id, "persisted");
+
+  calls.length = 0;
+  const firstRun = await fetchStartupFeed(async (endpoint, init) => {
+    calls.push({ endpoint, body: JSON.parse(init.body) });
+    if (endpoint === "/api/feed") {
+      return Response.json(
+        { error: "This feed has not been built yet.", code: FEED_POOL_MISSING_CODE },
+        { status: 404 }
+      );
+    }
+    return Response.json({ videos: [{ id: "built" }] });
+  }, { profileId: "profile", tags: ["alpha"], channels: [] });
+
+  assert.deepEqual(calls.map((call) => call.endpoint), ["/api/feed", "/api/feed/build"]);
+  assert.equal(calls[1].body.requestReason, "missing_pool_fallback");
+  assert.equal(firstRun.source, "initial_build");
+  assert.equal(firstRun.data.videos[0].id, "built");
+});
+
+test("serving reports a missing pool distinctly and reuses a built SQLite pool", async () => {
+  const modules = loadRuntimeModules({
+    youtubeClient: createFakeYoutubeClient({
+      searchVideos: [rawVideo("persisted-root", "alpha persisted", "Search")]
+    }),
+    embeddingForText: () => [1, 0]
+  });
+  const profile = modules.profileStore.createProfile("Serve First");
+  profileStoreForCleanup = modules.profileStore;
+
+  try {
+    process.env.GRETEL_CONFIG = writeConfig("serve-first.json", {
+      expansion: { initialExpansionCycles: 0 },
+      feed: { maxQueries: 1, maxVideos: 1, minVideosPerQuery: 1 },
+      embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
+    });
+
+    await assert.rejects(
+      modules.service.serveFeedPage(profile.id, ["alpha"], [], "mixed", observation()),
+      modules.service.FeedPoolMissingError
+    );
+
+    await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation());
+    const served = await modules.service.serveFeedPage(
+      profile.id,
+      ["alpha"],
+      [],
+      "mixed",
+      observation()
+    );
+
+    assert.deepEqual(served.videos.map((video) => video.id), ["persisted-root"]);
+    assert.equal(served.pool.status, "served");
+    assert.equal(served.pool.initializedRoot, false);
+    assert.equal(served.pool.expandedPool, false);
+  } finally {
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});
+
 test("root discovery filters titles, stores a unit centroid, and gates channel videos by centroid similarity", async () => {
   const modules = loadRuntimeModules({
     youtubeClient: createFakeYoutubeClient({

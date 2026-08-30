@@ -28,6 +28,9 @@ export async function POST(request: Request) {
     const channels = parseTags(body.channels);
     const channelSort = parseChannelSort(body.channelSort);
     const requestedProfileId = typeof body.profileId === "string" ? body.profileId : "";
+    const requestReason = body.requestReason === "missing_pool_fallback"
+      ? "missing_pool_fallback"
+      : "explicit_build";
     const profile = requestedProfileId ? getProfile(requestedProfileId) : null;
     observation.profileId = profile?.id;
 
@@ -82,7 +85,10 @@ export async function POST(request: Request) {
       expandedPool: feed.pool.expandedPool,
       configuredMaxVideos: feed.pool.maxVideos,
       resetFeed: true,
-      servingOnly: false
+      servingOnly: false,
+      feedSource: "built_pool",
+      poolLookup: requestReason === "missing_pool_fallback" ? "missing" : "not_requested",
+      requestReason
     });
 
     return Response.json({

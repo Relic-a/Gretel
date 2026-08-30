@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 
 import type { FeedVideo } from "../types";
+import { observeCardIntersection } from "./shared-intersection-observer";
 import { VideoActions } from "./VideoActions";
 import { formatPublished, handleThumbnailError, thumbnailFor } from "./video-utils";
 
@@ -36,20 +37,14 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
       return;
     }
 
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (!entries[0].isIntersecting || reportedRef.current === videoRef.current.id) {
-          return;
-        }
+    return observeCardIntersection(card, (entry) => {
+      if (!entry.isIntersecting || reportedRef.current === videoRef.current.id) {
+        return;
+      }
 
-        reportedRef.current = videoRef.current.id;
-        props.onImpression?.(videoRef.current);
-      },
-      { threshold: 0 }
-    );
-
-    observer.observe(card);
-    return () => observer.disconnect();
+      reportedRef.current = videoRef.current.id;
+      props.onImpression?.(videoRef.current);
+    });
   }, [props.video.id, props.onImpression]);
 
   return (

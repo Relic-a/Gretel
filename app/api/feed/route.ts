@@ -1,6 +1,11 @@
 import { parseChannelSort, parseTags } from "../../../lib/feed/input";
 import { createFeedObservation, logFeedObservation } from "../../../lib/feed/observation";
-import { FeedProfileStaleError, serveFeedPage } from "../../../lib/feed/service";
+import {
+  FeedPoolMissingError,
+  FeedProfileStaleError,
+  serveFeedPage
+} from "../../../lib/feed/service";
+import { FEED_POOL_MISSING_CODE } from "../../../lib/feed/startup-request";
 import { errorFields } from "../../../lib/logger";
 import {
   getProfile,
@@ -79,7 +84,9 @@ export async function POST(request: Request) {
       expandedPool: feed.pool.expandedPool,
       configuredMaxVideos: feed.pool.maxVideos,
       resetFeed: false,
-      servingOnly: true
+      servingOnly: true,
+      feedSource: "persisted_pool",
+      poolLookup: "hit"
     });
 
     return Response.json({
@@ -95,6 +102,23 @@ export async function POST(request: Request) {
       videos: feed.videos
     });
   } catch (error) {
+    if (error instanceof FeedPoolMissingError) {
+      logFeedObservation(observation, {
+        servingOnly: true,
+        feedSource: "none",
+        poolLookup: "missing",
+        responseStatus: 404,
+        poolKey: error.poolKey
+      });
+      return Response.json(
+        {
+          error: "This feed has not been built yet.",
+          code: FEED_POOL_MISSING_CODE
+        },
+        { status: 404 }
+      );
+    }
+
     if (error instanceof FeedProfileStaleError || isForeignKeyConstraintError(error)) {
       return Response.json(
         { error: "The active profile changed before feed generation finished." },
