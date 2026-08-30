@@ -54,10 +54,10 @@ export function TopBar(props: TopBarProps) {
           <Settings aria-hidden="true" size={18} />
         </button>
         <div className="profile-menu">
-          <button type="button" className="profile-button" onClick={props.onToggleProfileMenu}>
+          <button type="button" className="profile-button" onClick={props.onToggleProfileMenu} title={props.activeProfile?.name || "Select profile"}>
             <span className="profile-avatar" aria-hidden="true" />
-            {props.activeProfile?.name || "Select profile"}
-            <ChevronDown aria-hidden="true" size={17} />
+            <span className="profile-button-name">{props.activeProfile?.name || "Select profile"}</span>
+            <ChevronDown aria-hidden="true" size={17} className="profile-chevron" />
           </button>
           {props.showProfileMenu && (
             <div className="profile-popover">

@@ -1461,20 +1461,24 @@ function readRouteFromUrl(): { section: Section; videoId: string | null } {
 }
 
 function writeRoute(section: Section, videoId?: string) {
-  const params = new URLSearchParams();
+  try {
+    const params = new URLSearchParams();
 
-  if (section !== "home") {
-    params.set("section", section);
-  }
+    if (section !== "home") {
+      params.set("section", section);
+    }
 
-  if (videoId) {
-    params.set("video", videoId);
-  }
+    if (videoId) {
+      params.set("video", videoId);
+    }
 
-  const query = params.toString();
-  const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
+    const query = params.toString();
+    const nextUrl = query ? `${window.location.pathname}?${query}` : window.location.pathname;
 
-  if (window.location.pathname + window.location.search !== nextUrl) {
-    window.history.pushState(null, "", nextUrl);
+    if (window.location.pathname + window.location.search !== nextUrl) {
+      window.history.pushState(null, "", nextUrl);
+    }
+  } catch {
+    // Ignore pushState errors in restricted webview environments
   }
 }

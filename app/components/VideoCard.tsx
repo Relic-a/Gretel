@@ -59,23 +59,27 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
           />
           {props.video.duration && <span className="duration-pill">{props.video.duration}</span>}
         </button>
-        <VideoActions
-          video={props.video}
-          saved={props.saved}
-          liked={props.liked}
-          onSaveVideo={props.onSaveVideo}
-          onLikeVideo={props.onLikeVideo}
-        />
       </div>
       <div className="video-meta">
-        <h2>{props.video.title}</h2>
+        <div className="video-title-row">
+          <h2 title={props.video.title}>{props.video.title}</h2>
+          <VideoActions
+            video={props.video}
+            saved={props.saved}
+            liked={props.liked}
+            onSaveVideo={props.onSaveVideo}
+            onLikeVideo={props.onLikeVideo}
+          />
+        </div>
         <div className="channel-line">
           {props.video.channelAvatarUrl ? (
             <img className="avatar" src={props.video.channelAvatarUrl} alt="" loading="lazy" />
           ) : (
             <span className="avatar">{props.video.author.slice(0, 1).toUpperCase()}</span>
           )}
-          <span>{props.video.author}</span>
+          <span className="channel-name" title={props.video.author}>
+            {props.video.author}
+          </span>
           <span className="verified-dot" aria-label="Verified channel" />
         </div>
         {props.showSubscribe && (
@@ -89,7 +93,9 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
             {props.subscribed ? "Unsubscribe" : "Subscribe"}
           </button>
         )}
-        <div className="published-line">{formatPublished(props.video)}</div>
+        <div className="published-line" title={formatPublished(props.video)}>
+          {formatPublished(props.video)}
+        </div>
       </div>
     </article>
   );

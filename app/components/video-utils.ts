@@ -57,7 +57,11 @@ export function getStoredApiToken(): string {
       window.sessionStorage.setItem(apiTokenKey, tokenFromUrl);
       params.delete("token");
       const cleanSearch = params.toString() ? `?${params.toString()}` : "";
-      window.history.replaceState(null, "", `${window.location.pathname}${cleanSearch}`);
+      try {
+        window.history.replaceState(null, "", `${window.location.pathname}${cleanSearch}`);
+      } catch {
+        // Ignore replaceState errors
+      }
       return tokenFromUrl;
     }
     return (

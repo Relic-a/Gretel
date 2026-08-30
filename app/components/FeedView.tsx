@@ -151,13 +151,14 @@ function VideoCardSkeleton() {
     <article className="video-card skeleton-card" aria-hidden="true">
       <div className="skeleton skeleton-thumb" />
       <div className="video-meta">
-        <div className="skeleton skeleton-line wide" />
-        <div className="skeleton skeleton-line medium" />
-        <div className="skeleton skeleton-channel">
+        <div className="skeleton-title">
+          <div className="skeleton skeleton-line wide" />
+          <div className="skeleton skeleton-line medium" />
+        </div>
+        <div className="skeleton-channel">
           <span className="skeleton skeleton-avatar" />
           <span className="skeleton skeleton-line short" />
         </div>
-        <div className="skeleton skeleton-button" />
         <div className="skeleton skeleton-line tiny" />
       </div>
     </article>
