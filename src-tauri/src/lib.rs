@@ -28,7 +28,7 @@ pub fn run() {
             }
 
             let port = find_available_port().map_err(to_boxed_error)?;
-            let api_token = generate_api_token();
+            let api_token = generate_api_token().map_err(to_boxed_error)?;
             let window = app
                 .get_webview_window("main")
                 .ok_or_else(|| "The Gretel main window was not created.".to_string())?;
@@ -444,14 +444,15 @@ fn find_available_port() -> Result<u16, String> {
         .map_err(|error| format!("Could not find an available local port: {error}"))
 }
 
-fn generate_api_token() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let nanos = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_nanos();
-    let pid = std::process::id();
-    format!("gretel_{:x}{:x}", nanos, pid)
+fn generate_api_token() -> Result<String, String> {
+    let mut random_bytes = [0_u8; 32];
+    getrandom::fill(&mut random_bytes)
+        .map_err(|error| format!("Could not generate a secure API token: {error}"))?;
+    let token = random_bytes
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    Ok(format!("gretel_{token}"))
 }
 
 fn wait_for_server(port: u16, timeout: Duration) -> Result<(), String> {
@@ -505,6 +506,21 @@ fn startup_error_script(error: &str) -> String {
     format!(
         "document.body.dataset.state='error';document.getElementById('startup-status').textContent=`{escaped}`;"
     )
+}
+
+#[cfg(test)]
+mod security_tests {
+    use super::generate_api_token;
+
+    #[test]
+    fn api_tokens_are_random_and_have_256_bits_of_entropy() {
+        let first = generate_api_token().expect("first token");
+        let second = generate_api_token().expect("second token");
+
+        assert_eq!(first.len(), "gretel_".len() + 64);
+        assert!(first.starts_with("gretel_"));
+        assert_ne!(first, second);
+    }
 }
 
 #[cfg(all(test, target_os = "linux"))]

@@ -27,6 +27,7 @@ export function TagEditor(props: TagEditorProps) {
           ))}
           <input
             ref={props.inputRef}
+            maxLength={80}
             value={props.draft}
             onChange={(event) => props.setDraft(event.target.value)}
             onKeyDown={(event) => {

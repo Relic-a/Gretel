@@ -80,7 +80,6 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
           <span className="channel-name" title={props.video.author}>
             {props.video.author}
           </span>
-          <span className="verified-dot" aria-label="Verified channel" />
         </div>
         {props.showSubscribe && (
           <button

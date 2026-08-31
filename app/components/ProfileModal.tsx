@@ -4,6 +4,7 @@ import type { ChannelResult, Profile, UserSettings } from "../types";
 import { normalize } from "./video-utils";
 import { TagEditor } from "./TagEditor";
 import { FeedBuildProgress } from "./FeedBuildProgress";
+import { useDialogFocus } from "./use-dialog-focus";
 
 type StepId = "name" | "topics" | "channels" | "key";
 
@@ -73,6 +74,8 @@ export function ProfileModal(props: ProfileModalProps) {
   const [step, setStep] = useState(0);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const channelInputRef = useRef<HTMLInputElement>(null);
+  const dialogRef = useRef<HTMLElement>(null);
+  useDialogFocus(dialogRef, props.feedOpen, props.onClose);
 
   useEffect(() => {
     setStep((current) => Math.min(current, steps.length - 1));
@@ -171,9 +174,16 @@ export function ProfileModal(props: ProfileModalProps) {
 
   return (
     <div className="modal-backdrop">
-      <section className="profile-modal">
+      <section
+        ref={dialogRef}
+        className="profile-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="profile-dialog-title"
+        tabIndex={-1}
+      >
         <div className="modal-head">
-          <h1>{props.manageProfiles ? "Manage profiles" : "Create a profile"}</h1>
+          <h1 id="profile-dialog-title">{props.manageProfiles ? "Manage profiles" : "Create a profile"}</h1>
           {props.feedOpen && (
             <button type="button" className="icon-button" onClick={props.onClose}>
               Close
@@ -231,6 +241,7 @@ export function ProfileModal(props: ProfileModalProps) {
                   <span>Profile name</span>
                   <input
                     autoFocus
+                    maxLength={60}
                     value={props.profileName}
                     onChange={(event) => props.onProfileNameChange(event.target.value)}
                     placeholder="e.g. Systems design"

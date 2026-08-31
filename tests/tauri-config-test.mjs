@@ -9,6 +9,7 @@ const capability = JSON.parse(
   readFileSync(path.join(root, "src-tauri", "capabilities", "default.json"), "utf8")
 );
 const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
+const nextConfig = readFileSync(path.join(root, "next.config.mjs"), "utf8");
 const layout = readFileSync(path.join(root, "app", "layout.tsx"), "utf8");
 const launcher = readFileSync(path.join(root, "src-tauri", "src", "lib.rs"), "utf8");
 const executable = readFileSync(path.join(root, "src-tauri", "src", "main.rs"), "utf8");
@@ -22,10 +23,14 @@ assert.equal(config.identifier, "com.ezana.gretel");
 assert.equal(config.version, packageJson.version);
 assert.match(packageJson.scripts["dist:win"], /--bundles nsis(?:\s|$)/);
 assert.match(packageJson.scripts["dist:linux"], /--bundles deb,rpm(?:\s|$)/);
+assert.match(nextConfig, /Content-Security-Policy/);
+assert.match(nextConfig, /frame-ancestors 'none'/);
 assert.equal(config.build.devUrl, "http://127.0.0.1:3000");
 assert.equal(config.build.frontendDist, "frontend");
 assert.equal(config.app.windows[0].decorations, false);
 assert.equal(config.app.withGlobalTauri, true);
+assert.equal(typeof config.app.security.csp, "string");
+assert.match(config.app.security.csp, /object-src 'none'/);
 assert.deepEqual(capability.remote.urls, ["http://127.0.0.1:*"]);
 assert.ok(capability.permissions.includes("core:window:allow-close"));
 assert.ok(capability.permissions.includes("core:window:allow-start-dragging"));
@@ -73,6 +78,7 @@ assert.match(launcher, /thread::spawn\(move \|\|/);
 assert.match(launcher, /tauri_plugin_opener::init\(\)/);
 assert.match(launcher, /CREATE_NO_WINDOW/);
 assert.match(launcher, /GRETEL_RENDER_MODE/);
+assert.match(launcher, /getrandom::fill/);
 assert.match(launcher, /__NV_DISABLE_EXPLICIT_SYNC/);
 assert.match(launcher, /WEBKIT_DISABLE_DMABUF_RENDERER/);
 assert.ok(

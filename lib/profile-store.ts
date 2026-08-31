@@ -674,9 +674,9 @@ function cleanProfileFeedValues(values: string[]) {
   return [...new Set(
     values
       .filter((value): value is string => typeof value === "string")
-      .map((value) => value.replace(/\s+/g, " ").trim())
+      .map((value) => value.replace(/\s+/g, " ").trim().slice(0, 80))
       .filter(Boolean)
-  )];
+  )].slice(0, 50);
 }
 
 function ensureProfileColumn(name: string, definition: string) {

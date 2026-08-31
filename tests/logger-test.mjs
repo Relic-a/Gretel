@@ -26,8 +26,6 @@ function compileLogger() {
     "--outDir", buildDir,
     "--module", "commonjs",
     "--target", "ES2022",
-    "--ignoreConfig",
-    "--ignoreDeprecations", "6.0",
     "--skipLibCheck",
     "--types", "node",
     "--esModuleInterop",

@@ -146,7 +146,7 @@ export function FeedBuildProgress({
         >
           <div
             className="feed-build-progress-fill"
-            style={{ width: `${progress}%` }}
+            style={{ transform: `scaleX(${progress / 100})` }}
           />
         </div>
 
@@ -214,7 +214,7 @@ export function FeedBuildProgress({
       >
         <div
           className="feed-build-progress-fill"
-          style={{ width: `${progress}%` }}
+          style={{ transform: `scaleX(${progress / 100})` }}
         />
       </div>
 

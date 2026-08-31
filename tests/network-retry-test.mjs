@@ -17,8 +17,6 @@ const result = spawnSync(process.execPath, [
   "--outDir", buildDir,
   "--module", "commonjs",
   "--target", "ES2022",
-  "--ignoreConfig",
-  "--ignoreDeprecations", "6.0",
   "--skipLibCheck",
   "--types", "node",
   "lib/network-retry.ts"

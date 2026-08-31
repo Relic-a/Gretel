@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
 import { getDataDir } from "./data-dir";
@@ -31,11 +31,20 @@ export function getUserSettings(): UserSettings {
 }
 
 export function setUserSettings(settings: UserSettings) {
-  mkdirSync(dataDir, { recursive: true });
+  mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   writeFileSync(
     /*turbopackIgnore: true*/ settingsPath,
-    `${JSON.stringify(sanitizeUserSettings(settings), null, 2)}\n`
+    `${JSON.stringify(sanitizeUserSettings(settings), null, 2)}\n`,
+    { mode: 0o600 }
   );
+  restrictLocalSettingsPermissions();
+}
+
+function restrictLocalSettingsPermissions() {
+  if (process.platform === "win32") return;
+
+  chmodSync(dataDir, 0o700);
+  chmodSync(settingsPath, 0o600);
 }
 
 function sanitizeUserSettings(value: unknown): UserSettings {
@@ -45,9 +54,9 @@ function sanitizeUserSettings(value: unknown): UserSettings {
 
   const input = value as Record<string, unknown>;
   const openRouterApiKey =
-    typeof input.openRouterApiKey === "string" ? input.openRouterApiKey.trim() : "";
+    typeof input.openRouterApiKey === "string" ? input.openRouterApiKey.trim().slice(0, 512) : "";
   const openRouterModel =
-    typeof input.openRouterModel === "string" ? input.openRouterModel.trim() : "";
+    typeof input.openRouterModel === "string" ? input.openRouterModel.trim().slice(0, 200) : "";
   const developerAnalytics = input.developerAnalytics === true;
 
   return {

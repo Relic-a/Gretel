@@ -17,8 +17,6 @@ const result = spawnSync(process.execPath, [
   "--outDir", buildDir,
   "--module", "commonjs",
   "--target", "ES2022",
-  "--ignoreConfig",
-  "--ignoreDeprecations", "6.0",
   "--skipLibCheck",
   "app/components/youtube-player-error.ts"
 ], { cwd: root, encoding: "utf8" });

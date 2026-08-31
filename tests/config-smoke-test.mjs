@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import Module from "node:module";
 import os from "node:os";
 import path from "node:path";
@@ -31,9 +31,6 @@ function compileConfigModules() {
       "commonjs",
       "--target",
       "ES2022",
-      "--ignoreConfig",
-      "--ignoreDeprecations",
-      "6.0",
       "--skipLibCheck",
       "--types",
       "node",
@@ -530,6 +527,42 @@ test("config loads OPENROUTER_API_KEY from .env", () => {
   );
 
   assert.equal(result.status, 0, result.stderr || result.stdout);
+});
+
+test("local settings are bounded and owner-readable only on Unix", () => {
+  const { settings } = loadRuntimeModules(createFakeYoutubeClient());
+  settings.setUserSettings({
+    openRouterApiKey: `  ${"k".repeat(700)}  `,
+    openRouterModel: `  ${"m".repeat(300)}  `
+  });
+
+  const stored = settings.getUserSettings();
+  assert.equal(stored.openRouterApiKey.length, 512);
+  assert.equal(stored.openRouterModel.length, 200);
+
+  if (process.platform !== "win32") {
+    const settingsPath = path.join(process.env.GRETEL_DATA_DIR, "user-settings.json");
+    assert.equal(statSync(process.env.GRETEL_DATA_DIR).mode & 0o777, 0o700);
+    assert.equal(statSync(settingsPath).mode & 0o777, 0o600);
+  }
+});
+
+test("profile input is bounded before it reaches persistent storage", () => {
+  const { profileStore } = loadRuntimeModules(createFakeYoutubeClient());
+  const profile = profileStore.createProfile(
+    "n".repeat(100),
+    Array.from({ length: 70 }, (_, index) => `${index}-${"t".repeat(100)}`),
+    []
+  );
+
+  try {
+    assert.equal(profile.name.length, 60);
+    assert.equal(profile.tags.length, 50);
+    assert.ok(profile.tags.every((tag) => tag.length <= 80));
+  } finally {
+    profileStore.deleteProfile(profile.id);
+    profileStore.getDatabase().close();
+  }
 });
 
 test("runtime feed flow initializes roots with early expansion, serves fast lane, and records engagement", async () => {

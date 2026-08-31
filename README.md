@@ -11,7 +11,17 @@
 
 Gretel is a desktop app for building a more intentional YouTube feed. Create profiles, add topics and channels you care about, and let Gretel build a personalized feed using YouTube data and OpenRouter embeddings.
 
-> Current status: **alpha**. Expect rough edges, unsigned installers, and possible platform-specific bugs.
+> Current status: **public beta**. Expect rough edges, unsigned installers, and possible platform-specific bugs. Please report problems through [GitHub Issues](https://github.com/Relic-a/Gretel/issues).
+
+## Install the beta
+
+Download the newest beta installer for your platform from [Gretel Releases](https://github.com/Relic-a/Gretel/releases):
+
+- Windows: `.exe`
+- macOS (Apple silicon): `.dmg`
+- Linux: `.deb`, `.rpm`, `.AppImage`, or Arch package
+
+The installers are currently unsigned, so your operating system may show an unfamiliar-developer warning. Gretel does not update itself yet; install newer beta builds manually from the releases page.
 
 ## Features
 
@@ -24,7 +34,7 @@ Gretel is a desktop app for building a more intentional YouTube feed. Create pro
 
 ## Requirements
 
-- Node.js 22+
+- Node.js 24.x
 - npm
 - Rust 1.77+ and the platform prerequisites listed by Tauri (Windows builds need Visual Studio Build Tools with the MSVC and Windows SDK workloads)
 - An OpenRouter API key
@@ -74,6 +84,8 @@ npm run tauri:dev
 ## App Settings
 
 You can also enter your OpenRouter API key inside the app settings UI. Gretel stores local settings in the app data directory, not in the public repo.
+
+The key is stored locally as plain text so the bundled server can use it. On macOS and Linux, Gretel restricts the settings file to the current OS user. Use a dedicated OpenRouter key with a spending limit and revoke it if the device is lost or shared. See [Privacy](PRIVACY.md) for the complete data flow.
 
 Approximate data locations:
 
@@ -151,3 +163,7 @@ npm run dist:win       # Build Windows desktop packages (from Windows)
 npm run dist:mac       # Build macOS desktop packages (from macOS)
 npm test               # Run tests
 ```
+
+## License
+
+Copyright (c) 2026 Ezana. All rights reserved. See [LICENSE](LICENSE).

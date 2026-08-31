@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent } from "react";
+import { FormEvent, useRef } from "react";
 
 import type { UserSettings } from "../types";
+import { useDialogFocus } from "./use-dialog-focus";
 
 type SettingsModalProps = {
   settings: UserSettings;
@@ -14,11 +15,21 @@ type SettingsModalProps = {
 };
 
 export function SettingsModal(props: SettingsModalProps) {
+  const dialogRef = useRef<HTMLElement>(null);
+  useDialogFocus(dialogRef, true, props.onClose);
+
   return (
     <div className="modal-backdrop">
-      <section className="profile-modal settings-modal">
+      <section
+        ref={dialogRef}
+        className="profile-modal settings-modal"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="settings-dialog-title"
+        tabIndex={-1}
+      >
         <div className="modal-head">
-          <h1>Settings</h1>
+          <h1 id="settings-dialog-title">Settings</h1>
           <button type="button" className="icon-button" onClick={props.onClose}>
             Close
           </button>
@@ -29,10 +40,12 @@ export function SettingsModal(props: SettingsModalProps) {
 
           <label>
             <span>OpenRouter API key</span>
-            <small>Stored in <code>data/user-settings.json</code> and read on each embedding request.</small>
+            <small>Stored locally as plain text in <code>data/user-settings.json</code>. Use a dedicated key with a spending limit.</small>
             <input
               type="password"
+              autoFocus
               autoComplete="off"
+              maxLength={512}
               spellCheck={false}
               value={props.settings.openRouterApiKey === "set" ? "" : props.settings.openRouterApiKey || ""}
               onChange={(event) =>
@@ -51,6 +64,7 @@ export function SettingsModal(props: SettingsModalProps) {
             <input
               type="text"
               autoComplete="off"
+              maxLength={200}
               spellCheck={false}
               value={props.settings.openRouterModel || ""}
               onChange={(event) =>
