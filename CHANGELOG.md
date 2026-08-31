@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.4.1-beta.2 — 2026-08-31
+
+### Playback reliability
+
+- Fixed YouTube player error 153 by allowing embedded players to receive the app origin required for client verification.
+- Added regression coverage for the YouTube-compatible referrer policy.
+
 ## 0.4.1-beta.1 — 2026-08-31
 
 ### Security

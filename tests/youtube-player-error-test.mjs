@@ -7,6 +7,7 @@ import { after, test } from "node:test";
 
 const root = process.cwd();
 const buildDir = path.join(root, ".tmp", "youtube-player-error-test");
+const nextConfig = (await import(path.join(root, "next.config.mjs"))).default;
 
 rmSync(buildDir, { force: true, recursive: true });
 mkdirSync(buildDir, { recursive: true });
@@ -36,6 +37,15 @@ test("maps every documented YouTube IFrame API error code", () => {
   assert.equal(describeYouTubePlayerError(150).kind, "embedding_disabled");
   assert.equal(describeYouTubePlayerError(153).kind, "client_identity_missing");
   assert.equal(describeYouTubePlayerError(999).kind, "unknown");
+});
+
+test("sends the app origin so YouTube can verify embedded players", async () => {
+  const headerRules = await nextConfig.headers();
+  const referrerPolicy = headerRules
+    .flatMap((rule) => rule.headers)
+    .find((header) => header.key.toLowerCase() === "referrer-policy");
+
+  assert.equal(referrerPolicy?.value, "strict-origin-when-cross-origin");
 });
 
 test("keeps HTML5 playback failures broad and builds a safe YouTube URL", () => {
