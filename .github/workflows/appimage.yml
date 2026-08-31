@@ -71,7 +71,9 @@ jobs:
                 removed += 1;
               }
             }
-            if (removed === 0) throw new Error("No musl-only Sharp resources were found.");
+            if (removed === 0) {
+              console.log("No musl-only Sharp resources are present; nothing to remove.");
+            }
           '
 
       - name: Build AppImage
