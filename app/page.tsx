@@ -62,6 +62,8 @@ export default function Home() {
   const [tagDraft, setTagDraft] = useState("");
   const [channelDraft, setChannelDraft] = useState("");
   const [channelResults, setChannelResults] = useState<ChannelResult[]>([]);
+  const [isSearchingChannels, setIsSearchingChannels] = useState(false);
+  const channelSearchCacheRef = useRef<Map<string, ChannelResult[]>>(new Map());
   const [feed, setFeed] = useState<FeedResponse | null>(null);
   const [config, setConfig] = useState<PublicGretelConfig | null>(null);
   const [section, setSection] = useState<Section>("home");
@@ -441,31 +443,58 @@ export default function Home() {
   );
 
   useEffect(() => {
-    if (channelDraft.trim().length < 2) {
+    const trimmed = channelDraft.trim();
+    if (trimmed.length < 2) {
       setChannelResults([]);
+      setIsSearchingChannels(false);
       return;
     }
 
-    let ignore = false;
+    const normalized = trimmed.replace(/^@+/, "").toLowerCase();
+    const cached = channelSearchCacheRef.current.get(normalized);
+    if (cached) {
+      setChannelResults(cached);
+      setIsSearchingChannels(false);
+      return;
+    }
+
+    // Keep currently matching results visible during typing to prevent flashing
+    setChannelResults((prev) => {
+      if (prev.length === 0) {
+        return prev;
+      }
+      const cleanNorm = normalized.replace(/\s+/g, "");
+      const matching = prev.filter((c) =>
+        c.name.toLowerCase().replace(/\s+/g, "").includes(cleanNorm)
+      );
+      return matching.length > 0 ? matching : prev;
+    });
+
+    setIsSearchingChannels(true);
+    const controller = new AbortController();
     const timer = window.setTimeout(async () => {
       try {
         const response = await authedFetch(
-          `/api/channels/search?q=${encodeURIComponent(channelDraft)}&profileId=${encodeURIComponent(profileId)}`
+          `/api/channels/search?q=${encodeURIComponent(trimmed)}&profileId=${encodeURIComponent(profileId || "setup")}`,
+          { signal: controller.signal }
         );
         const data = await response.json();
+        const channels = data.channels || [];
 
-        if (!ignore) {
-          setChannelResults(data.channels || []);
+        if (!controller.signal.aborted) {
+          channelSearchCacheRef.current.set(normalized, channels);
+          setChannelResults(channels);
+          setIsSearchingChannels(false);
         }
       } catch {
-        if (!ignore) {
-          setChannelResults([]);
+        if (!controller.signal.aborted) {
+          setIsSearchingChannels(false);
         }
       }
-    }, 300);
+    }, 120);
 
     return () => {
-      ignore = true;
+      controller.abort();
       window.clearTimeout(timer);
     };
   }, [channelDraft, profileId]);
@@ -1092,6 +1121,7 @@ export default function Home() {
           tagDraft={tagDraft}
           channelDraft={channelDraft}
           channelResults={channelResults}
+          isSearchingChannels={isSearchingChannels}
           loading={loading}
           loadingLabel={buildingLabel}
           error={error}

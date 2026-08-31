@@ -8,6 +8,14 @@ import { getGretelConfig } from "./config";
 const youtubeClients = new Map<string, Promise<Innertube>>();
 const maxCachedClients = 10;
 
+export function warmYoutubeClient(profileId = "default") {
+  try {
+    return getYoutubeClient(profileId).catch(() => undefined);
+  } catch {
+    return undefined;
+  }
+}
+
 export function getYoutubeClient(profileId: string) {
   if (!profileId) {
     throw new Error("A profile id is required for YouTube sessions.");
@@ -22,6 +30,16 @@ export function getYoutubeClient(profileId: string) {
     youtubeClients.delete(cacheKey);
     youtubeClients.set(cacheKey, existingClient);
     return existingClient;
+  }
+
+  // Fast path: For unauthenticated public queries (channel search, setup, default),
+  // immediately reuse ANY already initialized Innertube client with matching language.
+  if (profileId === "setup" || profileId === "default" || profileId.startsWith("temp-")) {
+    for (const [key, clientPromise] of youtubeClients.entries()) {
+      if (key.endsWith(`:${language}`)) {
+        return clientPromise;
+      }
+    }
   }
 
   const cacheDirectory = path.join(

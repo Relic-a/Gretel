@@ -27,7 +27,11 @@ export async function GET(request: Request) {
 
   try {
     const channels = await searchChannels(query, profile?.id || "setup");
-    return Response.json({ channels });
+    return Response.json({ channels }, {
+      headers: {
+        "Cache-Control": "private, max-age=300"
+      }
+    });
   } catch (error) {
     logWarn("channels.search_failed", requestFields(request, {
       profileId: profile?.id || "",

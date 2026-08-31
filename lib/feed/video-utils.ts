@@ -469,21 +469,68 @@ export function getChannelAvatarUrl(channel: unknown): string | undefined {
   }
 
   const source = channel as Record<string, unknown>;
+
+  if ("author" in source && source.author && typeof source.author === "object") {
+    const authorThumb = getAuthorAvatarUrl(source);
+    if (authorThumb) {
+      return authorThumb;
+    }
+  }
+
   const metadata = source.metadata;
-
   if (metadata && typeof metadata === "object" && "avatar" in metadata) {
-    return getThumbnailFromValue((metadata as Record<string, unknown>).avatar) || undefined;
+    const thumb = getThumbnailFromValue((metadata as Record<string, unknown>).avatar);
+    if (thumb) {
+      return thumb;
+    }
   }
 
-  if ("avatar" in source) {
-    return getThumbnailFromValue(source.avatar) || undefined;
+  const header = source.header;
+  if (header && typeof header === "object") {
+    const headerSource = header as Record<string, unknown>;
+    if ("author" in headerSource && headerSource.author && typeof headerSource.author === "object") {
+      const thumb = getAuthorAvatarUrl(headerSource);
+      if (thumb) {
+        return thumb;
+      }
+    }
+    if ("avatar" in headerSource && headerSource.avatar) {
+      const thumb = getThumbnailFromValue(headerSource.avatar);
+      if (thumb) {
+        return thumb;
+      }
+    }
+    if ("thumbnails" in headerSource && headerSource.thumbnails) {
+      const thumb = getThumbnailFromValue(headerSource.thumbnails);
+      if (thumb) {
+        return thumb;
+      }
+    }
   }
 
-  if ("thumbnails" in source) {
-    return getThumbnailFromValue(source.thumbnails) || undefined;
+  if ("avatar" in source && source.avatar) {
+    const thumb = getThumbnailFromValue(source.avatar);
+    if (thumb) {
+      return thumb;
+    }
   }
 
-  return getThumbnailUrl(channel) || undefined;
+  if ("thumbnails" in source && source.thumbnails) {
+    const thumb = getThumbnailFromValue(source.thumbnails);
+    if (thumb) {
+      return thumb;
+    }
+  }
+
+  if ("thumbnail" in source && source.thumbnail) {
+    const thumb = getThumbnailFromValue(source.thumbnail);
+    if (thumb) {
+      return thumb;
+    }
+  }
+
+  const directThumb = getThumbnailFromValue(source);
+  return directThumb || undefined;
 }
 
 export function getAuthorAvatarUrl(video: unknown): string | undefined {

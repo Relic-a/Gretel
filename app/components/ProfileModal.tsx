@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ChannelResult, Profile, UserSettings } from "../types";
 import { normalize } from "./video-utils";
@@ -17,6 +17,7 @@ type ProfileModalProps = {
   tagDraft: string;
   channelDraft: string;
   channelResults: ChannelResult[];
+  isSearchingChannels?: boolean;
   loading: boolean;
   loadingLabel: string;
   error: string;
@@ -70,10 +71,45 @@ export function ProfileModal(props: ProfileModalProps) {
     return list;
   }, [props.needsOpenRouterKey]);
   const [step, setStep] = useState(0);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const channelInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setStep((current) => Math.min(current, steps.length - 1));
   }, [steps.length]);
+
+  useEffect(() => {
+    if (props.channelResults.length > 0) {
+      setHighlightedIndex(0);
+    } else {
+      setHighlightedIndex(-1);
+    }
+  }, [props.channelResults]);
+
+  function handleChannelKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (props.channelResults.length === 0) {
+      return;
+    }
+
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setHighlightedIndex((prev) => (prev + 1) % props.channelResults.length);
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setHighlightedIndex((prev) => (prev <= 0 ? props.channelResults.length - 1 : prev - 1));
+    } else if (event.key === "Enter") {
+      if (highlightedIndex >= 0 && highlightedIndex < props.channelResults.length) {
+        event.preventDefault();
+        const selected = props.channelResults[highlightedIndex];
+        props.onAddChannel(selected.name);
+        setHighlightedIndex(-1);
+      }
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      props.onChannelDraftChange("");
+      setHighlightedIndex(-1);
+    }
+  }
 
   const activeStep = steps[Math.min(step, steps.length - 1)];
   const isLast = step === steps.length - 1;
@@ -219,33 +255,79 @@ export function ProfileModal(props: ProfileModalProps) {
               )}
 
               {activeStep.id === "channels" && (
-                <>
-                  <TagEditor
-                    label="Subscriptions"
-                    helperText="Search for a channel, then click it to add it."
-                    values={props.channels}
-                    draft={props.channelDraft}
-                    setDraft={props.onChannelDraftChange}
-                    addValue={props.onAddChannel}
-                    removeValue={props.onRemoveChannel}
-                    placeholder="Search channel"
-                  />
-                  {props.channelResults.length > 0 && (
-                    <div className="channel-results">
-                      {props.channelResults.map((channel) => (
-                        <button
-                          type="button"
-                          key={channel.id}
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={() => props.onAddChannel(channel.name)}
-                        >
-                          {channel.thumbnailUrl && <img src={channel.thumbnailUrl} alt="" />}
-                          <span>{channel.name}</span>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </>
+                <TagEditor
+                  label="Subscriptions"
+                  helperText="Search for a channel, then click it to add it."
+                  values={props.channels}
+                  draft={props.channelDraft}
+                  setDraft={props.onChannelDraftChange}
+                  addValue={props.onAddChannel}
+                  removeValue={props.onRemoveChannel}
+                  placeholder="Search channel"
+                  inputRef={channelInputRef}
+                  onKeyDown={handleChannelKeyDown}
+                  dropdown={
+                    props.channelDraft.trim().length >= 2 ? (
+                      <div className="channel-results-popup" role="listbox" aria-label="Channel search results">
+                        {props.channelResults.length > 0 ? (
+                          props.channelResults.map((channel, index) => {
+                            const isHighlighted = highlightedIndex === index;
+                            const isAdded = props.channels.some(
+                              (c) => normalize(c) === normalize(channel.name)
+                            );
+                            return (
+                              <button
+                                type="button"
+                                key={channel.id}
+                                className={`channel-popup-item ${isHighlighted ? "highlighted" : ""} ${isAdded ? "added" : ""}`}
+                                role="option"
+                                aria-selected={isHighlighted}
+                                onMouseEnter={() => setHighlightedIndex(index)}
+                                onMouseDown={(event) => event.preventDefault()}
+                                onClick={() => {
+                                  props.onAddChannel(channel.name);
+                                  setHighlightedIndex(-1);
+                                  channelInputRef.current?.focus();
+                                }}
+                              >
+                                {channel.thumbnailUrl ? (
+                                  <img
+                                    src={channel.thumbnailUrl}
+                                    alt=""
+                                    onError={(event) => {
+                                      event.currentTarget.style.display = "none";
+                                      const next = event.currentTarget.nextElementSibling;
+                                      if (next instanceof HTMLElement && next.classList.contains("channel-avatar-fallback")) {
+                                        next.style.display = "flex";
+                                      }
+                                    }}
+                                  />
+                                ) : null}
+                                <span
+                                  className="channel-avatar-fallback"
+                                  style={{ display: channel.thumbnailUrl ? "none" : "flex" }}
+                                  aria-hidden="true"
+                                >
+                                  {channel.name.trim().charAt(0).toUpperCase()}
+                                </span>
+                                <span className="channel-popup-name">{channel.name}</span>
+                              </button>
+                            );
+                          })
+                        ) : props.isSearchingChannels ? (
+                          <div className="channel-popup-status">
+                            <span className="channel-popup-spinner" />
+                            <span>Searching YouTube channels...</span>
+                          </div>
+                        ) : (
+                          <div className="channel-popup-status empty">
+                            <span>No channels found for &ldquo;{props.channelDraft.trim()}&rdquo;</span>
+                          </div>
+                        )}
+                      </div>
+                    ) : null
+                  }
+                />
               )}
 
               {activeStep.id === "key" && (

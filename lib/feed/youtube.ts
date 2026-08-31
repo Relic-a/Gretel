@@ -22,7 +22,7 @@ import {
   getText,
   getTitle
 } from "./video-utils";
-import { rememberChannelAvatar, resolveMissingChannelAvatars } from "./channel-avatar-cache";
+import { rememberChannelAvatar, resolveMissingChannelAvatars, getChannelAvatar } from "./channel-avatar-cache";
 
 export async function searchVideos(
   queries: string[],
@@ -290,27 +290,171 @@ export async function fetchChannelVideos(
   );
 }
 
-export async function searchChannels(query: string, profileId: string) {
-  const youtube = await getYoutubeClient(profileId);
-  const results = await youtube.search(query, { type: "channel" });
-  let channels = channelsFromSearchResults(results.channels);
+export type ChannelSearchResult = {
+  id: string;
+  name: string;
+  thumbnailUrl: string;
+};
 
-  if (channels.length === 0) {
-    const suggestions = await youtube.getSearchSuggestions(query);
-    const suggestion = suggestions.find((item) => normalizeSearch(item) !== normalizeSearch(query));
+type SearchCacheEntry = {
+  channels: ChannelSearchResult[];
+  timestamp: number;
+};
 
-    if (suggestion) {
-      const suggestedResults = await youtube.search(suggestion, { type: "channel" });
-      channels = channelsFromSearchResults(suggestedResults.channels);
+const channelSearchCache = new Map<string, SearchCacheEntry>();
+const inFlightChannelSearches = new Map<string, Promise<ChannelSearchResult[]>>();
+const CHANNEL_SEARCH_CACHE_TTL_MS = 10 * 60 * 1000;
+const MAX_SEARCH_CACHE_ENTRIES = 300;
+
+export function clearChannelSearchCache() {
+  channelSearchCache.clear();
+  inFlightChannelSearches.clear();
+}
+
+function getCachedChannelSearch(queryKey: string): ChannelSearchResult[] | undefined {
+  const entry = channelSearchCache.get(queryKey);
+  if (!entry) {
+    return undefined;
+  }
+  if (Date.now() - entry.timestamp > CHANNEL_SEARCH_CACHE_TTL_MS) {
+    channelSearchCache.delete(queryKey);
+    return undefined;
+  }
+  channelSearchCache.delete(queryKey);
+  channelSearchCache.set(queryKey, entry);
+  return entry.channels;
+}
+
+function setCachedChannelSearch(queryKey: string, channels: ChannelSearchResult[]) {
+  if (channelSearchCache.size >= MAX_SEARCH_CACHE_ENTRIES) {
+    const oldestKey = channelSearchCache.keys().next().value;
+    if (oldestKey) {
+      channelSearchCache.delete(oldestKey);
     }
   }
+  channelSearchCache.set(queryKey, {
+    channels,
+    timestamp: Date.now()
+  });
+}
 
-  if (channels.length === 0) {
-    const videoResults = await youtube.search(query);
-    channels = channelsFromVideoResults(videoResults.videos || []);
+export async function searchChannels(query: string, profileId: string): Promise<ChannelSearchResult[]> {
+  const trimmed = query.trim();
+  const normalized = normalizeSearch(trimmed);
+  if (normalized.length < 2) {
+    return [];
   }
 
-  return channels.slice(0, 8);
+  const cacheKey = `${profileId}:${normalized}`;
+  const wildcardKey = `*:${normalized}`;
+  const cached =
+    getCachedChannelSearch(normalized) ||
+    getCachedChannelSearch(cacheKey) ||
+    getCachedChannelSearch(wildcardKey);
+  if (cached) {
+    return cached;
+  }
+
+  // Deduplicate in-flight concurrent requests for the exact same query
+  const inFlightKey = normalized;
+  const activePromise = inFlightChannelSearches.get(inFlightKey);
+  if (activePromise) {
+    return activePromise;
+  }
+
+  const searchExecution = (async (): Promise<ChannelSearchResult[]> => {
+    const directId = getChannelIdFromInput(trimmed);
+    const cleanedSearchQuery = trimmed.replace(/^@+/, "").trim();
+    const youtube = await getYoutubeClient(profileId);
+
+    if (directId) {
+      try {
+        const channel = await youtube.getChannel(directId);
+        const name =
+          getChannelName(channel) ||
+          (channel && typeof channel === "object" && "metadata" in channel && channel.metadata && typeof channel.metadata === "object" && "title" in channel.metadata
+            ? getText(channel.metadata.title)
+            : "");
+        let avatarUrl =
+          getChannelAvatarUrl(channel) ||
+          getAuthorAvatarUrl(channel) ||
+          getChannelAvatar(directId) ||
+          "";
+        if (avatarUrl.startsWith("//")) {
+          avatarUrl = `https:${avatarUrl}`;
+        }
+        if (name) {
+          const directResults: ChannelSearchResult[] = [{ id: directId, name, thumbnailUrl: avatarUrl }];
+          if (avatarUrl) {
+            rememberChannelAvatar(directId, avatarUrl);
+            rememberChannelAvatar(name, avatarUrl);
+          }
+          setCachedChannelSearch(cacheKey, directResults);
+          setCachedChannelSearch(normalized, directResults);
+          return directResults;
+        }
+      } catch {
+        // Fall through to standard search
+      }
+    }
+
+    let channels: ChannelSearchResult[] = [];
+
+    try {
+      const results = await youtube.search(cleanedSearchQuery, { type: "channel" });
+      channels = channelsFromSearchResults(results.channels);
+    } catch (error) {
+      logWarn("youtube.channel_search_error", { query: trimmed, ...errorFields(error) });
+    }
+
+    if (channels.length === 0) {
+      try {
+        const suggestionsPromise = youtube.getSearchSuggestions(cleanedSearchQuery).catch(() => []);
+        const videoSearchPromise = youtube.search(cleanedSearchQuery).catch(() => ({ videos: [] }));
+
+        const [suggestions, videoResults] = await Promise.all([
+          suggestionsPromise,
+          videoSearchPromise
+        ]);
+
+        const suggestion = (suggestions as string[]).find(
+          (item: string) => normalizeSearch(item) !== normalized
+        );
+
+        if (suggestion) {
+          try {
+            const suggestedResults = await youtube.search(suggestion, { type: "channel" });
+            channels = channelsFromSearchResults(suggestedResults.channels);
+          } catch {}
+        }
+
+        if (channels.length === 0 && videoResults && "videos" in videoResults && Array.isArray(videoResults.videos)) {
+          channels = channelsFromVideoResults(videoResults.videos);
+        }
+      } catch (error) {
+        logWarn("youtube.channel_fallback_search_error", { query: trimmed, ...errorFields(error) });
+      }
+    }
+
+    const finalChannels = channels.slice(0, 8);
+    for (const ch of finalChannels) {
+      if (ch.thumbnailUrl) {
+        rememberChannelAvatar(ch.id, ch.thumbnailUrl);
+        rememberChannelAvatar(ch.name, ch.thumbnailUrl);
+      }
+    }
+
+    setCachedChannelSearch(cacheKey, finalChannels);
+    setCachedChannelSearch(normalized, finalChannels);
+    return finalChannels;
+  })();
+
+  inFlightChannelSearches.set(inFlightKey, searchExecution);
+  try {
+    return await searchExecution;
+  } finally {
+    inFlightChannelSearches.delete(inFlightKey);
+  }
 }
 
 async function resolveChannelId(
@@ -354,7 +498,7 @@ async function resolveChannelId(
   );
 }
 
-function channelsFromSearchResults(channels: unknown[] = []) {
+function channelsFromSearchResults(channels: unknown[] = []): ChannelSearchResult[] {
   return channels.flatMap((channel) => {
     const id = getChannelId(channel);
     const name = getChannelName(channel);
@@ -363,17 +507,28 @@ function channelsFromSearchResults(channels: unknown[] = []) {
       return [];
     }
 
+    let thumbnailUrl =
+      getChannelAvatarUrl(channel) ||
+      getAuthorAvatarUrl(channel) ||
+      getChannelAvatar(id) ||
+      getChannelAvatar(name) ||
+      "";
+
+    if (thumbnailUrl.startsWith("//")) {
+      thumbnailUrl = `https:${thumbnailUrl}`;
+    }
+
     return [{
       id,
       name,
-      thumbnailUrl: getThumbnailUrl(channel)
+      thumbnailUrl
     }];
   });
 }
 
-function channelsFromVideoResults(videos: unknown[]) {
+function channelsFromVideoResults(videos: unknown[]): ChannelSearchResult[] {
   const seen = new Set<string>();
-  const channels: Array<{ id: string; name: string; thumbnailUrl: string }> = [];
+  const channels: ChannelSearchResult[] = [];
 
   for (const video of videos) {
     const author = video && typeof video === "object" && "author" in video ? video.author : null;
@@ -390,10 +545,22 @@ function channelsFromVideoResults(videos: unknown[]) {
     }
 
     seen.add(id);
+    let thumbnailUrl =
+      getAuthorAvatarUrl(video) ||
+      getChannelAvatarUrl(author) ||
+      getAuthorAvatarUrl(author) ||
+      getChannelAvatar(id) ||
+      getChannelAvatar(name) ||
+      "";
+
+    if (thumbnailUrl.startsWith("//")) {
+      thumbnailUrl = `https:${thumbnailUrl}`;
+    }
+
     channels.push({
       id,
       name,
-      thumbnailUrl: getThumbnailUrl(author)
+      thumbnailUrl
     });
   }
 
@@ -401,7 +568,7 @@ function channelsFromVideoResults(videos: unknown[]) {
 }
 
 function normalizeSearch(value: string) {
-  return value.replace(/\s+/g, " ").trim().toLowerCase();
+  return value.replace(/^@+/, "").replace(/\s+/g, " ").trim().toLowerCase();
 }
 
 function getChannelName(channel: unknown) {
