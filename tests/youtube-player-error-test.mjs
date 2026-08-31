@@ -4,10 +4,11 @@ import { createRequire } from "node:module";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { after, test } from "node:test";
+import { pathToFileURL } from "node:url";
 
 const root = process.cwd();
 const buildDir = path.join(root, ".tmp", "youtube-player-error-test");
-const nextConfig = (await import(path.join(root, "next.config.mjs"))).default;
+const nextConfig = (await import(pathToFileURL(path.join(root, "next.config.mjs")).href)).default;
 
 rmSync(buildDir, { force: true, recursive: true });
 mkdirSync(buildDir, { recursive: true });
