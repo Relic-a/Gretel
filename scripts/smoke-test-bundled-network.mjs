@@ -7,12 +7,12 @@ import { fileURLToPath } from "node:url";
 const concurrency = 13;
 const expectedStatus = 401;
 const attempts = 2;
-const requiredNodeMajor = 24;
+const minNodeMajor = 24;
 
 const nodeMajor = Number.parseInt(process.versions.node.split(".")[0] || "", 10);
-if (nodeMajor !== requiredNodeMajor) {
+if (nodeMajor < minNodeMajor) {
   console.error(
-    `Bundled Node runtime must be v${requiredNodeMajor}.x; received ${process.versions.node}.`
+    `Bundled Node runtime must be >= v${minNodeMajor}; received ${process.versions.node}.`
   );
   process.exit(1);
 }

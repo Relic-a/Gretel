@@ -2,7 +2,13 @@ import type React from "react";
 import type { FeedVideo } from "../types";
 
 export function thumbnailFor(video: FeedVideo) {
-  return video.thumbnailUrl || (video.id ? `https://i.ytimg.com/vi/${video.id}/maxresdefault.jpg` : "");
+  if (video.thumbnailCacheUrl) {
+    return video.thumbnailCacheUrl;
+  }
+  if (video.id) {
+    return `/api/thumbnails/${video.id}`;
+  }
+  return video.thumbnailUrl || "";
 }
 
 export function handleThumbnailError(
@@ -11,13 +17,15 @@ export function handleThumbnailError(
 ) {
   const img = event.currentTarget;
   const currentSrc = img.src || "";
-  const id = videoId || currentSrc.match(/\/vi(?:_webp)?\/([a-zA-Z0-9_-]+)\//)?.[1];
+  const id = videoId || currentSrc.match(/(?:\/api\/thumbnails(?:\/[^/]+)?\/|\/vi(?:_webp)?\/)([a-zA-Z0-9_-]+)/)?.[1];
 
   if (!id) {
     return;
   }
 
-  if (currentSrc.includes("maxresdefault")) {
+  if (currentSrc.includes("/api/thumbnails/")) {
+    img.src = `https://i.ytimg.com/vi/${id}/hq720.jpg`;
+  } else if (currentSrc.includes("maxresdefault")) {
     img.src = `https://i.ytimg.com/vi/${id}/hq720.jpg`;
   } else if (currentSrc.includes("hq720")) {
     img.src = `https://i.ytimg.com/vi/${id}/sddefault.jpg`;
@@ -25,8 +33,6 @@ export function handleThumbnailError(
     img.src = `https://i.ytimg.com/vi/${id}/hqdefault.jpg`;
   } else if (currentSrc.includes("hqdefault")) {
     img.src = `https://i.ytimg.com/vi/${id}/mqdefault.jpg`;
-  } else if (!currentSrc.includes("mqdefault")) {
-    img.src = `https://i.ytimg.com/vi/${id}/hq720.jpg`;
   }
 }
 

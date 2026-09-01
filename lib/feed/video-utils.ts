@@ -305,52 +305,62 @@ function getMetadataTexts(video: unknown) {
   });
 }
 
-type ThumbnailCandidate = {
+export type ThumbnailCandidate = {
   url: string;
   width?: number;
   height?: number;
 };
 
-function scoreThumbnailCandidate(candidate: ThumbnailCandidate): number {
+export const QUALITY_FLOOR_WIDTH = 700;
+
+export function estimateThumbnailWidth(candidate: ThumbnailCandidate): number {
   const rawUrl = candidate.url;
   if (!rawUrl) {
     return 0;
   }
 
   if (rawUrl.includes("an_webp") || rawUrl.includes("mqdefault_6s.webp") || rawUrl.includes("_6s.webp")) {
-    return 1;
+    return 0;
   }
 
   const width = typeof candidate.width === "number" && Number.isFinite(candidate.width) ? candidate.width : 0;
   const height = typeof candidate.height === "number" && Number.isFinite(candidate.height) ? candidate.height : 0;
 
-  if (width > 0 && height > 0) {
-    return width * height;
-  }
-
   if (width > 0) {
-    return width * width;
+    return width;
   }
 
-  if (rawUrl.includes("maxresdefault")) return 1920 * 1080;
-  if (rawUrl.includes("hq720")) return 1280 * 720;
-  if (rawUrl.includes("sddefault")) return 640 * 480;
-  if (rawUrl.includes("hqdefault")) return 480 * 360;
-  if (rawUrl.includes("mqdefault")) return 320 * 180;
-  if (rawUrl.includes("default")) return 120 * 90;
+  if (height > 0) {
+    return Math.round((height * 16) / 9);
+  }
+
+  if (rawUrl.includes("maxresdefault")) return 1920;
+  if (rawUrl.includes("hq720")) return 1280;
+  if (rawUrl.includes("sddefault")) return 640;
+  if (rawUrl.includes("hqdefault")) return 480;
+  if (rawUrl.includes("mqdefault")) return 320;
+  if (rawUrl.includes("default.jpg") || rawUrl.endsWith("/default.jpg")) return 120;
+
+  const wMatch = rawUrl.match(/[=/-]w(\d+)/);
+  if (wMatch) {
+    const w = parseInt(wMatch[1], 10);
+    if (!Number.isNaN(w) && w > 0) {
+      return w;
+    }
+  }
 
   const sMatch = rawUrl.match(/=s(\d+)/);
   if (sMatch) {
     const s = parseInt(sMatch[1], 10);
     if (!Number.isNaN(s) && s > 0) {
-      return s * s;
+      return s;
     }
   }
 
-  return 10;
+  return 0;
 }
 
-function collectThumbnailCandidates(value: unknown, collected: ThumbnailCandidate[] = []): ThumbnailCandidate[] {
+export function collectThumbnailCandidates(value: unknown, collected: ThumbnailCandidate[] = []): ThumbnailCandidate[] {
   if (!value) {
     return collected;
   }
@@ -392,75 +402,110 @@ function collectThumbnailCandidates(value: unknown, collected: ThumbnailCandidat
   return collected;
 }
 
-function getThumbnailFromValue(value: unknown): string {
-  const candidates = collectThumbnailCandidates(value);
-  if (candidates.length === 0) {
-    return "";
-  }
+export type CandidateSelectionResult = {
+  selectedUrl: string;
+  meetsQualityFloor: boolean;
+  width: number;
+  fallbackCandidates: string[];
+};
 
-  let best = candidates[0];
-  let bestScore = scoreThumbnailCandidate(best);
-
-  for (let i = 1; i < candidates.length; i += 1) {
-    const candidate = candidates[i];
-    const score = scoreThumbnailCandidate(candidate);
-    if (score > bestScore) {
-      best = candidate;
-      bestScore = score;
+export function selectThumbnailCandidate(candidates: ThumbnailCandidate[]): CandidateSelectionResult {
+  const validCandidates = candidates.filter((c) => {
+    if (!c || typeof c !== "object" || !c.url || typeof c.url !== "string") {
+      return false;
     }
+    const trimmed = c.url.trim();
+    if (!trimmed) return false;
+    if (trimmed.includes("an_webp") || trimmed.includes("mqdefault_6s.webp") || trimmed.includes("_6s.webp")) {
+      return false;
+    }
+    return true;
+  });
+
+  if (validCandidates.length === 0) {
+    return {
+      selectedUrl: "",
+      meetsQualityFloor: false,
+      width: 0,
+      fallbackCandidates: []
+    };
   }
 
-  return bestScore > 0 ? normalizeThumbnailUrl(best.url) : "";
+  const evaluated = validCandidates.map((c) => ({
+    url: normalizeThumbnailUrl(c.url.trim()),
+    width: estimateThumbnailWidth(c),
+    height: c.height
+  }));
+
+  const nonTiny = evaluated.filter((c) => c.width >= 300 || c.width === 0);
+  const pool = nonTiny.length > 0 ? nonTiny : evaluated;
+
+  const highQuality = pool.filter((c) => c.width >= QUALITY_FLOOR_WIDTH);
+
+  if (highQuality.length > 0) {
+    highQuality.sort((a, b) => a.width - b.width);
+    const chosen = highQuality[0];
+    return {
+      selectedUrl: chosen.url,
+      meetsQualityFloor: true,
+      width: chosen.width,
+      fallbackCandidates: []
+    };
+  }
+
+  pool.sort((a, b) => b.width - a.width);
+  const bestFallback = pool[0];
+  const fallbackCandidates = [...new Set(pool.map((c) => c.url))];
+
+  return {
+    selectedUrl: bestFallback ? bestFallback.url : "",
+    meetsQualityFloor: false,
+    width: bestFallback ? bestFallback.width : 0,
+    fallbackCandidates
+  };
 }
 
-export function getThumbnailUrl(video: unknown, explicitId?: string) {
+export function getThumbnailUrl(video: unknown, explicitId?: string): string {
   const id = explicitId || getVideoId(video);
-  const direct = getThumbnailFromValue(video);
+  const candidates = collectThumbnailCandidates(video);
+  const selection = selectThumbnailCandidate(candidates);
 
-  if (direct) {
-    const isHighRes =
-      direct.includes("maxresdefault") ||
-      direct.includes("hq720") ||
-      direct.includes("sddefault");
-
-    if (isHighRes) {
-      return direct;
-    }
-  }
-
-  if (video && typeof video === "object" && "content_image" in video) {
-    const contentThumb = getThumbnailFromValue(video.content_image);
-    if (contentThumb) {
-      const isHighRes =
-        contentThumb.includes("maxresdefault") ||
-        contentThumb.includes("hq720") ||
-        contentThumb.includes("sddefault");
-
-      if (isHighRes) {
-        return contentThumb;
-      }
-    }
-  }
-
-  if (video && typeof video === "object" && "metadata" in video) {
-    const metaThumb = getThumbnailFromValue(video.metadata);
-    if (metaThumb) {
-      const isHighRes =
-        metaThumb.includes("maxresdefault") ||
-        metaThumb.includes("hq720") ||
-        metaThumb.includes("sddefault");
-
-      if (isHighRes) {
-        return metaThumb;
-      }
-    }
+  if (selection.selectedUrl) {
+    return selection.selectedUrl;
   }
 
   if (id) {
-    return `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`;
+    return `https://i.ytimg.com/vi/${id}/hq720.jpg`;
   }
 
-  return direct || "";
+  return "";
+}
+
+function getAvatarUrlFromValue(value: unknown): string {
+  const candidates = collectThumbnailCandidates(value);
+  const valid = candidates.filter((c) => {
+    if (!c || !c.url || typeof c.url !== "string") return false;
+    const trimmed = c.url.trim();
+    return Boolean(trimmed && !trimmed.includes("an_webp") && !trimmed.includes("_6s.webp"));
+  });
+
+  if (valid.length === 0) {
+    return "";
+  }
+
+  let best = valid[0];
+  let bestSize = estimateThumbnailWidth(best);
+
+  for (let i = 1; i < valid.length; i += 1) {
+    const candidate = valid[i];
+    const size = estimateThumbnailWidth(candidate);
+    if (size > bestSize) {
+      best = candidate;
+      bestSize = size;
+    }
+  }
+
+  return normalizeThumbnailUrl(best.url);
 }
 
 export function getChannelAvatarUrl(channel: unknown): string | undefined {
@@ -479,7 +524,7 @@ export function getChannelAvatarUrl(channel: unknown): string | undefined {
 
   const metadata = source.metadata;
   if (metadata && typeof metadata === "object" && "avatar" in metadata) {
-    const thumb = getThumbnailFromValue((metadata as Record<string, unknown>).avatar);
+    const thumb = getAvatarUrlFromValue((metadata as Record<string, unknown>).avatar);
     if (thumb) {
       return thumb;
     }
@@ -495,13 +540,13 @@ export function getChannelAvatarUrl(channel: unknown): string | undefined {
       }
     }
     if ("avatar" in headerSource && headerSource.avatar) {
-      const thumb = getThumbnailFromValue(headerSource.avatar);
+      const thumb = getAvatarUrlFromValue(headerSource.avatar);
       if (thumb) {
         return thumb;
       }
     }
     if ("thumbnails" in headerSource && headerSource.thumbnails) {
-      const thumb = getThumbnailFromValue(headerSource.thumbnails);
+      const thumb = getAvatarUrlFromValue(headerSource.thumbnails);
       if (thumb) {
         return thumb;
       }
@@ -509,27 +554,27 @@ export function getChannelAvatarUrl(channel: unknown): string | undefined {
   }
 
   if ("avatar" in source && source.avatar) {
-    const thumb = getThumbnailFromValue(source.avatar);
+    const thumb = getAvatarUrlFromValue(source.avatar);
     if (thumb) {
       return thumb;
     }
   }
 
   if ("thumbnails" in source && source.thumbnails) {
-    const thumb = getThumbnailFromValue(source.thumbnails);
+    const thumb = getAvatarUrlFromValue(source.thumbnails);
     if (thumb) {
       return thumb;
     }
   }
 
   if ("thumbnail" in source && source.thumbnail) {
-    const thumb = getThumbnailFromValue(source.thumbnail);
+    const thumb = getAvatarUrlFromValue(source.thumbnail);
     if (thumb) {
       return thumb;
     }
   }
 
-  const directThumb = getThumbnailFromValue(source);
+  const directThumb = getAvatarUrlFromValue(source);
   return directThumb || undefined;
 }
 
@@ -547,20 +592,20 @@ export function getAuthorAvatarUrl(video: unknown): string | undefined {
   const source = author as Record<string, unknown>;
 
   if ("thumbnails" in source && source.thumbnails) {
-    const thumb = getThumbnailFromValue(source.thumbnails);
+    const thumb = getAvatarUrlFromValue(source.thumbnails);
     if (thumb) {
       return thumb;
     }
   }
 
   if ("avatar" in source && source.avatar) {
-    const thumb = getThumbnailFromValue(source.avatar);
+    const thumb = getAvatarUrlFromValue(source.avatar);
     if (thumb) {
       return thumb;
     }
   }
 
-  const fallback = getThumbnailFromValue(author);
+  const fallback = getAvatarUrlFromValue(author);
   return fallback || undefined;
 }
 

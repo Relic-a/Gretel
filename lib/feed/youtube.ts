@@ -72,15 +72,19 @@ export async function searchVideos(
           seen.add(id);
           const author = getAuthor(video);
           const channelId = getAuthorChannelId(video);
+          const authorAvatarUrl = getAuthorAvatarUrl(video);
+          if (authorAvatarUrl) {
+            rememberChannelAvatar({ channelId, channelName: author }, authorAvatarUrl);
+          }
           queryVideos.push({
             id,
             title,
             author,
-            channelAvatarUrl: getAuthorAvatarUrl(video),
+            channelAvatarUrl: authorAvatarUrl,
             duration,
             query,
-            thumbnailUrl: getThumbnailUrl(video, id) || `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
-            thumbnailCacheUrl: `/api/thumbnails/${profileId}/${id}`,
+            thumbnailUrl: getThumbnailUrl(video, id),
+            thumbnailCacheUrl: `/api/thumbnails/${id}`,
             publishedText: getPublishedText(video),
             publishedAt: getPublishedAt(video),
             viewCount: getViewCount(video),
@@ -224,9 +228,10 @@ export async function fetchChannelVideos(
           continue;
         }
 
-        rememberChannelAvatar(channelKey, channelAvatarUrl || undefined);
-        rememberChannelAvatar(channelId, channelAvatarUrl);
-        rememberChannelAvatar(channelNameFromPayload || undefined, channelAvatarUrl || undefined);
+        rememberChannelAvatar({ channelId, channelName: channelKey }, channelAvatarUrl);
+        if (channelNameFromPayload) {
+          rememberChannelAvatar({ channelId, channelName: channelNameFromPayload }, channelAvatarUrl);
+        }
 
         const channelVideos: FeedVideo[] = [];
 
@@ -241,8 +246,11 @@ export async function fetchChannelVideos(
           seen.add(id);
           const author = getChannelVideoAuthor(video, channelName);
           const authorChannelKey = normalizeChannelKey(author) || channelKey;
+          const authorChannelId = getAuthorChannelId(video) || channelId;
           const authorAvatarUrl = getAuthorAvatarUrl(video) || channelAvatarUrl || undefined;
-          rememberChannelAvatar(authorChannelKey, authorAvatarUrl);
+          if (authorAvatarUrl) {
+            rememberChannelAvatar({ channelId: authorChannelId, channelName: authorChannelKey }, authorAvatarUrl);
+          }
           channelVideos.push({
             id,
             title: getTitle(video),
@@ -250,13 +258,13 @@ export async function fetchChannelVideos(
             channelAvatarUrl: authorAvatarUrl,
             duration,
             query: channelName,
-            thumbnailUrl: getThumbnailUrl(video, id) || `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
-            thumbnailCacheUrl: `/api/thumbnails/${profileId}/${id}`,
+            thumbnailUrl: getThumbnailUrl(video, id),
+            thumbnailCacheUrl: `/api/thumbnails/${id}`,
             publishedText: getPublishedText(video),
             publishedAt: getPublishedAt(video),
             viewCount: getViewCount(video),
             channelKey: authorChannelKey,
-            channelId: getAuthorChannelId(video) || channelId
+            channelId: authorChannelId
           });
 
           if (channelVideos.length >= perChannelLimit) {
@@ -386,8 +394,7 @@ export async function searchChannels(query: string, profileId: string): Promise<
         if (name) {
           const directResults: ChannelSearchResult[] = [{ id: directId, name, thumbnailUrl: avatarUrl }];
           if (avatarUrl) {
-            rememberChannelAvatar(directId, avatarUrl);
-            rememberChannelAvatar(name, avatarUrl);
+            rememberChannelAvatar({ channelId: directId, channelName: name }, avatarUrl);
           }
           setCachedChannelSearch(cacheKey, directResults);
           setCachedChannelSearch(normalized, directResults);
@@ -439,8 +446,7 @@ export async function searchChannels(query: string, profileId: string): Promise<
     const finalChannels = channels.slice(0, 8);
     for (const ch of finalChannels) {
       if (ch.thumbnailUrl) {
-        rememberChannelAvatar(ch.id, ch.thumbnailUrl);
-        rememberChannelAvatar(ch.name, ch.thumbnailUrl);
+        rememberChannelAvatar({ channelId: ch.id, channelName: ch.name }, ch.thumbnailUrl);
       }
     }
 

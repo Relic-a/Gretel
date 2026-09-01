@@ -1630,7 +1630,7 @@ test("getThumbnailUrl selects the highest resolution thumbnail and ignores low-r
     "https://i.ytimg.com/vi/test-lockup-1/hq720.jpg?sqp=high"
   );
 
-  // 3. Fallback to maxresdefault when only low-res thumbnail is provided in payload
+  // 3. Keeps best real static candidate when only low-res thumbnail is provided in payload
   const videoWithLowResOnly = {
     id: "test-low-res-1",
     thumbnails: [
@@ -1639,7 +1639,7 @@ test("getThumbnailUrl selects the highest resolution thumbnail and ignores low-r
   };
   assert.equal(
     getThumbnailUrl(videoWithLowResOnly),
-    "https://i.ytimg.com/vi/test-low-res-1/maxresdefault.jpg"
+    "https://i.ytimg.com/vi/test-low-res-1/hqdefault.jpg"
   );
 
   // 4. Author avatar resolution selection

@@ -18,7 +18,7 @@ import {
   shouldKeepVideo
 } from "./video-utils";
 import { getYoutubeClient } from "./youtube-client";
-import { resolveMissingChannelAvatars } from "./channel-avatar-cache";
+import { rememberChannelAvatar, resolveMissingChannelAvatars } from "./channel-avatar-cache";
 
 export async function recommendVideosFromSeeds(
   sourceVideos: FeedVideo[],
@@ -131,15 +131,19 @@ async function recommendVideosFromLinks(
           seen.add(id);
           const author = getAuthor(video);
           const channelId = getAuthorChannelId(video);
+          const authorAvatarUrl = getAuthorAvatarUrl(video);
+          if (authorAvatarUrl) {
+            rememberChannelAvatar({ channelId, channelName: author }, authorAvatarUrl);
+          }
           recommendations.push({
             id,
             title: getTitle(video),
             author,
-            channelAvatarUrl: getAuthorAvatarUrl(video),
+            channelAvatarUrl: authorAvatarUrl,
             duration,
             query: sourceLabel,
-            thumbnailUrl: getThumbnailUrl(video, id) || `https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,
-            thumbnailCacheUrl: `/api/thumbnails/${profileId}/${id}`,
+            thumbnailUrl: getThumbnailUrl(video, id),
+            thumbnailCacheUrl: `/api/thumbnails/${id}`,
             publishedText: getPublishedText(video),
             publishedAt: getPublishedAt(video),
             viewCount: getViewCount(video),

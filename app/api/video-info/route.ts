@@ -38,7 +38,7 @@ export async function GET(request: Request) {
     const source = pickSourceNode(info, videoId);
     const author = getAuthor(source);
     const duration = getDuration(source) || durationFromNode(source) || durationFromInfo(info);
-    const thumbnailUrl = getThumbnailUrl(source, videoId) || `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+    const thumbnailUrl = getThumbnailUrl(source, videoId);
 
     const channelId = getAuthorChannelId(source);
     const [video]: FeedVideo[] = await resolveMissingChannelAvatars([{
@@ -49,7 +49,7 @@ export async function GET(request: Request) {
       query: "Watch",
       channelAvatarUrl: getAuthorAvatarUrl(source),
       thumbnailUrl,
-      thumbnailCacheUrl: `/api/thumbnails/${profileId}/${videoId}`,
+      thumbnailCacheUrl: `/api/thumbnails/${videoId}`,
       publishedText: getPublishedText(source),
       publishedAt: getPublishedAt(source),
       viewCount: getViewCount(source),

@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.4.1 — 2026-08-31
+
+### Image reliability
+
+- Added persistent, atomic thumbnail caching with high-resolution discovery and graceful fallback to real lower-resolution images.
+- Improved channel-avatar caching and reuse across searches, recommendations, and feed results.
+- Added regression coverage for thumbnail selection, cache behavior, route compatibility, and avatar resolution.
+
+### Compatibility
+
+- Allowed supported Node.js releases newer than version 24 while retaining Node.js 24 as the minimum.
+
 ## 0.4.1-beta.2 — 2026-08-31
 
 ### Playback reliability
