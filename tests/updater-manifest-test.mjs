@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 const directory = mkdtempSync(join(tmpdir(), "gretel-updater-manifest-"));
 
@@ -20,7 +21,7 @@ try {
 
   const output = join(directory, "latest.json");
   execFileSync(process.execPath, [
-    new URL("../scripts/create-updater-manifest.mjs", import.meta.url).pathname,
+    fileURLToPath(new URL("../scripts/create-updater-manifest.mjs", import.meta.url)),
     directory,
     "v0.4.2",
     "Relic-a/Gretel",
