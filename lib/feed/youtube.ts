@@ -28,7 +28,8 @@ export async function searchVideos(
   queries: string[],
   observation: FeedObservation,
   profileId: string,
-  maxVideos = getGretelConfig().feed.maxVideos
+  maxVideos = getGretelConfig().feed.maxVideos,
+  options: { resolveAvatars?: boolean } = {}
 ) {
   return observeOperation(
     observation,
@@ -111,10 +112,18 @@ export async function searchVideos(
       }
 
       const mixed = mixVideoBuckets(videosByQuery, maxVideos);
-      const videos = await resolveMissingChannelAvatars(mixed, async (channelId) => {
-        const channel = await youtube.getChannel(channelId);
-        return getChannelAvatarUrl(channel);
-      });
+      const shouldResolveAvatars = options.resolveAvatars ?? true;
+      const videos = shouldResolveAvatars
+        ? await resolveMissingChannelAvatars(mixed, async (channelId) => {
+            const channel = await Promise.race([
+              youtube.getChannel(channelId),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error("Channel avatar fetch timeout")), 1500)
+              )
+            ]).catch(() => undefined);
+            return channel ? getChannelAvatarUrl(channel) : undefined;
+          })
+        : mixed;
 
       return {
         value: videos,

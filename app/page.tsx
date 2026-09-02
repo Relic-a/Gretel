@@ -64,6 +64,8 @@ export default function Home() {
   const [channelResults, setChannelResults] = useState<ChannelResult[]>([]);
   const [isSearchingChannels, setIsSearchingChannels] = useState(false);
   const channelSearchCacheRef = useRef<Map<string, ChannelResult[]>>(new Map());
+  const videoSearchCacheRef = useRef<Map<string, FeedVideo[]>>(new Map());
+  const searchRequestIdRef = useRef(0);
   const [feed, setFeed] = useState<FeedResponse | null>(null);
   const [config, setConfig] = useState<PublicGretelConfig | null>(null);
   const [section, setSection] = useState<Section>("home");
@@ -965,7 +967,8 @@ export default function Home() {
     setActiveVideo(null);
     writeRoute("home");
     setFeedEnd(false);
-    await requestFeed({ resetFeed: true });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    await requestFeed({ resetFeed: true, buildIfMissing: true });
   }, [profileId, searchQuery, searchResults, section, tags, channels, feed]);
 
   useEffect(() => {
@@ -983,6 +986,17 @@ export default function Home() {
   async function searchForVideos(query = searchQuery.trim()) {
     if (!profileId || query.length < 2) return;
 
+    const cacheKey = `${profileId}:${query.toLowerCase()}:${tags.slice().sort().join(",")}:${channels.slice().sort().join(",")}`;
+    const cached = videoSearchCacheRef.current.get(cacheKey);
+    if (cached) {
+      setError("");
+      setSearchResults(cached);
+      setActiveVideo(null);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
+
+    const currentRequestId = ++searchRequestIdRef.current;
     setError("");
     setSearching(true);
     setActiveVideo(null);
@@ -996,12 +1010,27 @@ export default function Home() {
       if (!response.ok) {
         throw new Error(data.error || "Could not search videos.");
       }
-      setSearchResults(data.videos || []);
+      if (currentRequestId !== searchRequestIdRef.current) {
+        return;
+      }
+      const videos = data.videos || [];
+      videoSearchCacheRef.current.set(cacheKey, videos);
+      setSearchResults(videos);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (caught) {
+      if (currentRequestId !== searchRequestIdRef.current) return;
       setError(caught instanceof Error ? caught.message : "Could not search videos.");
     } finally {
-      setSearching(false);
+      if (currentRequestId === searchRequestIdRef.current) {
+        setSearching(false);
+      }
+    }
+  }
+
+  function handleSearchQueryChange(value: string) {
+    setSearchQuery(value);
+    if (value.trim().length === 0 && searchResults !== null) {
+      setSearchResults(null);
     }
   }
 
@@ -1069,12 +1098,13 @@ export default function Home() {
         onHome={openHome}
         onSaved={openSaved}
         onHistory={openHistory}
-        onSearchQueryChange={setSearchQuery}
+        onSearchQueryChange={handleSearchQueryChange}
         onSearch={submitSearch}
         onRefresh={() => void refreshVideos()}
         onToggleProfileMenu={() => setShowProfileMenu(!showProfileMenu)}
         onSelectProfile={(nextProfileId) => {
           feedRequestIdRef.current += 1;
+          videoSearchCacheRef.current.clear();
           setLoading(false);
           setIsBuilding(false);
           setProfileId(nextProfileId);

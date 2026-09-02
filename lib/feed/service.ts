@@ -11,7 +11,11 @@ import {
 } from "./pool-store";
 import { getGretelConfig } from "./config";
 import { createEmbeddingInput, getEmbeddingProvider } from "./embeddings";
-import { createEmbeddingInputWithTranscript, fetchTranscriptIntroduction } from "./transcription";
+import {
+  createEmbeddingInputWithTranscript,
+  fetchTranscriptIntroduction,
+  getCachedTranscriptIntroduction
+} from "./transcription";
 import { applyEngagement } from "./engagement";
 import {
   createCandidatePoolFeed,
@@ -24,6 +28,7 @@ import {
 import { recommendVideosFromSeeds } from "./recommendations";
 import type { ChannelSort, FeedObservation, FeedVideo } from "./types";
 import { fetchChannelVideos, searchVideos } from "./youtube";
+import { getYoutubeClient } from "./youtube-client";
 import {
   beginProfileOperation,
   getProfile,
@@ -31,16 +36,18 @@ import {
   getVideoInteractions,
   getWatchedVideoIds
 } from "../profile-store";
-import { logInfo } from "../logger";
+import { errorFields, logInfo, logWarn } from "../logger";
 import { createFeedObservation, logFeedObservation, observeOperation } from "./observation";
 import {
   getCentroid,
   getRetainedEmbedding,
+  retainEmbedding,
   retainVideoEmbeddings,
   saveCentroid
 } from "./algorithm-store";
 import { averageNormalizedVectors, cosineSimilarity } from "./vector-math";
-import { hydrateChannelAvatars } from "./channel-avatar-cache";
+import { hydrateChannelAvatars, resolveMissingChannelAvatars } from "./channel-avatar-cache";
+import { getChannelAvatarUrl } from "./video-utils";
 
 export type CreateFeedOptions = {
   expectedProfileUpdatedAt?: number;
@@ -243,6 +250,28 @@ export function startFeedServingSession(
   return session.id;
 }
 
+type VideoSearchCacheEntry = {
+  videos: FeedVideo[];
+  timestamp: number;
+};
+
+const videoSearchCache = new Map<string, VideoSearchCacheEntry>();
+const inFlightVideoSearches = new Map<string, Promise<FeedVideo[]>>();
+const VIDEO_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const MAX_VIDEO_SEARCH_CACHE_ENTRIES = 100;
+
+export function clearVideoSearchCache(profileId?: string) {
+  if (!profileId) {
+    videoSearchCache.clear();
+    return;
+  }
+  for (const key of videoSearchCache.keys()) {
+    if (key.startsWith(`${profileId}:`)) {
+      videoSearchCache.delete(key);
+    }
+  }
+}
+
 export async function searchProfileVideos(
   profileId: string,
   query: string,
@@ -251,43 +280,136 @@ export async function searchProfileVideos(
   channelSort: ChannelSort,
   observation: FeedObservation
 ) {
-  const endProfileOperation = beginProfileOperation(profileId);
+  const normalizedQuery = query.toLowerCase().replace(/\s+/g, " ").trim();
+  const poolKey = createFeedPoolKey({ tags: createQueries(tags), channels, channelSort });
+  const cacheKey = `${profileId}:${poolKey}:${normalizedQuery}`;
 
-  try {
-    const config = getGretelConfig();
-    const poolKey = createFeedPoolKey({ tags: createQueries(tags), channels, channelSort });
-    const centroid = getCentroid(profileId, poolKey)?.current || [];
-    const candidates = await searchVideos(
-      [query],
-      observation,
-      profileId,
-      config.expansion.initialFetchSize
-    );
-    const embeddings = await embedVideos(profileId, candidates, observation, "user_search");
-    const scored = scoreByCentroid(candidates, embeddings, centroid, "tagSearch")
-      .filter((video) => centroid.length === 0 || (video.similarityScore || 0) >= config.feed.similarityThreshold)
-      .sort((left, right) => (right.similarityScore || 0) - (left.similarityScore || 0))
-      .slice(0, config.feed.maxVideos);
-
+  const cached = videoSearchCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp < VIDEO_SEARCH_CACHE_TTL_MS) {
     observation.operations.push({
-      name: "search.centroid_filter",
+      name: "search.cache_hit",
       durationMs: 0,
       status: "ok",
-      input: {
-        candidates: candidates.length,
-        embeddedCandidates: embeddings.size,
-        hasCentroid: centroid.length > 0,
-        concurrency: config.embeddings.maxConcurrentRequests
-      },
-      output: {
-        admittedVideos: scored.length,
-        filteredByCentroid: candidates.length - scored.length
-      }
+      input: { query: normalizedQuery, profileId },
+      output: { videos: cached.videos.length }
     });
+    return cached.videos;
+  }
 
-    return hydrateChannelAvatars(scored);
+  const existingInFlight = inFlightVideoSearches.get(cacheKey);
+  if (existingInFlight) {
+    return existingInFlight;
+  }
+
+  const searchExecution = (async () => {
+    const endProfileOperation = beginProfileOperation(profileId);
+
+    try {
+      const config = getGretelConfig();
+      const centroid = getCentroid(profileId, poolKey)?.current || [];
+      const candidateLimit = Math.max(config.feed.maxVideos, 24);
+
+      const candidates = await searchVideos(
+        [query],
+        observation,
+        profileId,
+        candidateLimit,
+        { resolveAvatars: false }
+      );
+
+      let admittedVideos: FeedVideo[];
+
+      if (centroid.length === 0) {
+        admittedVideos = candidates.slice(0, config.feed.maxVideos);
+        observation.operations.push({
+          name: "search.centroid_filter",
+          durationMs: 0,
+          status: "ok",
+          input: {
+            candidates: candidates.length,
+            hasCentroid: false
+          },
+          output: {
+            admittedVideos: admittedVideos.length,
+            filteredByCentroid: 0
+          }
+        });
+      } else {
+        const filterStartedAt = performance.now();
+        let embeddings = new Map<string, number[]>();
+        try {
+          embeddings = await embedVideos(profileId, candidates, observation, "user_search");
+        } catch (error) {
+          logWarn("search.embeddings_failed", { query, profileId, ...errorFields(error) });
+        }
+
+        const scored = scoreByCentroid(candidates, embeddings, centroid, "tagSearch")
+          .filter((video) => embeddings.size === 0 || (video.similarityScore || 0) >= config.feed.similarityThreshold)
+          .sort((left, right) => (right.similarityScore || 0) - (left.similarityScore || 0))
+          .slice(0, config.feed.maxVideos);
+
+        admittedVideos = scored;
+
+        observation.operations.push({
+          name: "search.centroid_filter",
+          durationMs: Math.round(performance.now() - filterStartedAt),
+          status: "ok",
+          input: {
+            candidates: candidates.length,
+            embeddedCandidates: embeddings.size,
+            hasCentroid: true,
+            concurrency: config.embeddings.maxConcurrentRequests
+          },
+          output: {
+            admittedVideos: admittedVideos.length,
+            filteredByCentroid: candidates.length - admittedVideos.length
+          }
+        });
+      }
+
+      // Resolve missing channel avatars only for the final admitted videos
+      const youtube = await getYoutubeClient(profileId);
+      const avatarStartedAt = performance.now();
+      const resolvedVideos = await resolveMissingChannelAvatars(
+        admittedVideos,
+        async (channelId) => {
+          const channel = await Promise.race([
+            youtube.getChannel(channelId),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error("Channel avatar fetch timeout")), 1500)
+            )
+          ]).catch(() => undefined);
+          return channel ? getChannelAvatarUrl(channel) : undefined;
+        }
+      );
+
+      observation.operations.push({
+        name: "search.avatar_resolution",
+        durationMs: Math.round(performance.now() - avatarStartedAt),
+        status: "ok",
+        input: { videos: admittedVideos.length },
+        output: { resolvedVideos: resolvedVideos.length }
+      });
+
+      const finalResult = hydrateChannelAvatars(resolvedVideos);
+
+      if (videoSearchCache.size >= MAX_VIDEO_SEARCH_CACHE_ENTRIES) {
+        const oldestKey = videoSearchCache.keys().next().value;
+        if (oldestKey) videoSearchCache.delete(oldestKey);
+      }
+      videoSearchCache.set(cacheKey, { videos: finalResult, timestamp: Date.now() });
+
+      return finalResult;
+    } finally {
+      endProfileOperation();
+    }
+  })();
+
+  inFlightVideoSearches.set(cacheKey, searchExecution);
+  try {
+    return await searchExecution;
   } finally {
-    endProfileOperation();
+    inFlightVideoSearches.delete(cacheKey);
   }
 }
 
@@ -1109,11 +1231,42 @@ async function embedVideos(
   const provider = getEmbeddingProvider(config);
   const embeddings = new Map<string, number[]>();
   const uniqueVideos = [...new Map(videos.map((video) => [video.id, video])).values()];
-  const batches: FeedVideo[][] = [];
   const startedAt = performance.now();
 
-  for (let index = 0; index < uniqueVideos.length; index += config.embeddings.batchSize) {
-    batches.push(uniqueVideos.slice(index, index + config.embeddings.batchSize));
+  const missingVideos: FeedVideo[] = [];
+  for (const video of uniqueVideos) {
+    const retained = getRetainedEmbedding(profileId, video.id);
+    if (retained && retained.length > 0) {
+      embeddings.set(video.id, retained);
+    } else {
+      missingVideos.push(video);
+    }
+  }
+
+  if (missingVideos.length === 0) {
+    observation.operations.push({
+      name: "feed.embeddings.total",
+      durationMs: Math.round(performance.now() - startedAt),
+      status: "ok",
+      input: {
+        stage,
+        videos: videos.length,
+        uniqueVideos: uniqueVideos.length,
+        batchSize: config.embeddings.batchSize,
+        concurrency: 0,
+        requests: 0
+      },
+      output: { embeddedVideos: embeddings.size }
+    });
+    return embeddings;
+  }
+
+  const effectiveBatchSize = stage === "user_search"
+    ? Math.max(config.embeddings.batchSize, 32)
+    : config.embeddings.batchSize;
+  const batches: FeedVideo[][] = [];
+  for (let index = 0; index < missingVideos.length; index += effectiveBatchSize) {
+    batches.push(missingVideos.slice(index, index + effectiveBatchSize));
   }
 
   let nextBatchIndex = 0;
@@ -1123,19 +1276,27 @@ async function embedVideos(
       const batchIndex = nextBatchIndex;
       nextBatchIndex += 1;
       const batch = batches[batchIndex];
-      const transcriptStartedAt = performance.now();
-      const transcriptIntroductions = await Promise.all(
-        batch.map((video) => fetchTranscriptIntroduction(profileId, video.id, config))
-      );
-      observation.operations.push({
-        name: "feed.embeddings.transcripts",
-        durationMs: Math.round(performance.now() - transcriptStartedAt),
-        status: "ok",
-        input: { stage, batchIndex, videos: batch.length },
-        output: {
-          transcriptsFound: transcriptIntroductions.filter(Boolean).length
-        }
-      });
+      const shouldFetchTranscripts = stage !== "user_search" && config.transcription.introductionPercentage > 0 && config.transcription.maxCharacters > 0;
+      let transcriptIntroductions: string[] = [];
+
+      if (shouldFetchTranscripts) {
+        const transcriptStartedAt = performance.now();
+        transcriptIntroductions = await Promise.all(
+          batch.map((video) => fetchTranscriptIntroduction(profileId, video.id, config))
+        );
+        observation.operations.push({
+          name: "feed.embeddings.transcripts",
+          durationMs: Math.round(performance.now() - transcriptStartedAt),
+          status: "ok",
+          input: { stage, batchIndex, videos: batch.length },
+          output: {
+            transcriptsFound: transcriptIntroductions.filter(Boolean).length
+          }
+        });
+      } else if (stage === "user_search") {
+        transcriptIntroductions = batch.map((video) => getCachedTranscriptIntroduction(video.id, config));
+      }
+
       const texts = batch.map((video, index) => {
         const transcriptIntroduction = transcriptIntroductions[index];
         return transcriptIntroduction
@@ -1164,7 +1325,11 @@ async function embedVideos(
         const vector = vectors[vectorIndex];
 
         if (vector?.length) {
-          embeddings.set(batch[vectorIndex].id, vector);
+          const videoId = batch[vectorIndex].id;
+          embeddings.set(videoId, vector);
+          if (stage === "user_search") {
+            retainEmbedding(profileId, videoId, vector);
+          }
         }
       }
     }

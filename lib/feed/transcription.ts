@@ -140,6 +140,25 @@ export async function fetchTranscriptIntroduction(
   }
 }
 
+export function getCachedTranscriptIntroduction(videoId: string, config: GretelConfig): string {
+  if (
+    !videoId ||
+    config.transcription.introductionPercentage <= 0 ||
+    config.transcription.maxCharacters <= 0
+  ) {
+    return "";
+  }
+
+  const cacheKey = `${videoId}:${config.youtube.language || "en"}`;
+  const cachedRaw = rawTranscriptCache.get(cacheKey);
+
+  if (cachedRaw !== undefined) {
+    return formatIntroduction(cachedRaw, config);
+  }
+
+  return "";
+}
+
 function formatIntroduction(fullText: string, config: GretelConfig): string {
   if (!fullText) {
     return "";

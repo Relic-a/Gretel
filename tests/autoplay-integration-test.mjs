@@ -15,4 +15,11 @@ assert.doesNotMatch(
   "the ended-state handler must not select the next video"
 );
 
-console.log("autoplay integration test passed");
+const pageSource = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
+assert.match(
+  pageSource,
+  /refreshVideos\s*=\s*useCallback[\s\S]*?requestFeed\(\{\s*resetFeed:\s*true,\s*buildIfMissing:\s*true\s*\}\)/,
+  "refreshVideos must serve from existing pool using buildIfMissing: true"
+);
+
+console.log("autoplay and refresh integration tests passed");

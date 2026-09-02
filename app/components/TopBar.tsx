@@ -55,6 +55,11 @@ export function TopBar(props: TopBarProps) {
           type="search"
           value={props.searchQuery}
           onChange={(event) => props.onSearchQueryChange(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === "Escape") {
+              props.onSearchQueryChange("");
+            }
+          }}
           placeholder="Search videos"
           aria-label="Search videos"
         />

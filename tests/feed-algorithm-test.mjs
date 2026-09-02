@@ -1669,3 +1669,170 @@ test("getThumbnailUrl selects the highest resolution thumbnail and ignores low-r
     "https://yt3.ggpht.com/channel-avatar=s240-c-k"
   );
 });
+
+test("searchProfileVideos skips embeddings when centroid is empty and serves immediately", async () => {
+  let embedCalls = 0;
+  const searchVideos = [
+    rawVideo("video-1", "Fast search one", "Creator A"),
+    rawVideo("video-2", "Fast search two", "Creator B")
+  ];
+  const modules = loadRuntimeModules({
+    youtubeClient: createFakeYoutubeClient({ searchVideos }),
+    embeddingProvider: {
+      async embedTexts(texts) {
+        embedCalls += 1;
+        return texts.map(() => [1, 0]);
+      }
+    }
+  });
+
+  const profile = modules.profileStore.createProfile("Empty Centroid Profile");
+  profileStoresForCleanup.add(modules.profileStore);
+
+  try {
+    process.env.GRETEL_CONFIG = writeConfig("search-empty-centroid.json", {
+      feed: { maxVideos: 6, similarityThreshold: 0.5 }
+    });
+
+    const obs = observation();
+    const results = await modules.service.searchProfileVideos(
+      profile.id,
+      "fast search",
+      [],
+      [],
+      "mixed",
+      obs
+    );
+
+    assert.equal(results.length, 2);
+    assert.equal(results[0].id, "video-1");
+    assert.equal(results[1].id, "video-2");
+    assert.equal(embedCalls, 0, "Must not generate embeddings when profile centroid is empty");
+    const centroidFilterOp = obs.operations.find((op) => op.name === "search.centroid_filter");
+    assert.ok(centroidFilterOp);
+    assert.equal(centroidFilterOp.input.hasCentroid, false);
+  } finally {
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});
+
+test("searchProfileVideos caches results and in-flight deduplicates concurrent searches", async () => {
+  let searchCalls = 0;
+  const searchVideos = [rawVideo("cached-1", "Search result", "Creator")];
+  const fakeClient = createFakeYoutubeClient({ searchVideos });
+  const originalSearch = fakeClient.search.bind(fakeClient);
+  fakeClient.search = async (...args) => {
+    searchCalls += 1;
+    await new Promise((resolve) => setTimeout(resolve, 30));
+    return originalSearch(...args);
+  };
+
+  const modules = loadRuntimeModules({ youtubeClient: fakeClient });
+  modules.service.clearVideoSearchCache();
+  const profile = modules.profileStore.createProfile("Cache Test Profile");
+  profileStoresForCleanup.add(modules.profileStore);
+
+  try {
+    process.env.GRETEL_CONFIG = writeConfig("search-cache.json", {
+      feed: { maxVideos: 6 }
+    });
+
+    // 1. First search call: hits fakeClient
+    const firstObs = observation();
+    const firstResults = await modules.service.searchProfileVideos(
+      profile.id,
+      "caching test",
+      [],
+      [],
+      "mixed",
+      firstObs
+    );
+    assert.equal(firstResults.length, 1);
+    assert.equal(searchCalls, 1);
+
+    // 2. Second identical search call: served from in-memory cache
+    const secondObs = observation();
+    const secondResults = await modules.service.searchProfileVideos(
+      profile.id,
+      "  caching test  ", // Whitespace normalized
+      [],
+      [],
+      "mixed",
+      secondObs
+    );
+    assert.equal(secondResults.length, 1);
+    assert.equal(searchCalls, 1, "Second search must be served from cache without calling YouTube");
+    const cacheHitOp = secondObs.operations.find((op) => op.name === "search.cache_hit");
+    assert.ok(cacheHitOp);
+
+    // 3. In-flight concurrent deduplication
+    modules.service.clearVideoSearchCache();
+    searchCalls = 0;
+    const [concurrent1, concurrent2] = await Promise.all([
+      modules.service.searchProfileVideos(profile.id, "concurrent test", [], [], "mixed", observation()),
+      modules.service.searchProfileVideos(profile.id, "concurrent test", [], [], "mixed", observation())
+    ]);
+    assert.equal(concurrent1.length, 1);
+    assert.equal(concurrent2.length, 1);
+    assert.equal(searchCalls, 1, "Concurrent in-flight searches for same query must deduplicate");
+  } finally {
+    modules.service.clearVideoSearchCache();
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});
+
+test("searchProfileVideos reuses retained embeddings and retains new search embeddings in SQLite", async () => {
+  const retainedVideo = rawVideo("already-embedded", "Already embedded title", "Creator");
+  const newVideo = rawVideo("needs-embedding", "Needs embedding title", "Creator");
+  let embeddedTexts = [];
+
+  const modules = loadRuntimeModules({
+    youtubeClient: createFakeYoutubeClient({
+      searchVideos: [retainedVideo, newVideo]
+    }),
+    embeddingProvider: {
+      async embedTexts(texts) {
+        embeddedTexts.push(...texts);
+        return texts.map(() => [1, 0]);
+      }
+    }
+  });
+
+  const profile = modules.profileStore.createProfile("Retained Profile");
+  profileStoresForCleanup.add(modules.profileStore);
+
+  try {
+    process.env.GRETEL_CONFIG = writeConfig("search-retained.json", {
+      feed: { maxVideos: 6, similarityThreshold: 0.1 }
+    });
+
+    const poolKey = modules.poolStore.createFeedPoolKey({ tags: ["alpha"], channels: [], channelSort: "mixed" });
+    // Save a centroid for the profile
+    modules.algorithmStore.saveCentroid(profile.id, poolKey, [1, 0], [1, 0]);
+
+    // Retain embedding for already-embedded video in SQLite
+    modules.algorithmStore.retainEmbedding(profile.id, "already-embedded", [1, 0]);
+
+    const obs = observation();
+    const results = await modules.service.searchProfileVideos(
+      profile.id,
+      "embedding reuse",
+      ["alpha"],
+      [],
+      "mixed",
+      obs
+    );
+
+    assert.equal(results.length, 2);
+    // Only newVideo should have been sent to embedTexts
+    assert.equal(embeddedTexts.length, 1);
+    assert.match(embeddedTexts[0], /Needs embedding title/);
+
+    // Verify newVideo embedding was retained in SQLite
+    const savedInDb = modules.algorithmStore.getRetainedEmbedding(profile.id, "needs-embedding");
+    assert.ok(savedInDb, "New video embedding must be retained in SQLite for future searches");
+    assert.deepEqual(savedInDb, [1, 0]);
+  } finally {
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});
