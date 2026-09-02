@@ -72,6 +72,9 @@ export default function Home() {
   const [savedVideoIds, setSavedVideoIds] = useState<Set<string>>(new Set());
   const [likedVideoIds, setLikedVideoIds] = useState<Set<string>>(new Set());
   const [activeVideo, setActiveVideo] = useState<FeedVideo | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<FeedVideo[] | null>(null);
+  const [searching, setSearching] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [isBuilding, setIsBuilding] = useState(false);
@@ -99,10 +102,11 @@ export default function Home() {
   const needsProfile = booted && profiles.length === 0 && !feed;
   const needsOpenRouterKey = settings.openRouterApiKey !== "set";
   const homeVideos = feed?.videos || [];
-  const visibleVideos =
-    section === "saved" ? savedVideos : section === "history" ? historyVideos : homeVideos;
+  const visibleVideos = searchResults ?? (
+    section === "saved" ? savedVideos : section === "history" ? historyVideos : homeVideos
+  );
   const sideVideos = orderedSideVideos(visibleVideos, activeVideo, feed?.upNextByVideoId);
-  const canAskForMore = section === "home" && Boolean(feed) && !loading && !feedEnd;
+  const canAskForMore = searchResults === null && section === "home" && Boolean(feed) && !loading && !feedEnd;
 
   useEffect(() => {
     let reporting = false;
@@ -671,6 +675,7 @@ export default function Home() {
   function openHome() {
     setError("");
     setSection("home");
+    setSearchResults(null);
     setActiveVideo(null);
     writeRoute("home");
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -698,6 +703,7 @@ export default function Home() {
   async function openSaved() {
     setError("");
     setSection("saved");
+    setSearchResults(null);
     setActiveVideo(null);
     writeRoute("saved");
     try {
@@ -710,6 +716,7 @@ export default function Home() {
   async function openHistory() {
     setError("");
     setSection("history");
+    setSearchResults(null);
     setActiveVideo(null);
     writeRoute("history");
     try {
@@ -939,6 +946,70 @@ export default function Home() {
     }
   }
 
+  const refreshVideos = useCallback(async () => {
+    if (searchResults !== null) {
+      const query = searchQuery.trim();
+      if (query) {
+        await searchForVideos(query);
+      }
+      return;
+    }
+    if (section === "saved") {
+      await loadSavedVideos(profileId);
+      return;
+    }
+    if (section === "history") {
+      await loadHistoryVideos(profileId);
+      return;
+    }
+    setActiveVideo(null);
+    writeRoute("home");
+    setFeedEnd(false);
+    await requestFeed({ resetFeed: true });
+  }, [profileId, searchQuery, searchResults, section, tags, channels, feed]);
+
+  useEffect(() => {
+    function handleRefreshShortcut(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "r") {
+        event.preventDefault();
+        void refreshVideos();
+      }
+    }
+
+    window.addEventListener("keydown", handleRefreshShortcut);
+    return () => window.removeEventListener("keydown", handleRefreshShortcut);
+  }, [refreshVideos]);
+
+  async function searchForVideos(query = searchQuery.trim()) {
+    if (!profileId || query.length < 2) return;
+
+    setError("");
+    setSearching(true);
+    setActiveVideo(null);
+    try {
+      const response = await authedFetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId, query, tags, channels })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Could not search videos.");
+      }
+      setSearchResults(data.videos || []);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not search videos.");
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function submitSearch(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    void searchForVideos();
+  }
+
   function addNewProfileTag(value: string) {
     const cleaned = value.replace(/\s+/g, " ").trim();
 
@@ -993,9 +1064,14 @@ export default function Home() {
         activeSection={section}
         showProfileMenu={showProfileMenu}
         developerAnalytics={settings.developerAnalytics === true}
+        searchQuery={searchQuery}
+        searching={searching}
         onHome={openHome}
         onSaved={openSaved}
         onHistory={openHistory}
+        onSearchQueryChange={setSearchQuery}
+        onSearch={submitSearch}
+        onRefresh={() => void refreshVideos()}
         onToggleProfileMenu={() => setShowProfileMenu(!showProfileMenu)}
         onSelectProfile={(nextProfileId) => {
           feedRequestIdRef.current += 1;
@@ -1011,6 +1087,7 @@ export default function Home() {
               ? cachedFeed
               : null;
           setFeed(paintCache);
+          setSearchResults(null);
           setTags(nextTags);
           setChannels(nextChannels);
           setActiveVideo(null);
@@ -1077,9 +1154,11 @@ export default function Home() {
 
       {booted && (visibleVideos.length > 0 || (loading && section === "home")) && !activeVideo && (
         <FeedView
-          title={section === "saved" ? "Saved" : section === "history" ? "History" : ""}
+          title={searchResults !== null ? `Search results for “${searchQuery.trim()}”` : section === "saved" ? "Saved" : section === "history" ? "History" : ""}
           subtitle={
-            section === "saved"
+            searchResults !== null
+              ? "Results are filtered against this profile’s interests."
+              : section === "saved"
               ? "Videos you saved for later."
               : section === "history"
               ? "Videos that crossed your watch threshold."
@@ -1108,6 +1187,10 @@ export default function Home() {
 
       {booted && section !== "home" && visibleVideos.length === 0 && !activeVideo && (
         <p className="empty-state">{section === "saved" ? "No saved videos yet." : "No watched videos yet."}</p>
+      )}
+
+      {booted && searchResults !== null && searchResults.length === 0 && !searching && !activeVideo && (
+        <p className="empty-state">No results matched this profile’s interests.</p>
       )}
 
       {(needsProfile || manageProfiles) && (

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, Bookmark, ChevronDown, History, Home, Settings } from "lucide-react";
+import { Activity, Bookmark, ChevronDown, History, Home, RefreshCw, Search, Settings } from "lucide-react";
 
 import type { Profile } from "../types";
 
@@ -9,9 +9,14 @@ type TopBarProps = {
   activeSection: "home" | "saved" | "history";
   showProfileMenu: boolean;
   developerAnalytics: boolean;
+  searchQuery: string;
+  searching: boolean;
   onHome: () => void;
   onSaved: () => void;
   onHistory: () => void;
+  onSearchQueryChange: (query: string) => void;
+  onSearch: (event: React.FormEvent<HTMLFormElement>) => void;
+  onRefresh: () => void;
   onToggleProfileMenu: () => void;
   onSelectProfile: (profileId: string) => void;
   onManageProfiles: () => void;
@@ -44,7 +49,27 @@ export function TopBar(props: TopBarProps) {
           <History aria-hidden="true" size={19} /> History
         </button>
       </nav>
+      <form className="topbar-search" role="search" onSubmit={props.onSearch}>
+        <Search aria-hidden="true" size={17} />
+        <input
+          type="search"
+          value={props.searchQuery}
+          onChange={(event) => props.onSearchQueryChange(event.target.value)}
+          placeholder="Search videos"
+          aria-label="Search videos"
+        />
+      </form>
       <div className="topbar-actions">
+        <button
+          type="button"
+          className="settings-button refresh-button"
+          onClick={props.onRefresh}
+          aria-label="Refresh videos"
+          title="Refresh videos (Ctrl+R)"
+          disabled={props.searching}
+        >
+          <RefreshCw aria-hidden="true" size={18} className={props.searching ? "spin" : undefined} />
+        </button>
         {props.developerAnalytics && (
           <a className="settings-button" href="/diagnostics" aria-label="Open performance diagnostics" title="Performance diagnostics">
             <Activity aria-hidden="true" size={18} />

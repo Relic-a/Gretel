@@ -243,6 +243,54 @@ export function startFeedServingSession(
   return session.id;
 }
 
+export async function searchProfileVideos(
+  profileId: string,
+  query: string,
+  tags: string[],
+  channels: string[],
+  channelSort: ChannelSort,
+  observation: FeedObservation
+) {
+  const endProfileOperation = beginProfileOperation(profileId);
+
+  try {
+    const config = getGretelConfig();
+    const poolKey = createFeedPoolKey({ tags: createQueries(tags), channels, channelSort });
+    const centroid = getCentroid(profileId, poolKey)?.current || [];
+    const candidates = await searchVideos(
+      [query],
+      observation,
+      profileId,
+      config.expansion.initialFetchSize
+    );
+    const embeddings = await embedVideos(profileId, candidates, observation, "user_search");
+    const scored = scoreByCentroid(candidates, embeddings, centroid, "tagSearch")
+      .filter((video) => centroid.length === 0 || (video.similarityScore || 0) >= config.feed.similarityThreshold)
+      .sort((left, right) => (right.similarityScore || 0) - (left.similarityScore || 0))
+      .slice(0, config.feed.maxVideos);
+
+    observation.operations.push({
+      name: "search.centroid_filter",
+      durationMs: 0,
+      status: "ok",
+      input: {
+        candidates: candidates.length,
+        embeddedCandidates: embeddings.size,
+        hasCentroid: centroid.length > 0,
+        concurrency: config.embeddings.maxConcurrentRequests
+      },
+      output: {
+        admittedVideos: scored.length,
+        filteredByCentroid: candidates.length - scored.length
+      }
+    });
+
+    return hydrateChannelAvatars(scored);
+  } finally {
+    endProfileOperation();
+  }
+}
+
 export async function createFeed(
   profileId: string,
   tags: string[],
