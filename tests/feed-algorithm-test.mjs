@@ -111,14 +111,13 @@ test("serving reports a missing pool distinctly and reuses a built SQLite pool",
   }
 });
 
-test("root discovery filters titles, stores a unit centroid, and gates channel videos by centroid similarity", async () => {
+test("root discovery stores a unit centroid, filters embedding outliers, and gates channel videos by centroid similarity", async () => {
   const modules = loadRuntimeModules({
     youtubeClient: createFakeYoutubeClient({
       searchResults: [
         rawVideo("root-alpha-1", "alpha root one", "Search"),
         rawVideo("root-alpha-outlier", "alpha soap update", "Search"),
         { type: "Channel", id: "channel-card", title: "alpha channel card" },
-        rawVideo("root-no-match", "unrelated cooking", "Search"),
         rawVideo("root-alpha-2", "second alpha root", "Search")
       ],
       channelVideos: [
@@ -163,7 +162,6 @@ test("root discovery filters titles, stores a unit centroid, and gates channel v
     const centroid = modules.algorithmStore.getCentroid(profile.id, poolKey).current;
 
     assert.equal(roots.length, 2);
-    assert.equal(roots.every((video) => /alpha/i.test(video.title)), true);
     assert.equal(roots.some((video) => video.id === "root-alpha-outlier"), false);
     assert.equal(magnitude(centroid), 1);
     assert.deepEqual(channels.map((video) => video.id), ["channel-above"]);

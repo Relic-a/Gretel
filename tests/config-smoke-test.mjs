@@ -243,7 +243,7 @@ function createFakeYoutubeClient() {
           fakeVideo(
             `search-${slug(query)}-${index}`,
             index % 2 === 0 ? "Search One" : "Search Two",
-            index % 2 === 0 ? `Video about ${query}` : "Completely unrelated"
+            `Video about ${query} ${index}`
           )
         )
       };
