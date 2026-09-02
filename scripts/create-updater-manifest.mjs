@@ -12,7 +12,7 @@ if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) throw new Error(`In
 const files = walk(resolve(assetDirectory));
 const targets = [
   { platform: "linux-x86_64", suffix: ".AppImage" },
-  { platform: "windows-x86_64", suffix: ".nsis.zip" },
+  { platform: "windows-x86_64", suffix: "-setup.exe" },
   { platform: "darwin-aarch64", suffix: ".app.tar.gz" }
 ];
 const platforms = {};

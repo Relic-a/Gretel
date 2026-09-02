@@ -10,7 +10,7 @@ const directory = mkdtempSync(join(tmpdir(), "gretel-updater-manifest-"));
 try {
   const artifacts = [
     "Gretel_0.4.2_amd64.AppImage",
-    "Gretel_0.4.2_x64-setup.nsis.zip",
+    "Gretel_0.4.2_x64-setup.exe",
     "Gretel.app.tar.gz"
   ];
 
@@ -32,7 +32,7 @@ try {
   assert.equal(manifest.version, "0.4.2");
   assert.equal(manifest.platforms["linux-x86_64"].signature, "Gretel_0.4.2_amd64.AppImage-signature");
   assert.match(manifest.platforms["linux-x86_64"].url, /Gretel_0\.4\.2_amd64\.AppImage$/);
-  assert.match(manifest.platforms["windows-x86_64"].url, /Gretel_0\.4\.2_x64-setup\.nsis\.zip$/);
+  assert.match(manifest.platforms["windows-x86_64"].url, /Gretel_0\.4\.2_x64-setup\.exe$/);
   assert.match(manifest.platforms["darwin-aarch64"].url, /Gretel\.app\.tar\.gz$/);
 
   console.log("updater manifest tests passed");

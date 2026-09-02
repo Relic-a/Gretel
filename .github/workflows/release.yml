@@ -34,7 +34,6 @@ jobs:
             command: npm run dist:win
             artifacts: |
               src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*-setup.exe
-              src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.nsis.zip
               src-tauri/target/x86_64-pc-windows-msvc/release/bundle/nsis/*.sig
           - name: macOS
             os: macos-latest
