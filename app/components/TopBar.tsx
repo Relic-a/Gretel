@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, Bookmark, ChevronDown, History, Home, RefreshCw, Search, Settings } from "lucide-react";
+import { Activity, Bookmark, ChevronDown, History, Home, Loader2, RefreshCw, Search, Settings } from "lucide-react";
 
 import type { Profile } from "../types";
 
@@ -11,6 +11,7 @@ type TopBarProps = {
   developerAnalytics: boolean;
   searchQuery: string;
   searching: boolean;
+  refreshing: boolean;
   onHome: () => void;
   onSaved: () => void;
   onHistory: () => void;
@@ -50,7 +51,11 @@ export function TopBar(props: TopBarProps) {
         </button>
       </nav>
       <form className="topbar-search" role="search" onSubmit={props.onSearch}>
-        <Search aria-hidden="true" size={17} />
+        {props.searching ? (
+          <Loader2 aria-hidden="true" size={17} className="spin" />
+        ) : (
+          <Search aria-hidden="true" size={17} />
+        )}
         <input
           type="search"
           value={props.searchQuery}
@@ -71,9 +76,9 @@ export function TopBar(props: TopBarProps) {
           onClick={props.onRefresh}
           aria-label="Refresh videos"
           title="Refresh videos (Ctrl+R)"
-          disabled={props.searching}
+          disabled={props.refreshing || props.searching}
         >
-          <RefreshCw aria-hidden="true" size={18} className={props.searching ? "spin" : undefined} />
+          <RefreshCw aria-hidden="true" size={18} className={props.refreshing ? "spin" : undefined} />
         </button>
         {props.developerAnalytics && (
           <a className="settings-button" href="/diagnostics" aria-label="Open performance diagnostics" title="Performance diagnostics">

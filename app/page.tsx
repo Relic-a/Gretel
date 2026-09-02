@@ -75,8 +75,10 @@ export default function Home() {
   const [likedVideoIds, setLikedVideoIds] = useState<Set<string>>(new Set());
   const [activeVideo, setActiveVideo] = useState<FeedVideo | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [searchedQuery, setSearchedQuery] = useState("");
   const [searchResults, setSearchResults] = useState<FeedVideo[] | null>(null);
   const [searching, setSearching] = useState(false);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const [isBuilding, setIsBuilding] = useState(false);
@@ -678,6 +680,7 @@ export default function Home() {
     setError("");
     setSection("home");
     setSearchResults(null);
+    setSearchedQuery("");
     setActiveVideo(null);
     writeRoute("home");
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -706,6 +709,7 @@ export default function Home() {
     setError("");
     setSection("saved");
     setSearchResults(null);
+    setSearchedQuery("");
     setActiveVideo(null);
     writeRoute("saved");
     try {
@@ -719,6 +723,7 @@ export default function Home() {
     setError("");
     setSection("history");
     setSearchResults(null);
+    setSearchedQuery("");
     setActiveVideo(null);
     writeRoute("history");
     try {
@@ -949,27 +954,34 @@ export default function Home() {
   }
 
   const refreshVideos = useCallback(async () => {
-    if (searchResults !== null) {
-      const query = searchQuery.trim();
-      if (query) {
-        await searchForVideos(query);
+    setIsRefreshing(true);
+    try {
+      if (searchResults !== null) {
+        const query = (searchedQuery || searchQuery).trim();
+        if (query) {
+          const cacheKey = `${profileId}:${query.toLowerCase()}:${tags.slice().sort().join(",")}:${channels.slice().sort().join(",")}`;
+          videoSearchCacheRef.current.delete(cacheKey);
+          await searchForVideos(query);
+        }
+        return;
       }
-      return;
+      if (section === "saved") {
+        await loadSavedVideos(profileId);
+        return;
+      }
+      if (section === "history") {
+        await loadHistoryVideos(profileId);
+        return;
+      }
+      setActiveVideo(null);
+      writeRoute("home");
+      setFeedEnd(false);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      await requestFeed({ resetFeed: true, buildIfMissing: true });
+    } finally {
+      setIsRefreshing(false);
     }
-    if (section === "saved") {
-      await loadSavedVideos(profileId);
-      return;
-    }
-    if (section === "history") {
-      await loadHistoryVideos(profileId);
-      return;
-    }
-    setActiveVideo(null);
-    writeRoute("home");
-    setFeedEnd(false);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-    await requestFeed({ resetFeed: true, buildIfMissing: true });
-  }, [profileId, searchQuery, searchResults, section, tags, channels, feed]);
+  }, [profileId, searchQuery, searchedQuery, searchResults, section, tags, channels, feed]);
 
   useEffect(() => {
     function handleRefreshShortcut(event: KeyboardEvent) {
@@ -984,9 +996,12 @@ export default function Home() {
   }, [refreshVideos]);
 
   async function searchForVideos(query = searchQuery.trim()) {
-    if (!profileId || query.length < 2) return;
+    const trimmed = query.trim();
+    if (!profileId || trimmed.length < 2) return;
 
-    const cacheKey = `${profileId}:${query.toLowerCase()}:${tags.slice().sort().join(",")}:${channels.slice().sort().join(",")}`;
+    setSearchedQuery(trimmed);
+
+    const cacheKey = `${profileId}:${trimmed.toLowerCase()}:${tags.slice().sort().join(",")}:${channels.slice().sort().join(",")}`;
     const cached = videoSearchCacheRef.current.get(cacheKey);
     if (cached) {
       setError("");
@@ -1000,11 +1015,12 @@ export default function Home() {
     setError("");
     setSearching(true);
     setActiveVideo(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
     try {
       const response = await authedFetch("/api/search", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId, query, tags, channels })
+        body: JSON.stringify({ profileId, query: trimmed, tags, channels })
       });
       const data = await response.json();
       if (!response.ok) {
@@ -1020,6 +1036,7 @@ export default function Home() {
     } catch (caught) {
       if (currentRequestId !== searchRequestIdRef.current) return;
       setError(caught instanceof Error ? caught.message : "Could not search videos.");
+      setSearchResults(null);
     } finally {
       if (currentRequestId === searchRequestIdRef.current) {
         setSearching(false);
@@ -1029,8 +1046,15 @@ export default function Home() {
 
   function handleSearchQueryChange(value: string) {
     setSearchQuery(value);
-    if (value.trim().length === 0 && searchResults !== null) {
-      setSearchResults(null);
+    if (value.trim().length === 0) {
+      if (searching) {
+        searchRequestIdRef.current += 1;
+        setSearching(false);
+      }
+      if (searchResults !== null) {
+        setSearchResults(null);
+      }
+      setSearchedQuery("");
     }
   }
 
@@ -1095,6 +1119,7 @@ export default function Home() {
         developerAnalytics={settings.developerAnalytics === true}
         searchQuery={searchQuery}
         searching={searching}
+        refreshing={isRefreshing}
         onHome={openHome}
         onSaved={openSaved}
         onHistory={openHistory}
@@ -1118,6 +1143,7 @@ export default function Home() {
               : null;
           setFeed(paintCache);
           setSearchResults(null);
+          setSearchedQuery("");
           setTags(nextTags);
           setChannels(nextChannels);
           setActiveVideo(null);
@@ -1182,9 +1208,9 @@ export default function Home() {
 
       {error && !manageProfiles && !needsProfile && <p className="error page-error">{error}</p>}
 
-      {booted && (visibleVideos.length > 0 || (loading && section === "home")) && !activeVideo && (
+      {booted && !searching && (visibleVideos.length > 0 || (loading && section === "home")) && !activeVideo && (
         <FeedView
-          title={searchResults !== null ? `Search results for “${searchQuery.trim()}”` : section === "saved" ? "Saved" : section === "history" ? "History" : ""}
+          title={searchResults !== null ? `Search results for “${searchedQuery || searchQuery.trim()}”` : section === "saved" ? "Saved" : section === "history" ? "History" : ""}
           subtitle={
             searchResults !== null
               ? "Results are filtered against this profile’s interests."
@@ -1215,12 +1241,16 @@ export default function Home() {
         />
       )}
 
-      {booted && section !== "home" && visibleVideos.length === 0 && !activeVideo && (
+      {booted && !searching && section !== "home" && visibleVideos.length === 0 && !activeVideo && (
         <p className="empty-state">{section === "saved" ? "No saved videos yet." : "No watched videos yet."}</p>
       )}
 
       {booted && searchResults !== null && searchResults.length === 0 && !searching && !activeVideo && (
         <p className="empty-state">No results matched this profile’s interests.</p>
+      )}
+
+      {booted && searching && !activeVideo && (
+        <p className="empty-state">Searching...</p>
       )}
 
       {(needsProfile || manageProfiles) && (
