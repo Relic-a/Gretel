@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.4.2 — 2026-09-02
+
+### In-app updates
+
+- Added signed in-app update checks, downloads, installation, and relaunch support.
+- Added update status and controls to Settings, including progress and error states.
+- Added signed updater artifacts and `latest.json` publication to the multi-platform release workflow.
+
 ## 0.4.1 — 2026-08-31
 
 ### Image reliability

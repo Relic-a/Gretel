@@ -1413,10 +1413,11 @@ dependencies = [
 
 [[package]]
 name = "gretel"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "getrandom 0.3.4",
  "libc",
+ "serde_json",
  "tauri",
  "tauri-build",
  "tauri-plugin-opener",
