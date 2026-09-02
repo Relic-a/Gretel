@@ -215,6 +215,14 @@ export function WatchView(props: WatchViewProps) {
             },
             onStateChange: (event) => {
               if (destroyed) return;
+              if (event.data === window.YT?.PlayerState.ENDED) {
+                stopPolling();
+                props.onPlaybackStateChange?.(false);
+                try {
+                  event.target.stopVideo();
+                } catch {}
+                return;
+              }
               const isPlaying = (event.data === window.YT?.PlayerState.PLAYING);
               props.onPlaybackStateChange?.(isPlaying);
 

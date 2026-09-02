@@ -169,7 +169,7 @@ button:disabled {
   inset: var(--window-titlebar-height) 0 auto;
   z-index: 20;
   display: grid;
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(280px, 1fr) minmax(220px, 420px) auto;
   align-items: stretch;
   height: var(--topbar-height);
   gap: clamp(12px, 2vw, 24px);
@@ -230,6 +230,43 @@ button:disabled {
   background: var(--color-brand);
 }
 
+.topbar-search {
+  align-self: center;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  background: #0d0d10;
+  color: var(--color-muted);
+}
+
+.topbar-search:focus-within {
+  border-color: var(--color-brand);
+  color: var(--color-brand);
+}
+
+.topbar-search input {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--color-text);
+  font: inherit;
+}
+
+.topbar-search input::placeholder {
+  color: var(--color-muted);
+}
+
+.spin {
+  animation: spin 0.8s linear infinite;
+}
+
 .profile-menu {
   position: relative;
   min-width: 0;
@@ -262,6 +299,12 @@ button:disabled {
   transform: translate(-2px, -2px);
   box-shadow: 4px 4px 0px var(--color-brand);
   border-color: var(--color-brand);
+}
+
+.refresh-button {
+  width: 42px;
+  height: 42px;
+  box-shadow: none;
 }
 
 .profile-button {
@@ -2228,6 +2271,10 @@ select:focus {
     gap: 14px;
   }
 
+  .topbar {
+    grid-template-columns: auto minmax(240px, 1fr) minmax(180px, 300px) auto;
+  }
+
   .video-grid,
   .more-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -2301,7 +2348,7 @@ select:focus {
   }
 
   .topbar {
-    grid-template-columns: auto 1fr;
+    grid-template-columns: auto minmax(140px, 1fr) auto;
     gap: 12px;
     padding: 0 14px;
   }
@@ -2326,6 +2373,21 @@ select:focus {
     -webkit-backdrop-filter: blur(16px);
     border-top: 1px solid var(--color-border);
     box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.6);
+  }
+
+  .topbar-search {
+    height: 38px;
+  }
+
+  .topbar-actions .profile-button-name,
+  .topbar-actions .profile-chevron {
+    display: none;
+  }
+
+  .topbar-actions .profile-button {
+    width: 42px;
+    padding: 0 6px;
+    justify-content: center;
   }
 
   .section-tabs button {
@@ -2424,7 +2486,11 @@ select:focus {
   }
 
   .brand-button {
-    font-size: 1.4rem;
+    display: none;
+  }
+
+  .topbar {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .settings-button {

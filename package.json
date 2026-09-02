@@ -18,7 +18,7 @@
     "dist:linux": "tauri build --target x86_64-unknown-linux-gnu --bundles deb,rpm",
     "dist:mac": "tauri build",
     "generate:icons": "tauri icon logo.png",
-    "test": "node tests/tauri-config-test.mjs && node tests/youtube-player-error-test.mjs && node tests/logger-test.mjs && node tests/network-retry-test.mjs && node tests/thumbnail-avatar-pipeline-test.mjs && node tests/config-smoke-test.mjs && node tests/feed-algorithm-test.mjs && node tests/channel-search-e2e-test.mjs",
+    "test": "node tests/tauri-config-test.mjs && node tests/youtube-player-error-test.mjs && node tests/autoplay-integration-test.mjs && node tests/logger-test.mjs && node tests/network-retry-test.mjs && node tests/thumbnail-avatar-pipeline-test.mjs && node tests/config-smoke-test.mjs && node tests/feed-algorithm-test.mjs && node tests/channel-search-e2e-test.mjs",
     "start": "next start",
     "lint": "tsc --noEmit"
   },
