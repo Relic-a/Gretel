@@ -31,6 +31,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": "all",
     "category": "Entertainment",
     "shortDescription": "Curate your YouTube feed",
@@ -75,6 +76,14 @@
       "webviewInstallMode": {
         "type": "embedBootstrapper"
       }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDhDQ0JDMjgwNjk2OUI1MApSV1JRbTVZR0tMek1DS2FCQ2NwbXIzdjdWOUU0SUFEZjZOZExqd25rWFNTYWhZNE5BeWRINEFRTgo=",
+      "endpoints": [
+        "https://github.com/Relic-a/Gretel/releases/latest/download/latest.json"
+      ]
     }
   }
 }

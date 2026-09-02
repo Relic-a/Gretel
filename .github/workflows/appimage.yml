@@ -17,6 +17,7 @@ permissions:
 jobs:
   appimage:
     name: Build and attach AppImage
+    if: github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-22.04
     env:
       APPIMAGE_EXTRACT_AND_RUN: "1"

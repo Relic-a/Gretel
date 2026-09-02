@@ -100,6 +100,19 @@ export function SettingsModal(props: SettingsModalProps) {
             </label>
           </div>
 
+          <div className="developer-setting">
+            <div>
+              <span>App updates</span>
+              <small>Gretel checks automatically after launch. Updates are downloaded only after you approve them.</small>
+            </div>
+            <button
+              type="button"
+              onClick={() => window.dispatchEvent(new Event("gretel:check-for-updates"))}
+            >
+              Check now
+            </button>
+          </div>
+
           <button type="submit" disabled={props.saving}>
             {props.saving ? "Saving..." : "Save settings"}
           </button>

@@ -21,6 +21,34 @@
   --topbar-height: 90px;
 }
 
+.update-toast {
+  align-items: center;
+  background: rgba(20, 20, 24, 0.98);
+  border: 1px solid #37373f;
+  border-radius: 12px;
+  bottom: 20px;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  left: 50%;
+  max-width: min(620px, calc(100vw - 32px));
+  padding: 14px 14px 14px 16px;
+  position: fixed;
+  transform: translateX(-50%);
+  width: max-content;
+  z-index: 1200;
+}
+
+.update-toast-copy { display: grid; gap: 4px; min-width: 220px; }
+.update-toast-copy strong { color: #f5f5f7; font-size: 0.9rem; }
+.update-toast-copy span { color: #a7a7ae; font-size: 0.75rem; }
+.update-toast progress { grid-column: 1 / -1; height: 4px; width: 100%; }
+.update-toast-actions { align-items: center; display: flex; gap: 7px; }
+.update-toast-actions button { align-items: center; display: inline-flex; gap: 7px; white-space: nowrap; }
+.update-toast-actions .update-dismiss { background: transparent; border-color: transparent; color: #a7a7ae; padding: 7px; }
+.update-toast-actions .update-dismiss:hover { background: #2b2b31; color: #fff; }
+
 html.tauri-app {
   --window-titlebar-height: 38px;
 }
