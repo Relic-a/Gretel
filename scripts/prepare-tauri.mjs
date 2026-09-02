@@ -48,6 +48,9 @@ function run(command, args) {
   });
 }
 
+const patchScript = path.join(projectRoot, "scripts", "patch-dependencies.mjs");
+await run(process.execPath, [patchScript]);
+
 await run(process.execPath, [nextBin, "build"]);
 
 if (!(await exists(path.join(standaloneDir, "server.js")))) {

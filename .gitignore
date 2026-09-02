@@ -42,8 +42,10 @@ pnpm-debug.log*
 # local agent/tooling scratch
 .agents/
 .codex/
+.engram/
 .tmp/
 scratch/
+sandbox/
 
 # app/design scratch
 gretel_design/

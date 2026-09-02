@@ -1,0 +1,102 @@
+diff --git a/dist/src/parser/classes/comments/CommentView.js b/dist/src/parser/classes/comments/CommentView.js
+index ff4da93..66388ab 100644
+--- a/dist/src/parser/classes/comments/CommentView.js
++++ b/dist/src/parser/classes/comments/CommentView.js
+@@ -73,12 +73,16 @@ export default class CommentView extends YTNode {
+-            this.is_member = !!comment.author.sponsorBadgeUrl;
+-            if (Reflect.has(comment.author, 'sponsorBadgeUrl')) {
++            this.is_member = !!comment.author?.sponsorBadgeUrl;
++            if (comment.author && Reflect.has(comment.author, 'sponsorBadgeUrl')) {
+                 this.member_badge = {
+                     url: comment.author.sponsorBadgeUrl,
+-                    a11y: comment.author.A11y
++                    a11y: comment.author.A11y || comment.author.sponsorBadgeA11y
+                 };
+             }
++            let thumbs = comment.avatar?.image;
++            if (!thumbs && comment.author && ('avatarThumbnailUrl' in comment.author || Reflect.has(comment.author, 'avatarThumbnailUrl'))) {
++                thumbs = { thumbnails: [{ url: comment.author.avatarThumbnailUrl, width: 88, height: 88 }] };
++            }
+             this.author = new Author({
+-                simpleText: comment.author.displayName,
+-                navigationEndpoint: comment.avatar.endpoint
+-            }, comment.author, comment.avatar.image, comment.author.channelId);
++                simpleText: comment.author?.displayName,
++                navigationEndpoint: comment.avatar?.endpoint || comment.author?.channelCommand
++            }, comment.author, thumbs, comment.author?.channelId);
+         }
+diff --git a/bundle/browser.js b/bundle/browser.js
+--- a/bundle/browser.js
++++ b/bundle/browser.js
+@@ -20092,11 +20092,15 @@
+-      this.is_member = !!comment.author.sponsorBadgeUrl;
+-      if (Reflect.has(comment.author, "sponsorBadgeUrl")) {
++      this.is_member = !!comment.author?.sponsorBadgeUrl;
++      if (comment.author && Reflect.has(comment.author, "sponsorBadgeUrl")) {
+         this.member_badge = {
+           url: comment.author.sponsorBadgeUrl,
+-          a11y: comment.author.A11y
++          a11y: comment.author.A11y || comment.author.sponsorBadgeA11y
+         };
+       }
++      var thumbs = comment.avatar?.image;
++      if (!thumbs && comment.author && ('avatarThumbnailUrl' in comment.author || Reflect.has(comment.author, 'avatarThumbnailUrl'))) {
++        thumbs = { thumbnails: [{ url: comment.author.avatarThumbnailUrl, width: 88, height: 88 }] };
++      }
+       this.author = new Author({
+-        simpleText: comment.author.displayName,
+-        navigationEndpoint: comment.avatar.endpoint
+-      }, comment.author, comment.avatar.image, comment.author.channelId);
++        simpleText: comment.author?.displayName,
++        navigationEndpoint: comment.avatar?.endpoint || comment.author?.channelCommand
++      }, comment.author, thumbs, comment.author?.channelId);
+diff --git a/bundle/cf-worker.js b/bundle/cf-worker.js
+--- a/bundle/cf-worker.js
++++ b/bundle/cf-worker.js
+@@ -20029,11 +20029,15 @@
+-      this.is_member = !!comment.author.sponsorBadgeUrl;
+-      if (Reflect.has(comment.author, "sponsorBadgeUrl")) {
++      this.is_member = !!comment.author?.sponsorBadgeUrl;
++      if (comment.author && Reflect.has(comment.author, "sponsorBadgeUrl")) {
+         this.member_badge = {
+           url: comment.author.sponsorBadgeUrl,
+-          a11y: comment.author.A11y
++          a11y: comment.author.A11y || comment.author.sponsorBadgeA11y
+         };
+       }
++      var thumbs = comment.avatar?.image;
++      if (!thumbs && comment.author && ('avatarThumbnailUrl' in comment.author || Reflect.has(comment.author, 'avatarThumbnailUrl'))) {
++        thumbs = { thumbnails: [{ url: comment.author.avatarThumbnailUrl, width: 88, height: 88 }] };
++      }
+       this.author = new Author({
+-        simpleText: comment.author.displayName,
+-        navigationEndpoint: comment.avatar.endpoint
+-      }, comment.author, comment.avatar.image, comment.author.channelId);
++        simpleText: comment.author?.displayName,
++        navigationEndpoint: comment.avatar?.endpoint || comment.author?.channelCommand
++      }, comment.author, thumbs, comment.author?.channelId);
+diff --git a/bundle/react-native.js b/bundle/react-native.js
+--- a/bundle/react-native.js
++++ b/bundle/react-native.js
+@@ -20028,11 +20028,15 @@
+-      this.is_member = !!comment.author.sponsorBadgeUrl;
+-      if (Reflect.has(comment.author, "sponsorBadgeUrl")) {
++      this.is_member = !!comment.author?.sponsorBadgeUrl;
++      if (comment.author && Reflect.has(comment.author, "sponsorBadgeUrl")) {
+         this.member_badge = {
+           url: comment.author.sponsorBadgeUrl,
+-          a11y: comment.author.A11y
++          a11y: comment.author.A11y || comment.author.sponsorBadgeA11y
+         };
+       }
++      var thumbs = comment.avatar?.image;
++      if (!thumbs && comment.author && ('avatarThumbnailUrl' in comment.author || Reflect.has(comment.author, 'avatarThumbnailUrl'))) {
++        thumbs = { thumbnails: [{ url: comment.author.avatarThumbnailUrl, width: 88, height: 88 }] };
++      }
+       this.author = new Author({
+-        simpleText: comment.author.displayName,
+-        navigationEndpoint: comment.avatar.endpoint
+-      }, comment.author, comment.avatar.image, comment.author.channelId);
++        simpleText: comment.author?.displayName,
++        navigationEndpoint: comment.avatar?.endpoint || comment.author?.channelCommand
++      }, comment.author, thumbs, comment.author?.channelId);

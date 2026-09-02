@@ -172,12 +172,22 @@ function extractComments(page: any) {
     authorIsOwner: boolean;
   }> = [];
 
+  if (!page || !Array.isArray(page.contents)) {
+    return results;
+  }
+
   for (const thread of page.contents) {
-    const comment = thread.comment;
+    const comment = thread?.comment;
     if (!comment) continue;
 
     const authorThumbnails = comment.author?.thumbnails ?? comment.author_thumbnails;
-    const authorAvatarUrl = extractThumbnailUrl(authorThumbnails);
+    const authorAvatarUrl =
+      extractThumbnailUrl(authorThumbnails) ??
+      (typeof comment.author?.avatar_thumbnail_url === "string"
+        ? normalizeThumbnailUrl(comment.author.avatar_thumbnail_url)
+        : typeof comment.author?.avatarThumbnailUrl === "string"
+        ? normalizeThumbnailUrl(comment.author.avatarThumbnailUrl)
+        : undefined);
 
     results.push({
       author: comment.author?.name?.toString() ?? "Unknown",
