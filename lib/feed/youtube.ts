@@ -65,7 +65,7 @@ export async function searchVideos(
           const duration = getDuration(video);
           const title = getTitle(video);
 
-          if (!titleMatchesQuery(title, query) || !shouldKeepVideo(id, seen)) {
+          if (!shouldKeepVideo(id, seen)) {
             continue;
           }
 
@@ -135,10 +135,6 @@ function getSearchVideoItems(results: { videos?: unknown[]; results?: unknown[] 
   }
 
   return Array.isArray(results.videos) ? results.videos : [];
-}
-
-function titleMatchesQuery(title: string, query: string) {
-  return title.toLowerCase().includes(query.toLowerCase());
 }
 
 export async function fetchChannelVideos(
