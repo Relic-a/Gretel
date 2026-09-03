@@ -1,6 +1,7 @@
 import { getDatabase } from "../profile-store";
 import { getGretelConfig } from "./config";
 import type { FeedVideo } from "./types";
+import { averageNormalizedVectors } from "./vector-math";
 
 export type StoredCentroid = {
   original: number[];
@@ -194,6 +195,74 @@ export function saveTopicCentroids(
   });
 }
 
+function tryAutoMigrateTopicCentroids(profileId: string, poolKey: string): StoredTopicCentroid[] | null {
+  try {
+    const parsed = JSON.parse(poolKey);
+    const tags: string[] = Array.isArray(parsed.tags) ? parsed.tags : [];
+    if (tags.length <= 1) {
+      return null;
+    }
+
+    const rows = getDatabase()
+      .prepare(
+        `SELECT video_id, video_json
+         FROM feed_pool_nodes
+         WHERE profile_id = ? AND pool_key = ? AND node_id = 'tagSearch'`
+      )
+      .all(profileId, poolKey) as Array<{ video_id: string; video_json: string }>;
+
+    if (rows.length === 0) {
+      return null;
+    }
+
+    const rootVideosByTag = new Map<string, Array<{ id: string }>>();
+    for (const tag of tags) {
+      rootVideosByTag.set(tag.toLowerCase(), []);
+    }
+
+    for (const row of rows) {
+      try {
+        const video = JSON.parse(row.video_json) as { query?: string };
+        const query = (video.query || "").toLowerCase();
+        const list = rootVideosByTag.get(query);
+        if (list) {
+          list.push({ id: row.video_id });
+        }
+      } catch {}
+    }
+
+    const topicCentroids: StoredTopicCentroid[] = [];
+    const updatedAt = Date.now();
+
+    for (const tag of tags) {
+      const videos = rootVideosByTag.get(tag.toLowerCase()) || [];
+      const vectors = videos.flatMap((v) => {
+        const emb = getRetainedEmbedding(profileId, v.id);
+        return emb ? [emb] : [];
+      });
+
+      if (vectors.length > 0) {
+        const vector = averageNormalizedVectors(vectors);
+        if (vector.length > 0) {
+          topicCentroids.push({
+            topic: tag,
+            original: vector,
+            current: vector,
+            updatedAt
+          });
+        }
+      }
+    }
+
+    if (topicCentroids.length > 0) {
+      saveTopicCentroids(profileId, poolKey, topicCentroids);
+      return topicCentroids;
+    }
+  } catch {}
+
+  return null;
+}
+
 export function getTopicCentroids(profileId: string, poolKey: string): StoredTopicCentroid[] {
   ensureFeedAlgorithmTables();
   const storeKey = createEmbeddingStoreName();
@@ -224,6 +293,11 @@ export function getTopicCentroids(profileId: string, poolKey: string): StoredTop
         updatedAt: row.updated_at
       }];
     });
+  }
+
+  const migrated = tryAutoMigrateTopicCentroids(profileId, poolKey);
+  if (migrated && migrated.length > 0) {
+    return migrated;
   }
 
   const fallback = getCentroid(profileId, poolKey);

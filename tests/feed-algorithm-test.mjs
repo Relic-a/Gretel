@@ -1991,3 +1991,65 @@ test("winner-takes-all drift updates only the matching topic centroid", async ()
     modules.profileStore.deleteProfile(profile.id);
   }
 });
+
+test("legacy profiles with single centroid auto-migrate or fallback without breaking", async () => {
+  const modules = loadRuntimeModules({
+    youtubeClient: createFakeYoutubeClient()
+  });
+
+  const profile = modules.profileStore.createProfile("Legacy Profile");
+  profileStoresForCleanup.add(modules.profileStore);
+
+  const poolKey = modules.poolStore.createFeedPoolKey({
+    tags: ["rust", "coffee"],
+    channels: [],
+    channelSort: "mixed"
+  });
+
+  try {
+    process.env.GRETEL_CONFIG = writeConfig("legacy-compat.json", {
+      feed: { similarityThreshold: 0.55 },
+      embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
+    });
+
+    // Simulate an existing database created before this change:
+    // 1. Only a single blurred centroid stored in feed_centroids (no ::topic:: keys)
+    modules.algorithmStore.saveCentroid(profile.id, poolKey, [0.7071, 0.7071], [0.7071, 0.7071]);
+
+    // 2. Existing feed_pool_state marked as discovered
+    modules.poolStore.markRootDiscovered(profile.id, poolKey, Date.now());
+
+    // 3. Existing tagSearch pool nodes with query set
+    const legacyRust = video("legacy-rust", { query: "rust", similarityScore: 0.5 });
+    const legacyCoffee = video("legacy-coffee", { query: "coffee", similarityScore: 0.5 });
+    modules.poolStore.addPoolNodes(profile.id, poolKey, "tagSearch", [legacyRust, legacyCoffee], Date.now());
+
+    // 4. Retained embeddings in SQLite
+    modules.algorithmStore.retainEmbedding(profile.id, "legacy-rust", [1, 0]);
+    modules.algorithmStore.retainEmbedding(profile.id, "legacy-coffee", [0, 1]);
+
+    // Serving feed must succeed without throwing
+    const served = await modules.service.serveFeedPage(
+      profile.id,
+      ["rust", "coffee"],
+      [],
+      "mixed",
+      observation(),
+      { servingOnly: true }
+    );
+    assert.equal(served.videos.length, 2);
+
+    // Auto-migration should have kicked in seamlessly
+    const topicCentroids = modules.algorithmStore.getTopicCentroids(profile.id, poolKey);
+    assert.equal(topicCentroids.length, 2);
+    assert.deepEqual(topicCentroids.find((tc) => tc.topic === "rust")?.current, [1, 0]);
+    assert.deepEqual(topicCentroids.find((tc) => tc.topic === "coffee")?.current, [0, 1]);
+
+    // The rescored videos should have their similarity updated via MaxSim
+    const rescoredRust = served.videos.find((v) => v.id === "legacy-rust");
+    assert.equal(rescoredRust.similarityScore, 1.0);
+    assert.equal(rescoredRust.matchedTopic, "rust");
+  } finally {
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});

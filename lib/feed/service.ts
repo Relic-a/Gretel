@@ -63,6 +63,7 @@ export type ServeFeedPageOptions = {
   sessionId?: string;
   watchedVideoIds?: string[];
   servedVideoIds?: string[];
+  servingOnly?: boolean;
 };
 
 type PoolInitialization = {
@@ -187,7 +188,7 @@ export async function serveFeedPage(
     config
   });
 
-  if (poolHealth.freshRatio < preemptiveExpansionFreshRatioThreshold) {
+  if (!options.servingOnly && poolHealth.freshRatio < preemptiveExpansionFreshRatioThreshold) {
     schedulePreemptiveExpansion(profileId, poolKey);
   }
 
