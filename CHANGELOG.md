@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.0 — 2026-09-02
+
+### Search and feed discovery
+
+- Added semantic centroid-filtered search (`/api/search`) with pure vector similarity scoring, optimized embeddings, and response caching.
+- Enhanced top bar search UI with instant feedback, live loading states, and dynamic header updates.
+- Added feed refresh support to fetch and re-rank fresh candidates across active profile topics.
+
+### Feed intelligence & multi-topic centroids
+
+- Implemented per-topic MaxSim scoring for multi-topic profiles, allowing diverse interests within a single profile.
+- Added winner-takes-all centroid drift so user interactions refine the closest topic without polluting other topics.
+- Calibrated the default feed similarity threshold to `0.58` for improved discovery and topic alignment.
+- Added transparent on-the-fly auto-migration and backward compatibility for legacy single-centroid profiles.
+
+### Reliability and bug fixes
+
+- Patched `youtubei.js` to handle missing avatar icons in modern comment payloads without throwing errors.
+- Added automated tests for multi-topic drift, winner-takes-all learning, legacy migration, comments handling, and updater manifests.
+
 ## 0.4.2 — 2026-09-02
 
 ### In-app updates

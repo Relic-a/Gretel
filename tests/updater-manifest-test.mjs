@@ -9,8 +9,8 @@ const directory = mkdtempSync(join(tmpdir(), "gretel-updater-manifest-"));
 
 try {
   const artifacts = [
-    "Gretel_0.4.2_amd64.AppImage",
-    "Gretel_0.4.2_x64-setup.exe",
+    "Gretel_0.5.0_amd64.AppImage",
+    "Gretel_0.5.0_x64-setup.exe",
     "Gretel.app.tar.gz"
   ];
 
@@ -23,16 +23,16 @@ try {
   execFileSync(process.execPath, [
     fileURLToPath(new URL("../scripts/create-updater-manifest.mjs", import.meta.url)),
     directory,
-    "v0.4.2",
+    "v0.5.0",
     "Relic-a/Gretel",
     output
   ]);
 
   const manifest = JSON.parse(readFileSync(output, "utf8"));
-  assert.equal(manifest.version, "0.4.2");
-  assert.equal(manifest.platforms["linux-x86_64"].signature, "Gretel_0.4.2_amd64.AppImage-signature");
-  assert.match(manifest.platforms["linux-x86_64"].url, /Gretel_0\.4\.2_amd64\.AppImage$/);
-  assert.match(manifest.platforms["windows-x86_64"].url, /Gretel_0\.4\.2_x64-setup\.exe$/);
+  assert.equal(manifest.version, "0.5.0");
+  assert.equal(manifest.platforms["linux-x86_64"].signature, "Gretel_0.5.0_amd64.AppImage-signature");
+  assert.match(manifest.platforms["linux-x86_64"].url, /Gretel_0\.5\.0_amd64\.AppImage$/);
+  assert.match(manifest.platforms["windows-x86_64"].url, /Gretel_0\.5\.0_x64-setup\.exe$/);
   assert.match(manifest.platforms["darwin-aarch64"].url, /Gretel\.app\.tar\.gz$/);
 
   console.log("updater manifest tests passed");
