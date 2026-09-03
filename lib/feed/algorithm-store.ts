@@ -8,6 +8,13 @@ export type StoredCentroid = {
   updatedAt: number;
 };
 
+export type StoredTopicCentroid = {
+  topic: string;
+  original: number[];
+  current: number[];
+  updatedAt: number;
+};
+
 type StoredCentroidRow = {
   cacheKey: string;
   original: number[];
@@ -141,6 +148,135 @@ export function updateCentroid(profileId: string, cacheKey: string, current: num
        WHERE profile_id = ? AND store_key = ? AND cache_key = ?`
     )
     .run(JSON.stringify(current), updatedAt, profileId, storeKey, cacheKey);
+}
+
+export function createTopicCentroidKey(poolKey: string, topic: string) {
+  return `${poolKey}::topic::${encodeURIComponent(topic)}`;
+}
+
+export function extractTopicFromKey(cacheKey: string, poolKey: string): string | null {
+  const prefix = `${poolKey}::topic::`;
+  if (!cacheKey.startsWith(prefix)) {
+    return null;
+  }
+  return decodeURIComponent(cacheKey.slice(prefix.length));
+}
+
+export function saveTopicCentroids(
+  profileId: string,
+  poolKey: string,
+  centroids: Array<{ topic: string; original: number[]; current: number[] }>
+) {
+  ensureFeedAlgorithmTables();
+  const updatedAt = Date.now();
+  const storeKey = createEmbeddingStoreName();
+  const database = getDatabase();
+  const statement = database.prepare(
+    `INSERT INTO feed_centroids (profile_id, store_key, cache_key, original_json, current_json, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(profile_id, store_key, cache_key) DO UPDATE SET
+       original_json = excluded.original_json,
+       current_json = excluded.current_json,
+       updated_at = excluded.updated_at`
+  );
+
+  runInTransaction(() => {
+    for (const tc of centroids) {
+      statement.run(
+        profileId,
+        storeKey,
+        createTopicCentroidKey(poolKey, tc.topic),
+        JSON.stringify(tc.original),
+        JSON.stringify(tc.current),
+        updatedAt
+      );
+    }
+  });
+}
+
+export function getTopicCentroids(profileId: string, poolKey: string): StoredTopicCentroid[] {
+  ensureFeedAlgorithmTables();
+  const storeKey = createEmbeddingStoreName();
+  const prefix = `${poolKey}::topic::`;
+  const rows = getDatabase()
+    .prepare(
+      `SELECT cache_key, original_json, current_json, updated_at
+       FROM feed_centroids
+       WHERE profile_id = ? AND store_key = ? AND cache_key LIKE ?`
+    )
+    .all(profileId, storeKey, `${prefix}%`) as Array<{
+      cache_key: string;
+      original_json: string;
+      current_json: string;
+      updated_at: number;
+    }>;
+
+  if (rows.length > 0) {
+    return rows.flatMap((row) => {
+      const topic = extractTopicFromKey(row.cache_key, poolKey);
+      if (!topic) {
+        return [];
+      }
+      return [{
+        topic,
+        original: JSON.parse(row.original_json) as number[],
+        current: JSON.parse(row.current_json) as number[],
+        updatedAt: row.updated_at
+      }];
+    });
+  }
+
+  const fallback = getCentroid(profileId, poolKey);
+  if (fallback && fallback.current.length > 0) {
+    return [{
+      topic: "default",
+      original: fallback.original,
+      current: fallback.current,
+      updatedAt: fallback.updatedAt
+    }];
+  }
+
+  return [];
+}
+
+export function updateTopicCentroid(
+  profileId: string,
+  poolKey: string,
+  topic: string,
+  current: number[],
+  updatedAt: number
+) {
+  ensureFeedAlgorithmTables();
+  const storeKey = createEmbeddingStoreName();
+  const cacheKey = createTopicCentroidKey(poolKey, topic);
+
+  getDatabase()
+    .prepare(
+      `UPDATE feed_centroids
+       SET current_json = ?, updated_at = ?
+       WHERE profile_id = ? AND store_key = ? AND cache_key = ?`
+    )
+    .run(JSON.stringify(current), updatedAt, profileId, storeKey, cacheKey);
+}
+
+export function listCentroidPoolKeys(profileId: string): string[] {
+  ensureFeedAlgorithmTables();
+  const storeKey = createEmbeddingStoreName();
+  const rows = getDatabase()
+    .prepare(
+      `SELECT DISTINCT cache_key
+       FROM feed_centroids
+       WHERE profile_id = ? AND store_key = ?`
+    )
+    .all(profileId, storeKey) as Array<{ cache_key: string }>;
+
+  const poolKeys = new Set<string>();
+  for (const row of rows) {
+    const topicIdx = row.cache_key.indexOf("::topic::");
+    const key = topicIdx >= 0 ? row.cache_key.slice(0, topicIdx) : row.cache_key;
+    poolKeys.add(key);
+  }
+  return [...poolKeys];
 }
 
 export function retainEmbedding(profileId: string, videoId: string, embedding: number[]) {

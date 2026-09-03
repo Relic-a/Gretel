@@ -21,6 +21,7 @@ export type FeedVideo = {
   parent_author?: string;
   recommendation_depth?: number;
   similarityScore?: number;
+  matchedTopic?: string;
   engagementScore?: number;
   parentEngagementScore?: number;
   impressionCount?: number;

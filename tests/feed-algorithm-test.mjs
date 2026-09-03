@@ -1401,8 +1401,16 @@ function createFakeYoutubeClient({
         return { channels: [{ id: "UC-creator-one" }] };
       }
 
+      if (typeof searchResults === "function") {
+        return { results: searchResults(_query, options) };
+      }
+
       if (searchResults) {
         return { results: searchResults };
+      }
+
+      if (typeof searchVideos === "function") {
+        return { videos: searchVideos(_query, options) };
       }
 
       return { videos: searchVideos };
@@ -1832,6 +1840,153 @@ test("searchProfileVideos reuses retained embeddings and retains new search embe
     const savedInDb = modules.algorithmStore.getRetainedEmbedding(profile.id, "needs-embedding");
     assert.ok(savedInDb, "New video embedding must be retained in SQLite for future searches");
     assert.deepEqual(savedInDb, [1, 0]);
+  } finally {
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});
+
+test("multi-topic pools create distinct per-topic centroids and score with MaxSim", async () => {
+  const modules = loadRuntimeModules({
+    youtubeClient: createFakeYoutubeClient({
+      searchResults: (query) => {
+        if (/rust/i.test(query)) {
+          return [
+            rawVideo("rust-1", "rust programming video 1", "Search"),
+            rawVideo("rust-2", "rust programming video 2", "Search")
+          ];
+        }
+        if (/coffee/i.test(query)) {
+          return [
+            rawVideo("coffee-1", "espresso coffee video 1", "Search"),
+            rawVideo("coffee-2", "espresso coffee video 2", "Search")
+          ];
+        }
+        return [];
+      },
+      channelVideos: [
+        rawVideo("channel-rust", "rust channel video", "Creator One"),
+        rawVideo("channel-coffee", "coffee channel video", "Creator Two"),
+        rawVideo("channel-other", "unrelated gaming video", "Creator Three")
+      ]
+    }),
+    embeddingForText: (text) => {
+      if (/rust/i.test(text)) return [1, 0];
+      if (/coffee|espresso/i.test(text)) return [0, 1];
+      return [-0.5, -0.5];
+    }
+  });
+
+  const profile = modules.profileStore.createProfile("Multi-Topic Profile");
+  profileStoresForCleanup.add(modules.profileStore);
+
+  try {
+    process.env.GRETEL_CONFIG = writeConfig("multi-topic-feed.json", {
+      feed: {
+        maxQueries: 2,
+        maxVideos: 8,
+        minVideosPerQuery: 2,
+        minVideosPerChannel: 2,
+        similarityThreshold: 0.55,
+        subscriptionFastLanePerSession: 0
+      },
+      embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
+    });
+
+    const feed = await modules.service.createFeed(
+      profile.id,
+      ["rust", "coffee"],
+      ["Creator One", "Creator Two", "Creator Three"],
+      "mixed",
+      observation(),
+      { servingOnly: true }
+    );
+
+    const poolKey = modules.poolStore.createFeedPoolKey({
+      tags: feed.queries,
+      channels: ["Creator One", "Creator Two", "Creator Three"],
+      channelSort: "mixed"
+    });
+
+    const topicCentroids = modules.algorithmStore.getTopicCentroids(profile.id, poolKey);
+    assert.equal(topicCentroids.length, 2);
+
+    const rustCentroid = topicCentroids.find((tc) => tc.topic === "rust");
+    const coffeeCentroid = topicCentroids.find((tc) => tc.topic === "coffee");
+    assert.ok(rustCentroid, "Rust topic centroid must exist");
+    assert.ok(coffeeCentroid, "Coffee topic centroid must exist");
+    assert.deepEqual(rustCentroid.current, [1, 0]);
+    assert.deepEqual(coffeeCentroid.current, [0, 1]);
+
+    const nodes = modules.poolStore.listPoolNodes(profile.id, poolKey);
+    const channelNodes = nodes.filter((n) => n.sourceNodeId === "channelVideos");
+
+    // channel-rust should match rust topic with similarity 1.0
+    const rustChannel = channelNodes.find((v) => v.id === "channel-rust");
+    assert.ok(rustChannel, "channel-rust must pass the 0.55 threshold");
+    assert.equal(rustChannel.similarityScore, 1.0);
+    assert.equal(rustChannel.matchedTopic, "rust");
+
+    // channel-coffee should match coffee topic with similarity 1.0
+    const coffeeChannel = channelNodes.find((v) => v.id === "channel-coffee");
+    assert.ok(coffeeChannel, "channel-coffee must pass the 0.55 threshold");
+    assert.equal(coffeeChannel.similarityScore, 1.0);
+    assert.equal(coffeeChannel.matchedTopic, "coffee");
+
+    // channel-other (similarity < 0) must be filtered out
+    const otherChannel = channelNodes.find((v) => v.id === "channel-other");
+    assert.equal(otherChannel, undefined, "channel-other must be filtered out by threshold");
+  } finally {
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});
+
+test("winner-takes-all drift updates only the matching topic centroid", async () => {
+  const modules = loadRuntimeModules({
+    youtubeClient: createFakeYoutubeClient()
+  });
+
+  const profile = modules.profileStore.createProfile("Topic Drift Profile");
+  profileStoresForCleanup.add(modules.profileStore);
+
+  const poolKey = "topic-drift-pool";
+  const configPath = writeConfig("topic-drift.json", {
+    feed: { coldStartInteractionThreshold: 1, similarityThreshold: 0.55 },
+    learning: { centroidLearningRate: 0.2, maxCentroidDrift: 0.25 },
+    embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
+  });
+  process.env.GRETEL_CONFIG = configPath;
+
+  try {
+    modules.algorithmStore.saveTopicCentroids(profile.id, poolKey, [
+      { topic: "rust", original: [1, 0], current: [1, 0] },
+      { topic: "coffee", original: [0, 1], current: [0, 1] }
+    ]);
+    modules.algorithmStore.saveCentroid(profile.id, poolKey, [0.7071, 0.7071], [0.7071, 0.7071]);
+
+    modules.profileStore.saveWatchedVideo({
+      profileId: profile.id,
+      video: video("warmup"),
+      watchedSeconds: 100,
+      durationSeconds: 100
+    });
+
+    // User likes a video closely aligned with Rust (e.g. [0.96, 0.28])
+    modules.algorithmStore.retainEmbedding(profile.id, "liked-rust", [0.96, 0.28]);
+    await modules.centroidDrift.updateCentroidsForPositiveEngagement(
+      profile.id,
+      video("liked-rust", { liked: true })
+    );
+
+    const topicCentroids = modules.algorithmStore.getTopicCentroids(profile.id, poolKey);
+    const rustCentroid = topicCentroids.find((tc) => tc.topic === "rust");
+    const coffeeCentroid = topicCentroids.find((tc) => tc.topic === "coffee");
+
+    // Rust topic drifted slightly towards [0.96, 0.28]
+    assert.ok(rustCentroid.current[0] < 1.0);
+    assert.ok(rustCentroid.current[1] > 0);
+
+    // Coffee topic MUST BE completely untouched!
+    assert.deepEqual(coffeeCentroid.current, [0, 1], "Coffee topic centroid must not drift when user interacts with Rust");
   } finally {
     modules.profileStore.deleteProfile(profile.id);
   }

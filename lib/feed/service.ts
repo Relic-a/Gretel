@@ -41,9 +41,11 @@ import { createFeedObservation, logFeedObservation, observeOperation } from "./o
 import {
   getCentroid,
   getRetainedEmbedding,
+  getTopicCentroids,
   retainEmbedding,
   retainVideoEmbeddings,
-  saveCentroid
+  saveCentroid,
+  saveTopicCentroids
 } from "./algorithm-store";
 import { averageNormalizedVectors, cosineSimilarity } from "./vector-math";
 import { hydrateChannelAvatars, resolveMissingChannelAvatars } from "./channel-avatar-cache";
@@ -307,6 +309,13 @@ export async function searchProfileVideos(
     try {
       const config = getGretelConfig();
       const centroid = getCentroid(profileId, poolKey)?.current || [];
+      const topicCentroids = getTopicCentroids(profileId, poolKey);
+      const activeCentroids: TopicCentroid[] = topicCentroids.length > 0
+        ? topicCentroids.map((tc) => ({ topic: tc.topic, vector: tc.current }))
+        : centroid.length > 0
+          ? [{ topic: "default", vector: centroid }]
+          : [];
+      const hasCentroid = activeCentroids.some((tc) => tc.vector.length > 0);
       const candidateLimit = Math.max(config.feed.maxVideos, 24);
 
       const candidates = await searchVideos(
@@ -319,7 +328,7 @@ export async function searchProfileVideos(
 
       let admittedVideos: FeedVideo[];
 
-      if (centroid.length === 0) {
+      if (!hasCentroid) {
         admittedVideos = candidates.slice(0, config.feed.maxVideos);
         observation.operations.push({
           name: "search.centroid_filter",
@@ -343,7 +352,7 @@ export async function searchProfileVideos(
           logWarn("search.embeddings_failed", { query, profileId, ...errorFields(error) });
         }
 
-        const scored = scoreByCentroid(candidates, embeddings, centroid, "tagSearch")
+        const scored = scoreByTopicCentroids(candidates, embeddings, activeCentroids, "tagSearch")
           .filter((video) => embeddings.size === 0 || (video.similarityScore || 0) >= config.feed.similarityThreshold)
           .sort((left, right) => (right.similarityScore || 0) - (left.similarityScore || 0))
           .slice(0, config.feed.maxVideos);
@@ -803,7 +812,40 @@ async function initializePoolOnce(
       return embedding ? [embedding] : [];
     })
   );
-  const scoredRoots = scoreByCentroid(rootVideos, rootEmbeddings, originalCentroid, "tagSearch");
+
+  const topicCentroids: Array<{ topic: string; original: number[]; current: number[] }> = [];
+
+  if (queries.length > 0) {
+    for (const query of queries) {
+      const queryVideos = rootVideos.filter((video) => video.query === query);
+      const queryEmbeddings = queryVideos.flatMap((video) => {
+        const embedding = rootEmbeddings.get(video.id);
+        return embedding ? [embedding] : [];
+      });
+      const topicVector = queryEmbeddings.length > 0
+        ? averageNormalizedVectors(queryEmbeddings)
+        : originalCentroid;
+
+      if (topicVector.length > 0) {
+        topicCentroids.push({
+          topic: query,
+          original: topicVector,
+          current: topicVector
+        });
+      }
+    }
+  }
+
+  if (topicCentroids.length === 0 && originalCentroid.length > 0) {
+    topicCentroids.push({
+      topic: "general",
+      original: originalCentroid,
+      current: originalCentroid
+    });
+  }
+
+  const activeCentroids: TopicCentroid[] = topicCentroids.map((tc) => ({ topic: tc.topic, vector: tc.current }));
+  const scoredRoots = scoreByTopicCentroids(rootVideos, rootEmbeddings, activeCentroids, "tagSearch");
 
   observation.operations.push({
     name: "feed.phase1.roots",
@@ -822,6 +864,9 @@ async function initializePoolOnce(
   ensureProfileCurrent(profileId, expectedProfileUpdatedAt);
   markRootDiscovered(profileId, poolKey, timestamp);
   saveCentroid(profileId, poolKey, originalCentroid, originalCentroid);
+  if (topicCentroids.length > 0) {
+    saveTopicCentroids(profileId, poolKey, topicCentroids);
+  }
   retainVideoEmbeddings(profileId, scoredRoots, rootEmbeddings);
   addPoolNodes(profileId, poolKey, "tagSearch", scoredRoots, timestamp);
 
@@ -831,10 +876,10 @@ async function initializePoolOnce(
       return embedding ? [[video.id, embedding] as const] : [];
     })
   );
-  const channelPoolVideos = scoreByCentroid(
+  const channelPoolVideos = scoreByTopicCentroids(
     persistentChannels,
     channelEmbeddings,
-    originalCentroid,
+    activeCentroids,
     "channelVideos"
   ).filter((video) => (video.similarityScore || 0) >= getGretelConfig().feed.similarityThreshold);
 
@@ -992,7 +1037,13 @@ async function expandPool(
       const newCandidates = rawRelatedVideos.filter((video) => !visitedVideoIds.has(video.id));
       const embeddings = await embedVideos(profileId, newCandidates, observation, "pool_expansion");
       const parentScores = new Map(seeds.map((seed) => [seed.id, seed.engagementScore || 0]));
-      const relatedVideos = scoreByCentroid(newCandidates, embeddings, centroid, "relatedVideos")
+      const topicCentroids = getTopicCentroids(profileId, poolKey);
+      const activeCentroids: TopicCentroid[] = topicCentroids.length > 0
+        ? topicCentroids.map((tc) => ({ topic: tc.topic, vector: tc.current }))
+        : centroid.length > 0
+          ? [{ topic: "default", vector: centroid }]
+          : [];
+      const relatedVideos = scoreByTopicCentroids(newCandidates, embeddings, activeCentroids, "relatedVideos")
         .map((video) => ({
           ...video,
           parentEngagementScore: parentScores.get(video.parent_video_id || "") || 0
@@ -1132,9 +1183,15 @@ function selectSubscriptionFastLaneVideos(
 function scorePoolVideos(profileId: string, poolKey: string, videos: FeedVideo[]) {
   const config = getGretelConfig();
   const centroid = getCentroid(profileId, poolKey)?.current || [];
+  const topicCentroids = getTopicCentroids(profileId, poolKey);
+  const activeCentroids: TopicCentroid[] = topicCentroids.length > 0
+    ? topicCentroids.map((tc) => ({ topic: tc.topic, vector: tc.current }))
+    : centroid.length > 0
+      ? [{ topic: "default", vector: centroid }]
+      : [];
   const interactions = getVideoInteractions(profileId);
   const impressionCounts = getVideoImpressionCounts(profileId);
-  const rescored = rescoreCachedVideos(profileId, videos, centroid).map((video) =>
+  const rescored = rescoreCachedVideos(profileId, videos, activeCentroids).map((video) =>
     applyEngagement(
       {
         ...video,
@@ -1353,22 +1410,60 @@ async function embedVideos(
   return embeddings;
 }
 
+export type TopicCentroid = {
+  topic: string;
+  vector: number[];
+};
+
+export function scoreByTopicCentroids(
+  videos: FeedVideo[],
+  embeddings: Map<string, number[]>,
+  topicCentroids: TopicCentroid[],
+  sourceNodeId: FeedVideo["sourceNodeId"]
+) {
+  return videos.map((video) => {
+    const embedding = embeddings.get(video.id);
+    if (!embedding || topicCentroids.length === 0) {
+      return {
+        ...video,
+        sourceNodeId,
+        similarityScore: 0
+      };
+    }
+
+    let bestScore = -1;
+    let bestTopic: string | undefined;
+
+    for (const tc of topicCentroids) {
+      if (tc.vector.length === 0) continue;
+      const score = cosineSimilarity(embedding, tc.vector);
+      if (score > bestScore) {
+        bestScore = score;
+        bestTopic = tc.topic;
+      }
+    }
+
+    return {
+      ...video,
+      sourceNodeId,
+      similarityScore: bestScore >= 0 ? bestScore : 0,
+      ...(bestTopic ? { matchedTopic: bestTopic } : {})
+    };
+  });
+}
+
 function scoreByCentroid(
   videos: FeedVideo[],
   embeddings: Map<string, number[]>,
   centroid: number[],
   sourceNodeId: FeedVideo["sourceNodeId"]
 ) {
-  return videos.map((video) => {
-    const embedding = embeddings.get(video.id);
-    const similarityScore = embedding && centroid.length ? cosineSimilarity(embedding, centroid) : 0;
-
-    return {
-      ...video,
-      sourceNodeId,
-      similarityScore
-    };
-  });
+  return scoreByTopicCentroids(
+    videos,
+    embeddings,
+    centroid.length > 0 ? [{ topic: "default", vector: centroid }] : [],
+    sourceNodeId
+  );
 }
 
 function filterEmbeddingOutliers(videos: FeedVideo[], embeddings: Map<string, number[]>) {
@@ -1407,8 +1502,13 @@ function filterEmbeddingOutliers(videos: FeedVideo[], embeddings: Map<string, nu
   };
 }
 
-function rescoreCachedVideos(profileId: string, videos: FeedVideo[], centroid: number[]) {
-  if (centroid.length === 0) {
+function rescoreCachedVideos(profileId: string, videos: FeedVideo[], centroids: TopicCentroid[] | number[]) {
+  const normalizedCentroids: TopicCentroid[] =
+    Array.isArray(centroids) && centroids.length > 0 && typeof centroids[0] === "number"
+      ? [{ topic: "default", vector: centroids as number[] }]
+      : (centroids as TopicCentroid[]);
+
+  if (normalizedCentroids.length === 0) {
     return videos;
   }
 
@@ -1419,9 +1519,22 @@ function rescoreCachedVideos(profileId: string, videos: FeedVideo[], centroid: n
       return video;
     }
 
+    let bestScore = -1;
+    let bestTopic: string | undefined;
+
+    for (const tc of normalizedCentroids) {
+      if (tc.vector.length === 0) continue;
+      const score = cosineSimilarity(embedding, tc.vector);
+      if (score > bestScore) {
+        bestScore = score;
+        bestTopic = tc.topic;
+      }
+    }
+
     return {
       ...video,
-      similarityScore: cosineSimilarity(embedding, centroid)
+      similarityScore: bestScore >= 0 ? bestScore : 0,
+      ...(bestTopic ? { matchedTopic: bestTopic } : {})
     };
   });
 }

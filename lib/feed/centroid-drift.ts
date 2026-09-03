@@ -3,13 +3,18 @@ import { createEmbeddingInput, getEmbeddingProvider } from "./embeddings";
 import { createEmbeddingInputWithTranscript, fetchTranscriptIntroduction } from "./transcription";
 import { getVideoInteractions } from "../profile-store";
 import type { FeedVideo } from "./types";
-import { cosineSimilarity, driftCentroid, normalizeVector } from "./vector-math";
 import {
+  getCentroid,
   getRetainedEmbedding,
+  getTopicCentroids,
+  listCentroidPoolKeys,
   listCentroids,
   retainEmbedding,
-  updateCentroid
+  updateCentroid,
+  updateTopicCentroid,
+  type StoredTopicCentroid
 } from "./algorithm-store";
+import { averageNormalizedVectors, cosineSimilarity, driftCentroid, normalizeVector } from "./vector-math";
 import { listPoolNodes, updatePoolSimilarities } from "./pool-store";
 import { logDebug, logInfo } from "../logger";
 
@@ -61,29 +66,82 @@ export async function updateCentroidsForPositiveEngagement(profileId: string, vi
     return;
   }
 
-  const rows = listCentroids(profileId);
+  const poolKeys = listCentroidPoolKeys(profileId);
+  const effectivePoolKeys = poolKeys.length > 0
+    ? poolKeys
+    : listCentroids(profileId).map((row) => row.cacheKey);
   const updatedAt = Date.now();
   let updatedCentroids = 0;
-  let rejectedCentroids = 0;
 
-  for (const row of rows) {
-    if (row.original.length === 0 || row.current.length === 0) {
+  for (const poolKey of effectivePoolKeys) {
+    const topicCentroids = getTopicCentroids(profileId, poolKey);
+
+    if (topicCentroids.length === 0) {
       continue;
     }
 
-    const proposed = driftCentroid(row.current, embedding, config.learning.centroidLearningRate);
-    const nextCentroid = clampCentroidDrift(row.original, proposed, config.learning.maxCentroidDrift);
+    if (topicCentroids.length === 1) {
+      const tc = topicCentroids[0];
+      if (tc.original.length === 0 || tc.current.length === 0) {
+        continue;
+      }
 
-    updateCentroid(profileId, row.cacheKey, nextCentroid, updatedAt);
-    recomputePoolSimilarities(profileId, row.cacheKey, nextCentroid);
-    updatedCentroids += 1;
+      const proposed = driftCentroid(tc.current, embedding, config.learning.centroidLearningRate);
+      const nextCentroid = clampCentroidDrift(tc.original, proposed, config.learning.maxCentroidDrift);
+
+      if (tc.topic === "default") {
+        updateCentroid(profileId, poolKey, nextCentroid, updatedAt);
+      } else {
+        updateTopicCentroid(profileId, poolKey, tc.topic, nextCentroid, updatedAt);
+        updateCentroid(profileId, poolKey, nextCentroid, updatedAt);
+      }
+
+      recomputePoolSimilarities(profileId, poolKey, [{ topic: tc.topic, vector: nextCentroid }]);
+      updatedCentroids += 1;
+      continue;
+    }
+
+    // Competitive learning: find the winning topic whose current centroid matches closest
+    let bestScore = -Infinity;
+    let winner: StoredTopicCentroid | null = null;
+
+    for (const tc of topicCentroids) {
+      if (tc.current.length === 0) continue;
+      const score = cosineSimilarity(embedding, tc.current);
+      if (score > bestScore) {
+        bestScore = score;
+        winner = tc;
+      }
+    }
+
+    // Gating: only drift if there is positive alignment with the winning topic
+    if (winner && bestScore > 0) {
+      const proposed = driftCentroid(winner.current, embedding, config.learning.centroidLearningRate);
+      const nextCentroid = clampCentroidDrift(winner.original, proposed, config.learning.maxCentroidDrift);
+
+      // Drift ONLY the winning topic
+      updateTopicCentroid(profileId, poolKey, winner.topic, nextCentroid, updatedAt);
+
+      // Recompute composite centroid for legacy compatibility
+      const updatedTopics = topicCentroids.map((tc) =>
+        tc.topic === winner.topic
+          ? { topic: tc.topic, vector: nextCentroid }
+          : { topic: tc.topic, vector: tc.current }
+      );
+      const compositeCurrent = averageNormalizedVectors(updatedTopics.map((tc) => tc.vector));
+      updateCentroid(profileId, poolKey, compositeCurrent, updatedAt);
+
+      // Rescore pool nodes across all updated topic centroids
+      recomputePoolSimilarities(profileId, poolKey, updatedTopics);
+      updatedCentroids += 1;
+    }
   }
 
   logInfo("feed.phase4.centroid_drift", {
     profileId,
     videoId: video.id,
     status: updatedCentroids > 0 ? "updated" : "unchanged",
-    centroidsChecked: rows.length,
+    centroidsChecked: effectivePoolKeys.length,
     updatedCentroids,
     rejectedCentroids: 0
   });
@@ -123,7 +181,22 @@ function isPositiveEngagement(video: FeedVideo, watchSaveThreshold: number) {
   return (video.watchTimeRatio || 0) >= watchSaveThreshold;
 }
 
-function recomputePoolSimilarities(profileId: string, poolKey: string, centroid: number[]) {
+export function recomputePoolSimilarities(
+  profileId: string,
+  poolKey: string,
+  centroidsInput?: Array<{ topic: string; vector: number[] }> | number[]
+) {
+  let centroids: Array<{ topic: string; vector: number[] }> = [];
+
+  if (Array.isArray(centroidsInput) && centroidsInput.length > 0 && typeof centroidsInput[0] === "number") {
+    centroids = [{ topic: "default", vector: centroidsInput as number[] }];
+  } else if (Array.isArray(centroidsInput) && centroidsInput.length > 0) {
+    centroids = centroidsInput as Array<{ topic: string; vector: number[] }>;
+  } else {
+    const topicCentroids = getTopicCentroids(profileId, poolKey);
+    centroids = topicCentroids.map((tc) => ({ topic: tc.topic, vector: tc.current }));
+  }
+
   const rescored = listPoolNodes(profileId, poolKey).flatMap((node) => {
     const embedding = getRetainedEmbedding(profileId, node.id);
 
@@ -131,9 +204,29 @@ function recomputePoolSimilarities(profileId: string, poolKey: string, centroid:
       return [];
     }
 
+    if (centroids.length === 0) {
+      return [{
+        ...node,
+        similarityScore: 0
+      }];
+    }
+
+    let bestScore = -1;
+    let bestTopic: string | undefined;
+
+    for (const tc of centroids) {
+      if (tc.vector.length === 0) continue;
+      const score = cosineSimilarity(embedding, tc.vector);
+      if (score > bestScore) {
+        bestScore = score;
+        bestTopic = tc.topic;
+      }
+    }
+
     return [{
       ...node,
-      similarityScore: cosineSimilarity(embedding, centroid)
+      similarityScore: bestScore >= 0 ? bestScore : 0,
+      ...(bestTopic ? { matchedTopic: bestTopic } : {})
     }];
   });
 
