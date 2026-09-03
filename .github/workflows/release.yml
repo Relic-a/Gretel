@@ -1,7 +1,6 @@
-name: Build release packages
+name: Build and publish release
 
 on:
-  workflow_dispatch:
   push:
     tags:
       - "v*"
@@ -9,26 +8,31 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
-  build:
+  test:
+    name: Validate release source
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run lint
+
+  desktop:
     name: Build ${{ matrix.name }}
     runs-on: ${{ matrix.os }}
-    env:
-      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
-      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
     strategy:
       fail-fast: false
       matrix:
         include:
-          - name: Linux
-            os: ubuntu-latest
-            command: npm run dist:linux
-            artifacts: |
-              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
-              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.sig
-              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/*.rpm
-              src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/*.sig
           - name: Windows
             os: windows-latest
             command: npm run dist:win
@@ -42,94 +46,52 @@ jobs:
               src-tauri/target/release/bundle/dmg/*.dmg
               src-tauri/target/release/bundle/macos/*.app.tar.gz
               src-tauri/target/release/bundle/macos/*.sig
-
+    env:
+      TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+      TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Linux Tauri dependencies
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf rpm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Run tests
-        run: npm test
-
-      - name: Generate package icons
-        run: npm run generate:icons
-
-      - name: Build package
-        run: ${{ matrix.command }}
-
-      - name: Verify Linux package media dependencies
-        if: runner.os == 'Linux'
-        shell: bash
-        run: |
-          debs=(src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb)
-          rpms=(src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/*.rpm)
-          test "${#debs[@]}" -eq 1
-          test "${#rpms[@]}" -eq 1
-
-          deb_dependencies=$(dpkg-deb --field "${debs[0]}" Depends)
-          for dependency in gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav; do
-            grep -Eq "(^|, )${dependency}(,|$)" <<< "$deb_dependencies"
-          done
-
-          rpm_requirements=$(rpm --query --package --requires "${rpms[0]}")
-          for dependency in gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-plugin-openh264; do
-            grep -Fxq "$dependency" <<< "$rpm_requirements"
-          done
-
-      - name: Upload workflow artifact
-        uses: actions/upload-artifact@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: release-${{ matrix.name }}
+      - run: npm ci
+      - run: ${{ matrix.command }}
+      - uses: actions/upload-artifact@v4
         with:
           name: Gretel-${{ matrix.name }}
           path: ${{ matrix.artifacts }}
           if-no-files-found: error
 
-  appimage:
-    name: Build signed AppImage updater
+  linux:
+    name: Build Linux packages once
     runs-on: ubuntu-22.04
     env:
       APPIMAGE_EXTRACT_AND_RUN: "1"
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
         with:
           node-version: 24
           cache: npm
-
-      - name: Set up Rust
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Install Tauri dependencies
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: release-linux
+      - name: Install Linux packaging dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Prepare AppImage resources
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev patchelf rpm gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
+      - run: npm ci
+      - name: Prepare shared Linux resources
         run: |
           npm run tauri:prepare
           node -e '
@@ -142,40 +104,95 @@ jobs:
               }
             }
           '
+      - name: Build deb, rpm, and AppImage from one compilation
+        run: npm run tauri -- build --target x86_64-unknown-linux-gnu --bundles deb,rpm,appimage --config '{"build":{"beforeBuildCommand":"true"}}'
+      - name: Verify Linux package media dependencies
+        shell: bash
+        run: |
+          debs=(src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb)
+          rpms=(src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/*.rpm)
+          appimages=(src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage)
+          test "${#debs[@]}" -eq 1
+          test "${#rpms[@]}" -eq 1
+          test "${#appimages[@]}" -eq 1
 
-      - name: Build signed AppImage updater
-        run: npm run tauri -- build --target x86_64-unknown-linux-gnu --bundles appimage --config '{"build":{"beforeBuildCommand":"true"}}'
+          deb_dependencies=$(dpkg-deb --field "${debs[0]}" Depends)
+          for dependency in gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav; do
+            grep -Eq "(^|, )${dependency}(,|$)" <<< "$deb_dependencies"
+          done
 
-      - name: Upload AppImage artifacts
-        uses: actions/upload-artifact@v4
+          rpm_requirements=$(rpm --query --package --requires "${rpms[0]}")
+          for dependency in gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-plugin-openh264; do
+            grep -Fxq "$dependency" <<< "$rpm_requirements"
+          done
+
+          "${appimages[0]}" --appimage-extract >/dev/null
+          test -d squashfs-root/usr/lib/gstreamer-1.0
+          find squashfs-root/usr/lib/gstreamer-1.0 -type f -name 'libgst*.so' -print -quit | grep -q .
+      - uses: actions/upload-artifact@v4
         with:
-          name: Gretel-AppImage
+          name: Gretel-Linux
           path: |
+            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
+            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.sig
+            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/*.rpm
+            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/rpm/*.sig
             src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.AppImage
             src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/appimage/*.sig
           if-no-files-found: error
 
-  release:
-    name: Publish GitHub release
-    if: startsWith(github.ref, 'refs/tags/')
-    needs: [build, appimage]
+  arch:
+    name: Package Arch from Linux artifact
+    needs: linux
     runs-on: ubuntu-latest
-
+    container: archlinux:base-devel
     steps:
-      - name: Check out repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: Gretel-Linux
+          path: linux-artifacts
+      - name: Build Arch package
+        shell: bash
+        run: |
+          mapfile -t debs < <(find linux-artifacts -type f -name '*.deb')
+          test "${#debs[@]}" -eq 1
+          useradd --create-home builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          runuser -u builder -- bash scripts/package-arch-release.sh "$GITHUB_REF_NAME" "${debs[0]}" "$GITHUB_WORKSPACE/arch-package"
+      - name: Verify Arch package and install marker
+        shell: bash
+        run: |
+          packages=(arch-package/*-x86_64.pkg.tar.zst)
+          test "${#packages[@]}" -eq 1
+          pacman --query --file "${packages[0]}"
+          bsdtar -tf "${packages[0]}" | grep -Fxq 'usr/bin/gretel'
+          bsdtar -tf "${packages[0]}" | grep -Fxq 'usr/lib/Gretel/.arch-package'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Gretel-Arch
+          path: arch-package/*-x86_64.pkg.tar.zst
+          if-no-files-found: error
 
-      - name: Download Tauri installers
-        uses: actions/download-artifact@v4
+  release:
+    name: Publish complete release
+    needs: [test, desktop, linux, arch]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/download-artifact@v4
         with:
           pattern: Gretel-*
           path: release-assets
           merge-multiple: true
-
-      - name: Build updater manifest
+      - name: Require the complete release inventory
+        run: node scripts/verify-release-assets.mjs release-assets "${{ github.ref_name }}"
+      - name: Build package-aware updater manifest
         run: node scripts/create-updater-manifest.mjs release-assets "${{ github.ref_name }}" "${{ github.repository }}" latest.json
-
-      - name: Publish Tauri installers
+      - name: Publish all installers atomically
         uses: softprops/action-gh-release@v2
         with:
           name: Gretel ${{ github.ref_name }}

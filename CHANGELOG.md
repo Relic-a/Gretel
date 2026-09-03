@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.1 — 2026-09-02
+
+### Releases and updates
+
+- Consolidated all platform packaging into one tag-driven, fail-closed release workflow that publishes only when every required artifact is present.
+- Reduced release time by compiling Linux once for `.deb`, `.rpm`, and AppImage packages, running tests once in parallel, and caching Rust build outputs per platform.
+- Added package-specific Linux updater targets so `.deb`, `.rpm`, and AppImage installations receive the correct signed artifact.
+- Added an explicit Arch-package update path that opens the complete release instead of attempting to install an incompatible AppImage.
+
 ## 0.5.0 — 2026-09-02
 
 ### Search and feed discovery

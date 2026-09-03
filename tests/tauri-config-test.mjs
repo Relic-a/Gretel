@@ -16,7 +16,6 @@ const executable = readFileSync(path.join(root, "src-tauri", "src", "main.rs"), 
 const titleBar = readFileSync(path.join(root, "app", "components", "WindowTitleBar.tsx"), "utf8");
 const startupPage = readFileSync(path.join(root, "src-tauri", "frontend", "index.html"), "utf8");
 const archPackageScript = readFileSync(path.join(root, "scripts", "package-arch-release.sh"), "utf8");
-const appImageWorkflow = readFileSync(path.join(root, ".github", "workflows", "appimage.yml"), "utf8");
 const releaseWorkflow = readFileSync(path.join(root, ".github", "workflows", "release.yml"), "utf8");
 
 assert.equal(config.identifier, "com.ezana.gretel");
@@ -38,7 +37,8 @@ assert.ok(
   capability.permissions.some((permission) =>
     typeof permission === "object" &&
     permission.identifier === "opener:allow-open-url" &&
-    permission.allow?.some((scope) => scope.url === "https://www.youtube.com/*")
+    permission.allow?.some((scope) => scope.url === "https://www.youtube.com/*") &&
+    permission.allow?.some((scope) => scope.url === "https://github.com/Relic-a/Gretel/releases/latest")
   )
 );
 assert.ok(Boolean(config.bundle.resources["node-runtime"] || config.bundle.resources["node-runtime/*"] || config.bundle.resources["node-runtime/node.exe"]));
@@ -64,9 +64,13 @@ assert.ok(config.bundle.linux.rpm.recommends.includes("gstreamer1-plugin-libav")
 for (const dependency of ["gst-plugins-good", "gst-plugins-bad", "gst-libav"]) {
   assert.match(archPackageScript, new RegExp(`'${dependency}'`));
 }
-assert.match(appImageWorkflow, /gstreamer1\.0-plugins-good/);
-assert.match(appImageWorkflow, /squashfs-root\/usr\/lib\/gstreamer-1\.0/);
+assert.match(archPackageScript, /\.arch-package/);
+assert.match(releaseWorkflow, /--bundles deb,rpm,appimage/);
+assert.match(releaseWorkflow, /arch-package\/\*-x86_64\.pkg\.tar\.zst/);
+assert.match(releaseWorkflow, /squashfs-root\/usr\/lib\/gstreamer-1\.0/);
 assert.match(releaseWorkflow, /Verify Linux package media dependencies/);
+assert.equal(existsSync(path.join(root, ".github", "workflows", "appimage.yml")), false);
+assert.equal(existsSync(path.join(root, ".github", "workflows", "publish-release.yml")), false);
 assert.ok(existsSync(path.join(root, "src-tauri", "frontend", "index.html")));
 assert.ok(existsSync(path.join(root, "src-tauri", "Cargo.toml")));
 assert.ok(existsSync(path.join(root, "src-tauri", "icons", "icon.ico")));
@@ -76,6 +80,7 @@ assert.ok(existsSync(path.join(root, "app", "fonts", "space-mono-regular.woff2")
 assert.ok(existsSync(path.join(root, "app", "fonts", "OFL.txt")));
 assert.match(launcher, /thread::spawn\(move \|\|/);
 assert.match(launcher, /tauri_plugin_opener::init\(\)/);
+assert.match(launcher, /update_install_mode/);
 assert.match(launcher, /CREATE_NO_WINDOW/);
 assert.match(launcher, /GRETEL_RENDER_MODE/);
 assert.match(launcher, /getrandom::fill/);

@@ -18,7 +18,8 @@
     {
       "identifier": "opener:allow-open-url",
       "allow": [
-        { "url": "https://www.youtube.com/*" }
+          { "url": "https://www.youtube.com/*" },
+          { "url": "https://github.com/Relic-a/Gretel/releases/latest" }
       ]
     }
   ]

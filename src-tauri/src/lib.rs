@@ -9,9 +9,23 @@ use std::{
     time::Duration,
 };
 
-use tauri::{Manager, RunEvent, Url, WebviewWindow};
+use tauri::{AppHandle, Manager, RunEvent, Url, WebviewWindow};
 
 struct ServerProcess(Mutex<Option<Child>>);
+
+#[tauri::command]
+fn update_install_mode(app: AppHandle) -> &'static str {
+    #[cfg(target_os = "linux")]
+    if app
+        .path()
+        .resource_dir()
+        .is_ok_and(|directory| directory.join(".arch-package").is_file())
+    {
+        return "manual";
+    }
+
+    "automatic"
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -19,6 +33,7 @@ pub fn run() {
     configure_linux_rendering();
 
     tauri::Builder::default()
+        .invoke_handler(tauri::generate_handler![update_install_mode])
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())

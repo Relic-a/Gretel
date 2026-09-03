@@ -11,9 +11,11 @@ if (!/^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$/.test(version)) throw new Error(`In
 
 const files = walk(resolve(assetDirectory));
 const targets = [
-  { platform: "linux-x86_64", suffix: ".AppImage" },
-  { platform: "windows-x86_64", suffix: "-setup.exe" },
-  { platform: "darwin-aarch64", suffix: ".app.tar.gz" }
+  { platforms: ["linux-x86_64-appimage", "linux-x86_64"], suffix: ".AppImage" },
+  { platforms: ["linux-x86_64-deb"], suffix: ".deb" },
+  { platforms: ["linux-x86_64-rpm"], suffix: ".rpm" },
+  { platforms: ["windows-x86_64"], suffix: "-setup.exe" },
+  { platforms: ["darwin-aarch64"], suffix: ".app.tar.gz" }
 ];
 const platforms = {};
 
@@ -23,10 +25,12 @@ for (const target of targets) {
   const artifact = matches[0];
   const signaturePath = `${artifact}.sig`;
   if (!files.includes(signaturePath)) throw new Error(`Missing signature for ${basename(artifact)}`);
-  platforms[target.platform] = {
-    signature: readFileSync(signaturePath, "utf8").trim(),
-    url: `https://github.com/${repository}/releases/download/${tag}/${encodeURIComponent(basename(artifact))}`
-  };
+  for (const platform of target.platforms) {
+    platforms[platform] = {
+      signature: readFileSync(signaturePath, "utf8").trim(),
+      url: `https://github.com/${repository}/releases/download/${tag}/${encodeURIComponent(basename(artifact))}`
+    };
+  }
 }
 
 writeFileSync(outputPath, `${JSON.stringify({ version, notes: `Gretel ${tag}`, pub_date: new Date().toISOString(), platforms }, null, 2)}\n`);

@@ -40,6 +40,7 @@ sha256sums=('$deb_checksum')
 
 package() {
   ar p "\$srcdir/gretel.deb" data.tar.gz | bsdtar -xzf - -C "\$pkgdir"
+  touch "\$pkgdir/usr/lib/Gretel/.arch-package"
 }
 EOF
 

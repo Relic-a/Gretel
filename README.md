@@ -21,7 +21,7 @@ Download the newest beta installer for your platform from [Gretel Releases](http
 - macOS (Apple silicon): `.dmg`
 - Linux: `.deb`, `.rpm`, `.AppImage`, or Arch package
 
-The installers are currently unsigned, so your operating system may show an unfamiliar-developer warning. Gretel does not update itself yet; install newer beta builds manually from the releases page.
+The installers are currently unsigned, so your operating system may show an unfamiliar-developer warning. Gretel installs signed in-app updates on Windows, macOS, AppImage, `.deb`, and `.rpm` installations. Arch packages link to the matching release and update through `pacman`.
 
 ## Features
 
@@ -137,7 +137,7 @@ npm run dist:mac
 
 Notes:
 
-- Linux release builds produce `.deb` and `.rpm` installers, followed by a separately verified AppImage and Arch package. The native packages declare the GStreamer demuxer and software-decoder plugins needed by WebKitGTK; the AppImage bundles its media framework.
+- Linux release builds compile once and produce verified `.deb`, `.rpm`, and AppImage artifacts; the Arch package is then derived from that exact `.deb` artifact. Publication is blocked unless every supported platform package is present. The native packages declare the GStreamer demuxer and software-decoder plugins needed by WebKitGTK; the AppImage bundles its media framework.
 - Linux source/development environments must provide WebKitGTK plus GStreamer's base, good, bad, and libav plugin sets. The package names vary by distribution.
 - Windows builds produce `.exe` installers. Prerelease builds use Tauri's NSIS target because MSI only accepts numeric prerelease identifiers.
 - macOS builds require macOS for best results.

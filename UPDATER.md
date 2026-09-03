@@ -7,6 +7,8 @@ Before intentionally publishing the first updater-enabled release, add the priva
 - `TAURI_SIGNING_PRIVATE_KEY`: the complete contents of the matching private key file.
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: the key password, or an empty value for an unencrypted key.
 
-The release workflow creates signed updater artifacts for AppImage, NSIS, and macOS, then publishes `latest.json`. Existing `.deb`, `.rpm`, Arch, AppImage, Windows, and macOS packages remain available.
+The single tag-driven release workflow builds all platforms in parallel, packages Arch from the same verified Debian payload, and publishes only after the complete asset inventory passes validation. It creates package-specific signed updater entries for AppImage, `.deb`, `.rpm`, NSIS, and macOS. Arch installations are marked during packaging and direct users to the matching `.pkg.tar.zst` release asset for installation through `pacman`.
+
+Do not publish platform packages from a separate workflow. Keeping creation in the tag workflow ensures a release cannot appear before its Arch package or any other required artifact exists.
 
 Keep an offline backup of the private key. Losing it prevents installed copies of Gretel from trusting future updates. Rotating the key requires distributing a normal installer containing the new public key.

@@ -1,9 +1,9 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Download, RefreshCw, X } from "lucide-react";
+import { Download, ExternalLink, RefreshCw, X } from "lucide-react";
 
-type UpdateStatus = "idle" | "available" | "downloading" | "ready" | "error";
+type UpdateStatus = "idle" | "available" | "manual" | "downloading" | "ready" | "error";
 
 type AvailableUpdate = {
   version: string;
@@ -26,9 +26,10 @@ export function UpdateManager() {
 
   const checkForUpdate = useCallback(async (showNoUpdate = false) => {
     try {
-      const { isTauri } = await import("@tauri-apps/api/core");
+      const { invoke, isTauri } = await import("@tauri-apps/api/core");
       if (!isTauri()) return;
 
+      const installMode = await invoke<"automatic" | "manual">("update_install_mode");
       const { check } = await import("@tauri-apps/plugin-updater");
       const found = await check();
       if (!found) {
@@ -40,7 +41,7 @@ export function UpdateManager() {
       }
 
       setUpdate(found as AvailableUpdate);
-      setStatus("available");
+      setStatus(installMode === "manual" ? "manual" : "available");
       setMessage("");
     } catch (error) {
       console.error("Could not check for Gretel updates", error);
@@ -102,6 +103,11 @@ export function UpdateManager() {
     setMessage("");
   }
 
+  async function openManualUpdate() {
+    const { openUrl } = await import("@tauri-apps/plugin-opener");
+    await openUrl("https://github.com/Relic-a/Gretel/releases/latest");
+  }
+
   if (status === "idle" && !message) return null;
 
   return (
@@ -109,12 +115,14 @@ export function UpdateManager() {
       <div className="update-toast-copy">
         <strong>
           {status === "available" && `Gretel ${update?.version} is available`}
+          {status === "manual" && `Gretel ${update?.version} is available`}
           {status === "downloading" && "Downloading update"}
           {status === "ready" && "Restarting Gretel"}
           {status === "error" && "Update failed"}
           {status === "idle" && message}
         </strong>
         {status === "available" && <span>The update installs inside Gretel and preserves your local data.</span>}
+        {status === "manual" && <span>Download the Arch package, then install it with your package manager.</span>}
         {status === "downloading" && <span>{progress > 0 ? `${progress}% complete` : "Preparing download…"}</span>}
         {status === "ready" && <span>The new version has been installed.</span>}
         {status === "error" && <span>{message}</span>}
@@ -124,6 +132,11 @@ export function UpdateManager() {
         {status === "available" && (
           <button type="button" onClick={() => void installUpdate()}>
             <Download aria-hidden="true" size={16} /> Update and restart
+          </button>
+        )}
+        {status === "manual" && (
+          <button type="button" onClick={() => void openManualUpdate()}>
+            <ExternalLink aria-hidden="true" size={16} /> Open download page
           </button>
         )}
         {status === "error" && (
