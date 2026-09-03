@@ -17,8 +17,8 @@ jobs:
     name: Validate release source
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -50,8 +50,8 @@ jobs:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -62,7 +62,7 @@ jobs:
           shared-key: release-${{ matrix.name }}
       - run: npm ci
       - run: ${{ matrix.command }}
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Gretel-${{ matrix.name }}
           path: ${{ matrix.artifacts }}
@@ -76,8 +76,8 @@ jobs:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm
@@ -129,7 +129,7 @@ jobs:
           "${appimages[0]}" --appimage-extract >/dev/null
           test -d squashfs-root/usr/lib/gstreamer-1.0
           find squashfs-root/usr/lib/gstreamer-1.0 -type f -name 'libgst*.so' -print -quit | grep -q .
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Gretel-Linux
           path: |
@@ -147,8 +147,8 @@ jobs:
     runs-on: ubuntu-latest
     container: archlinux:base-devel
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
         with:
           name: Gretel-Linux
           path: linux-artifacts
@@ -168,7 +168,7 @@ jobs:
           pacman --query --file "${packages[0]}"
           bsdtar -tf "${packages[0]}" | grep -Fxq 'usr/bin/gretel'
           bsdtar -tf "${packages[0]}" | grep -Fxq 'usr/lib/Gretel/.arch-package'
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: Gretel-Arch
           path: arch-package/*-x86_64.pkg.tar.zst
@@ -179,11 +179,11 @@ jobs:
     needs: [test, desktop, linux, arch]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: Gretel-*
           path: release-assets
