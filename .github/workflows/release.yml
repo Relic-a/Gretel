@@ -192,13 +192,16 @@ jobs:
         run: node scripts/verify-release-assets.mjs release-assets "${{ github.ref_name }}"
       - name: Build package-aware updater manifest
         run: node scripts/create-updater-manifest.mjs release-assets "${{ github.ref_name }}" "${{ github.repository }}" latest.json
-      - name: Publish all installers atomically
-        uses: softprops/action-gh-release@v2
-        with:
-          name: Gretel ${{ github.ref_name }}
-          generate_release_notes: true
-          prerelease: ${{ contains(github.ref_name, '-') }}
-          fail_on_unmatched_files: true
-          files: |
-            release-assets/**/*
-            latest.json
+      - name: Publish all installers from a draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          mapfile -t assets < <(find release-assets -type f -print)
+          assets+=(latest.json)
+          release_args=(--draft --title "Gretel $GITHUB_REF_NAME" --generate-notes)
+          if [[ "$GITHUB_REF_NAME" == *-* ]]; then
+            release_args+=(--prerelease)
+          fi
+          gh release create "$GITHUB_REF_NAME" "${assets[@]}" "${release_args[@]}"
+          gh release edit "$GITHUB_REF_NAME" --draft=false
