@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
+import { LoaderCircle } from "lucide-react";
 
 import type { FeedVideo } from "../types";
 import { normalize } from "./video-utils";
@@ -138,6 +139,7 @@ export function FeedView(props: FeedViewProps) {
       </div>
 
       <div ref={loaderRef} className="feed-loader">
+        {props.loading && props.videos.length > 0 && <LoaderCircle className="spinner" size={20} aria-hidden="true" />}
         <span className="loader-copy">
           {props.loading && props.videos.length > 0 ? "Loading more videos..." : ""}
         </span>

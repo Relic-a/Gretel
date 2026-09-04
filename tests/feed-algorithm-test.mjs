@@ -1678,6 +1678,92 @@ test("getThumbnailUrl selects the highest resolution thumbnail and ignores low-r
   );
 });
 
+test("search pagination loads two pages, defers filtering prefetch, deduplicates and stops at low yield", async () => {
+  const { SearchPager } = require(path.join(buildDir, "lib/feed/search-pager.js"));
+  const fetched = [];
+  const filtered = [];
+  const pages = [
+    [{ id: "a" }, { id: "b" }],
+    [{ id: "b" }, { id: "c" }],
+    Array.from({ length: 8 }, (_, i) => ({ id: `later-${i}` })),
+    [{ id: "never" }]
+  ];
+  const pager = new SearchPager(
+    async () => { fetched.push(0); return 0; },
+    async (page) => { fetched.push(page + 1); return page + 1; },
+    async (page) => [...pages[page]],
+    async (videos) => {
+      filtered.push(videos.map((v) => v.id));
+      return { videos: filtered.length === 1 ? videos : videos.slice(0, 1), reliable: true };
+    },
+    (page) => page < pages.length - 1
+  );
+  const [first, duplicate] = await Promise.all([pager.getPage(0), pager.getPage(0)]);
+  assert.deepEqual(first, duplicate);
+  assert.deepEqual(first.videos.map((v) => v.id), ["a", "b", "c"]);
+  assert.equal(first.hasMore, true);
+  assert.deepEqual(fetched, [0, 1, 2]);
+  assert.equal(filtered.length, 1, "prefetched page must not be embedded yet");
+  const later = await pager.getPage(1);
+  assert.equal(later.videos.length, 1);
+  assert.equal(later.hasMore, false);
+  assert.deepEqual(fetched, [0, 1, 2], "poor yield stops further fetches");
+  await pager.getPage(1);
+  assert.equal(filtered.length, 2, "retries reuse processed results");
+});
+
+test("search pagination stops immediately on poor initial yield or unreliable embeddings", async () => {
+  const { SearchPager } = require(path.join(buildDir, "lib/feed/search-pager.js"));
+  for (const reliable of [true, false]) {
+    let fetches = 0;
+    const pager = new SearchPager(
+      async () => 0,
+      async (page) => { fetches++; return page + 1; },
+      async (page) => Array.from({ length: 10 }, (_, i) => ({ id: `${page}-${i}` })),
+      async (videos) => ({ videos: reliable ? videos.slice(0, 1) : videos, reliable }),
+      () => true
+    );
+    assert.equal((await pager.getPage(0)).hasMore, false);
+    assert.equal(fetches, 1, "only the second initial page should be fetched");
+  }
+});
+
+test("search pagination service follows continuations beyond the feed cap and replays cursors safely", async () => {
+  let continuationCalls = 0;
+  const makePage = (index) => ({
+    videos: [rawVideo(`page-${index}`, `Result ${index}`, "Creator")],
+    has_continuation: index < 3,
+    getContinuation: async () => { continuationCalls++; return makePage(index + 1); }
+  });
+  const fakeClient = createFakeYoutubeClient();
+  fakeClient.search = async () => makePage(0);
+  const modules = loadRuntimeModules({ youtubeClient: fakeClient });
+  modules.service.clearVideoSearchCache();
+  const profile = modules.profileStore.createProfile("Pagination Test");
+  profileStoresForCleanup.add(modules.profileStore);
+  process.env.GRETEL_CONFIG = writeConfig("search-pagination.json", { feed: { maxVideos: 1 } });
+  const search = (cursor) => modules.service.searchProfileVideoPage(
+    profile.id, "pages", [], [], "mixed", observation(), cursor
+  );
+  try {
+    const first = await search();
+    assert.equal(first.videos.length, 2, "search must not inherit the feed serving cap");
+    assert.equal(continuationCalls, 2, "two initial pages plus one raw prefetch");
+    const second = await search(first.cursor);
+    assert.deepEqual(second.videos.map((v) => v.id), ["page-2"]);
+    assert.equal(continuationCalls, 3);
+    assert.deepEqual(await search(first.cursor), second);
+    const third = await search(second.cursor);
+    assert.deepEqual(third.videos.map((v) => v.id), ["page-3"]);
+    assert.equal(third.cursor, null);
+    modules.service.clearVideoSearchCache(profile.id);
+    assert.deepEqual(await search(first.cursor), { videos: [], cursor: null });
+  } finally {
+    modules.service.clearVideoSearchCache();
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});
+
 test("searchProfileVideos skips embeddings when centroid is empty and serves immediately", async () => {
   let embedCalls = 0;
   const searchVideos = [

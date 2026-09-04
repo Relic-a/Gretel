@@ -1,7 +1,7 @@
 import { verifyApiToken } from "../../../lib/api-auth";
 import { parseChannelSort, parseTags } from "../../../lib/feed/input";
 import { createFeedObservation, logFeedObservation } from "../../../lib/feed/observation";
-import { searchProfileVideos } from "../../../lib/feed/service";
+import { searchProfileVideoPage } from "../../../lib/feed/service";
 import { errorFields } from "../../../lib/logger";
 import { getProfile } from "../../../lib/profile-store";
 
@@ -31,16 +31,21 @@ export async function POST(request: Request) {
     }
 
     observation.profileId = profile.id;
-    const videos = await searchProfileVideos(
+    const cursor = body.cursor;
+    if (cursor != null && (typeof cursor.session !== "string" || !Number.isSafeInteger(cursor.page) || cursor.page < 1)) {
+      return Response.json({ error: "Invalid search cursor." }, { status: 400 });
+    }
+    const result = await searchProfileVideoPage(
       profile.id,
       query,
       tags,
       channels,
       channelSort,
-      observation
+      observation,
+      cursor
     );
-    logFeedObservation(observation, { queryLength: query.length, finalVideos: videos.length });
-    return Response.json({ query, videos });
+    logFeedObservation(observation, { queryLength: query.length, finalVideos: result.videos.length });
+    return Response.json({ query, ...result });
   } catch (error) {
     logFeedObservation(observation, { ...errorFields(error, { stack: true }) });
     return Response.json(

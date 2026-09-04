@@ -29,7 +29,7 @@ export async function searchVideos(
   observation: FeedObservation,
   profileId: string,
   maxVideos = getGretelConfig().feed.maxVideos,
-  options: { resolveAvatars?: boolean } = {}
+  options: { resolveAvatars?: boolean; results?: { videos?: unknown[]; results?: unknown[] } } = {}
 ) {
   return observeOperation(
     observation,
@@ -48,7 +48,7 @@ export async function searchVideos(
       const searchResults = await Promise.all(
         queries.map(async (query) => {
           try {
-            const results = await youtube.search(query, { type: "video" });
+            const results = options.results ?? await youtube.search(query, { type: "video" });
             return { query, results, error: null };
           } catch (error) {
             return { query, results: { results: [] }, error };

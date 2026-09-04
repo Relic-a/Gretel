@@ -64,7 +64,6 @@ export default function Home() {
   const [channelResults, setChannelResults] = useState<ChannelResult[]>([]);
   const [isSearchingChannels, setIsSearchingChannels] = useState(false);
   const channelSearchCacheRef = useRef<Map<string, ChannelResult[]>>(new Map());
-  const videoSearchCacheRef = useRef<Map<string, FeedVideo[]>>(new Map());
   const searchRequestIdRef = useRef(0);
   const [feed, setFeed] = useState<FeedResponse | null>(null);
   const [config, setConfig] = useState<PublicGretelConfig | null>(null);
@@ -78,6 +77,21 @@ export default function Home() {
   const [searchedQuery, setSearchedQuery] = useState("");
   const [searchResults, setSearchResults] = useState<FeedVideo[] | null>(null);
   const [searching, setSearching] = useState(false);
+  const [searchCursor, setSearchCursor] = useState<{ session: string; page: number } | null>(null);
+  const [loadingSearchMore, setLoadingSearchMore] = useState(false);
+  const searchMoreRequestRef = useRef(false);
+
+  useEffect(() => {
+    resetSearchRequest();
+  }, [profileId, section, tags, channels]);
+
+  function resetSearchRequest() {
+    searchRequestIdRef.current += 1;
+    setSearching(false);
+    setLoadingSearchMore(false);
+    searchMoreRequestRef.current = false;
+    setSearchCursor(null);
+  }
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -677,6 +691,7 @@ export default function Home() {
   }
 
   function openHome() {
+    resetSearchRequest();
     setError("");
     setSection("home");
     setSearchResults(null);
@@ -706,6 +721,7 @@ export default function Home() {
   }
 
   async function openSaved() {
+    resetSearchRequest();
     setError("");
     setSection("saved");
     setSearchResults(null);
@@ -720,6 +736,7 @@ export default function Home() {
   }
 
   async function openHistory() {
+    resetSearchRequest();
     setError("");
     setSection("history");
     setSearchResults(null);
@@ -959,8 +976,6 @@ export default function Home() {
       if (searchResults !== null) {
         const query = (searchedQuery || searchQuery).trim();
         if (query) {
-          const cacheKey = `${profileId}:${query.toLowerCase()}:${tags.slice().sort().join(",")}:${channels.slice().sort().join(",")}`;
-          videoSearchCacheRef.current.delete(cacheKey);
           await searchForVideos(query);
         }
         return;
@@ -1001,17 +1016,10 @@ export default function Home() {
 
     setSearchedQuery(trimmed);
 
-    const cacheKey = `${profileId}:${trimmed.toLowerCase()}:${tags.slice().sort().join(",")}:${channels.slice().sort().join(",")}`;
-    const cached = videoSearchCacheRef.current.get(cacheKey);
-    if (cached) {
-      setError("");
-      setSearchResults(cached);
-      setActiveVideo(null);
-      window.scrollTo({ top: 0, behavior: "smooth" });
-      return;
-    }
-
     const currentRequestId = ++searchRequestIdRef.current;
+    setSearchCursor(null);
+    setLoadingSearchMore(false);
+    searchMoreRequestRef.current = false;
     setError("");
     setSearching(true);
     setActiveVideo(null);
@@ -1030,8 +1038,8 @@ export default function Home() {
         return;
       }
       const videos = data.videos || [];
-      videoSearchCacheRef.current.set(cacheKey, videos);
       setSearchResults(videos);
+      setSearchCursor(data.cursor ?? null);
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch (caught) {
       if (currentRequestId !== searchRequestIdRef.current) return;
@@ -1044,13 +1052,42 @@ export default function Home() {
     }
   }
 
+  async function loadMoreSearch() {
+    if (!searchCursor || searchMoreRequestRef.current || searching) return;
+    const requestId = searchRequestIdRef.current;
+    searchMoreRequestRef.current = true;
+    setLoadingSearchMore(true);
+    try {
+      const response = await authedFetch("/api/search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ profileId, query: searchedQuery, tags, channels, cursor: searchCursor })
+      });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error || "Could not load more search results.");
+      if (requestId !== searchRequestIdRef.current) return;
+      setSearchResults((current) => {
+        if (!current) return current;
+        const seen = new Set(current.map((video) => video.id));
+        return [...current, ...(data.videos as FeedVideo[]).filter((video) => !seen.has(video.id))];
+      });
+      setSearchCursor(data.cursor ?? null);
+    } catch (caught) {
+      if (requestId !== searchRequestIdRef.current) return;
+      setError(caught instanceof Error ? caught.message : "Could not load more search results.");
+      setSearchCursor(null);
+    } finally {
+      if (requestId === searchRequestIdRef.current) {
+        searchMoreRequestRef.current = false;
+        setLoadingSearchMore(false);
+      }
+    }
+  }
+
   function handleSearchQueryChange(value: string) {
     setSearchQuery(value);
     if (value.trim().length === 0) {
-      if (searching) {
-        searchRequestIdRef.current += 1;
-        setSearching(false);
-      }
+      resetSearchRequest();
       if (searchResults !== null) {
         setSearchResults(null);
       }
@@ -1128,8 +1165,8 @@ export default function Home() {
         onRefresh={() => void refreshVideos()}
         onToggleProfileMenu={() => setShowProfileMenu(!showProfileMenu)}
         onSelectProfile={(nextProfileId) => {
+          resetSearchRequest();
           feedRequestIdRef.current += 1;
-          videoSearchCacheRef.current.clear();
           setLoading(false);
           setIsBuilding(false);
           setProfileId(nextProfileId);
@@ -1224,14 +1261,14 @@ export default function Home() {
           subscriptions={subscriptions}
           savedVideoIds={savedVideoIds}
           likedVideoIds={likedVideoIds}
-          loading={loading}
+          loading={searchResults !== null ? loadingSearchMore : loading}
           isBuilding={isBuilding}
-          canAskForMore={canAskForMore}
+          canAskForMore={searchResults !== null ? Boolean(searchCursor) : canAskForMore}
           profileName={activeProfile?.name || profileName}
           tags={tags}
           channels={channels}
           loadingLabel={buildingLabel}
-          onLoadMore={() => requestFeed()}
+          onLoadMore={() => searchResults !== null ? void loadMoreSearch() : void requestFeed()}
           onSelectVideo={openVideo}
           onSaveVideo={saveVideo}
           onLikeVideo={likeVideo}

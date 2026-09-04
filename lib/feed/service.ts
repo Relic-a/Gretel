@@ -28,6 +28,7 @@ import {
 import { recommendVideosFromSeeds } from "./recommendations";
 import type { ChannelSort, FeedObservation, FeedVideo } from "./types";
 import { fetchChannelVideos, searchVideos } from "./youtube";
+import { SearchPager } from "./search-pager";
 import { getYoutubeClient } from "./youtube-client";
 import {
   beginProfileOperation,
@@ -254,12 +255,12 @@ export function startFeedServingSession(
 }
 
 type VideoSearchCacheEntry = {
-  videos: FeedVideo[];
+  id: string;
+  pager: SearchPager<FeedVideo, Awaited<ReturnType<Awaited<ReturnType<typeof getYoutubeClient>>["search"]>>>;
   timestamp: number;
 };
 
 const videoSearchCache = new Map<string, VideoSearchCacheEntry>();
-const inFlightVideoSearches = new Map<string, Promise<FeedVideo[]>>();
 const VIDEO_SEARCH_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const MAX_VIDEO_SEARCH_CACHE_ENTRIES = 100;
 
@@ -283,144 +284,143 @@ export async function searchProfileVideos(
   channelSort: ChannelSort,
   observation: FeedObservation
 ) {
+  return (await searchProfileVideoPage(profileId, query, tags, channels, channelSort, observation)).videos;
+}
+
+export async function searchProfileVideoPage(
+  profileId: string, query: string, tags: string[], channels: string[],
+  channelSort: ChannelSort, observation: FeedObservation,
+  cursor?: { session: string; page: number }
+) {
   const normalizedQuery = query.toLowerCase().replace(/\s+/g, " ").trim();
   const poolKey = createFeedPoolKey({ tags: createQueries(tags), channels, channelSort });
   const cacheKey = `${profileId}:${poolKey}:${normalizedQuery}`;
 
-  const cached = videoSearchCache.get(cacheKey);
-  if (cached && Date.now() - cached.timestamp < VIDEO_SEARCH_CACHE_TTL_MS) {
-    observation.operations.push({
-      name: "search.cache_hit",
-      durationMs: 0,
-      status: "ok",
-      input: { query: normalizedQuery, profileId },
-      output: { videos: cached.videos.length }
-    });
-    return cached.videos;
+  let cached = videoSearchCache.get(cacheKey);
+  if (cached && Date.now() - cached.timestamp >= VIDEO_SEARCH_CACHE_TTL_MS) {
+    videoSearchCache.delete(cacheKey);
+    cached = undefined;
   }
-
-  const existingInFlight = inFlightVideoSearches.get(cacheKey);
-  if (existingInFlight) {
-    return existingInFlight;
+  if (cursor && (!cached || cached.id !== cursor.session)) {
+    return { videos: [], cursor: null };
   }
+  if (cached && !cursor) {
+    observation.operations.push({ name: "search.cache_hit", durationMs: 0, status: "ok" });
+  }
+  if (!cached) {
+    const pager = new SearchPager(
+      async () => (await getYoutubeClient(profileId)).search(query, { type: "video" }),
+      async (page) => page.has_continuation ? page.getContinuation() : null,
+      (page) => searchVideos([query], observation, profileId, Number.MAX_SAFE_INTEGER,
+        { resolveAvatars: false, results: page }),
+      async (candidates) => {
+        const endProfileOperation = beginProfileOperation(profileId);
 
-  const searchExecution = (async () => {
-    const endProfileOperation = beginProfileOperation(profileId);
-
-    try {
-      const config = getGretelConfig();
-      const centroid = getCentroid(profileId, poolKey)?.current || [];
-      const topicCentroids = getTopicCentroids(profileId, poolKey);
-      const activeCentroids: TopicCentroid[] = topicCentroids.length > 0
-        ? topicCentroids.map((tc) => ({ topic: tc.topic, vector: tc.current }))
-        : centroid.length > 0
-          ? [{ topic: "default", vector: centroid }]
-          : [];
-      const hasCentroid = activeCentroids.some((tc) => tc.vector.length > 0);
-      const candidateLimit = Math.max(config.feed.maxVideos, 24);
-
-      const candidates = await searchVideos(
-        [query],
-        observation,
-        profileId,
-        candidateLimit,
-        { resolveAvatars: false }
-      );
-
-      let admittedVideos: FeedVideo[];
-
-      if (!hasCentroid) {
-        admittedVideos = candidates.slice(0, config.feed.maxVideos);
-        observation.operations.push({
-          name: "search.centroid_filter",
-          durationMs: 0,
-          status: "ok",
-          input: {
-            candidates: candidates.length,
-            hasCentroid: false
-          },
-          output: {
-            admittedVideos: admittedVideos.length,
-            filteredByCentroid: 0
-          }
-        });
-      } else {
-        const filterStartedAt = performance.now();
-        let embeddings = new Map<string, number[]>();
         try {
-          embeddings = await embedVideos(profileId, candidates, observation, "user_search");
-        } catch (error) {
-          logWarn("search.embeddings_failed", { query, profileId, ...errorFields(error) });
-        }
+          const config = getGretelConfig();
+          const centroid = getCentroid(profileId, poolKey)?.current || [];
+          const topicCentroids = getTopicCentroids(profileId, poolKey);
+          const activeCentroids: TopicCentroid[] = topicCentroids.length > 0
+            ? topicCentroids.map((tc) => ({ topic: tc.topic, vector: tc.current }))
+            : centroid.length > 0
+              ? [{ topic: "default", vector: centroid }]
+              : [];
+          const hasCentroid = activeCentroids.some((tc) => tc.vector.length > 0);
+          let admittedVideos: FeedVideo[];
+          let reliable = true;
 
-        const scored = scoreByTopicCentroids(candidates, embeddings, activeCentroids, "tagSearch")
-          .filter((video) => embeddings.size === 0 || (video.similarityScore || 0) >= config.feed.similarityThreshold)
-          .sort((left, right) => (right.similarityScore || 0) - (left.similarityScore || 0))
-          .slice(0, config.feed.maxVideos);
+          if (!hasCentroid) {
+            admittedVideos = candidates;
+            observation.operations.push({
+              name: "search.centroid_filter",
+              durationMs: 0,
+              status: "ok",
+              input: {
+                candidates: candidates.length,
+                hasCentroid: false
+              },
+              output: {
+                admittedVideos: admittedVideos.length,
+                filteredByCentroid: 0
+              }
+            });
+          } else {
+            const filterStartedAt = performance.now();
+            let embeddings = new Map<string, number[]>();
+            try {
+              embeddings = await embedVideos(profileId, candidates, observation, "user_search");
+            } catch (error) {
+              logWarn("search.embeddings_failed", { query, profileId, ...errorFields(error) });
+            }
+            reliable = candidates.every((video) => embeddings.has(video.id));
 
-        admittedVideos = scored;
+            const scored = scoreByTopicCentroids(candidates, embeddings, activeCentroids, "tagSearch")
+              .filter((video) => embeddings.size === 0 || (video.similarityScore || 0) >= config.feed.similarityThreshold)
+              .sort((left, right) => (right.similarityScore || 0) - (left.similarityScore || 0));
 
-        observation.operations.push({
-          name: "search.centroid_filter",
-          durationMs: Math.round(performance.now() - filterStartedAt),
-          status: "ok",
-          input: {
-            candidates: candidates.length,
-            embeddedCandidates: embeddings.size,
-            hasCentroid: true,
-            concurrency: config.embeddings.maxConcurrentRequests
-          },
-          output: {
-            admittedVideos: admittedVideos.length,
-            filteredByCentroid: candidates.length - admittedVideos.length
+            admittedVideos = scored;
+
+            observation.operations.push({
+              name: "search.centroid_filter",
+              durationMs: Math.round(performance.now() - filterStartedAt),
+              status: "ok",
+              input: {
+                candidates: candidates.length,
+                embeddedCandidates: embeddings.size,
+                hasCentroid: true,
+                concurrency: config.embeddings.maxConcurrentRequests
+              },
+              output: {
+                admittedVideos: admittedVideos.length,
+                filteredByCentroid: candidates.length - admittedVideos.length
+              }
+            });
           }
-        });
-      }
 
-      // Resolve missing channel avatars only for the final admitted videos
-      const youtube = await getYoutubeClient(profileId);
-      const avatarStartedAt = performance.now();
-      const resolvedVideos = await resolveMissingChannelAvatars(
-        admittedVideos,
-        async (channelId) => {
-          const channel = await Promise.race([
-            youtube.getChannel(channelId),
-            new Promise<never>((_, reject) =>
-              setTimeout(() => reject(new Error("Channel avatar fetch timeout")), 1500)
-            )
-          ]).catch(() => undefined);
-          return channel ? getChannelAvatarUrl(channel) : undefined;
+          // Resolve missing channel avatars only for the final admitted videos
+          const youtube = await getYoutubeClient(profileId);
+          const avatarStartedAt = performance.now();
+          const resolvedVideos = await resolveMissingChannelAvatars(
+            admittedVideos,
+            async (channelId) => {
+              const channel = await Promise.race([
+                youtube.getChannel(channelId),
+                new Promise<never>((_, reject) =>
+                  setTimeout(() => reject(new Error("Channel avatar fetch timeout")), 1500)
+                )
+              ]).catch(() => undefined);
+              return channel ? getChannelAvatarUrl(channel) : undefined;
+            }
+          );
+
+          observation.operations.push({
+            name: "search.avatar_resolution",
+            durationMs: Math.round(performance.now() - avatarStartedAt),
+            status: "ok",
+            input: { videos: admittedVideos.length },
+            output: { resolvedVideos: resolvedVideos.length }
+          });
+
+          const finalResult = hydrateChannelAvatars(resolvedVideos);
+
+          return { videos: finalResult, reliable };
+        } finally {
+          endProfileOperation();
         }
-      );
-
-      observation.operations.push({
-        name: "search.avatar_resolution",
-        durationMs: Math.round(performance.now() - avatarStartedAt),
-        status: "ok",
-        input: { videos: admittedVideos.length },
-        output: { resolvedVideos: resolvedVideos.length }
-      });
-
-      const finalResult = hydrateChannelAvatars(resolvedVideos);
-
-      if (videoSearchCache.size >= MAX_VIDEO_SEARCH_CACHE_ENTRIES) {
-        const oldestKey = videoSearchCache.keys().next().value;
-        if (oldestKey) videoSearchCache.delete(oldestKey);
-      }
-      videoSearchCache.set(cacheKey, { videos: finalResult, timestamp: Date.now() });
-
-      return finalResult;
-    } finally {
-      endProfileOperation();
+      },
+      (page) => Boolean(page.has_continuation)
+    );
+    if (videoSearchCache.size >= MAX_VIDEO_SEARCH_CACHE_ENTRIES) {
+      const oldestKey = videoSearchCache.keys().next().value;
+      if (oldestKey) videoSearchCache.delete(oldestKey);
     }
-  })();
-
-  inFlightVideoSearches.set(cacheKey, searchExecution);
-  try {
-    return await searchExecution;
-  } finally {
-    inFlightVideoSearches.delete(cacheKey);
+    cached = { id: crypto.randomUUID(), pager, timestamp: Date.now() };
+    videoSearchCache.set(cacheKey, cached);
   }
+  cached.timestamp = Date.now();
+  const index = cursor?.page ?? 0;
+  const result = await cached.pager.getPage(index);
+  return { videos: result.videos, cursor: result.hasMore ? { session: cached.id, page: index + 1 } : null };
 }
 
 export async function createFeed(
