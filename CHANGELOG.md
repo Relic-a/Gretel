@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.2 — 2026-09-04
+
+### Search
+
+- Search results now load in pages as you scroll, so longer result sets remain available without repeating the initial search.
+- Improved search loading feedback and removed the blue focus overlay from the search bar.
+
+### Releases and updates
+
+- Release automation now publishes verified draft releases and uses Node 24 for release workflows.
+
 ## 0.5.1 — 2026-09-02
 
 ### Releases and updates
