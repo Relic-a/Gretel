@@ -287,6 +287,10 @@ button:disabled {
   font: inherit;
 }
 
+.topbar-search input:focus {
+  outline: none;
+}
+
 .topbar-search input::placeholder {
   color: var(--color-muted);
 }
