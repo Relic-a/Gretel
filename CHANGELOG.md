@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.5.3 — 2026-09-04
+
+### In-app updates
+
+- Update failures now show the failing stage and the error returned by Tauri, making updater problems easier to diagnose.
+- Automatic and manual checks, installation failures, and restart failures now record authenticated local error details for troubleshooting.
+- Successful retries clear the previous updater error state.
+
 ## 0.5.2 — 2026-09-04
 
 ### Search
