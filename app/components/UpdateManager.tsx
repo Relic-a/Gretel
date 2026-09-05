@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Download, ExternalLink, RefreshCw, X } from "lucide-react";
+import { authedHeaders } from "./video-utils";
 
 type UpdateStatus = "idle" | "available" | "manual" | "downloading" | "ready" | "error";
 
@@ -17,6 +18,31 @@ type UpdateDownloadEvent =
   | { event: "Progress"; data: { chunkLength: number } }
   | { event: "Finished" };
 
+function reportUpdateError(stage: string, error: unknown): string {
+  let detail: string;
+  try {
+    detail = error instanceof Error
+      ? `${error.name}: ${error.message}`
+      : typeof error === "string" ? error : JSON.stringify(error) || String(error);
+  } catch {
+    detail = String(error);
+  }
+  const message = `${stage}: ${detail}`.slice(0, 2000);
+  console.error("Gretel updater failed", stage, error);
+  void fetch("/api/client-errors", {
+    method: "POST",
+    headers: authedHeaders({ "content-type": "application/json" }),
+    body: JSON.stringify({
+      source: "updater",
+      message,
+      stack: error instanceof Error ? error.stack : undefined,
+      details: { stage }
+    }),
+    keepalive: true
+  }).catch(() => undefined);
+  return message;
+}
+
 export function UpdateManager() {
   const [status, setStatus] = useState<UpdateStatus>("idle");
   const [update, setUpdate] = useState<AvailableUpdate | null>(null);
@@ -25,15 +51,19 @@ export function UpdateManager() {
   const checked = useRef(false);
 
   const checkForUpdate = useCallback(async (showNoUpdate = false) => {
+    let stage = "Initialize updater";
     try {
       const { invoke, isTauri } = await import("@tauri-apps/api/core");
       if (!isTauri()) return;
 
+      stage = "Detect installation type";
       const installMode = await invoke<"automatic" | "manual">("update_install_mode");
+      stage = "Check for updates";
       const { check } = await import("@tauri-apps/plugin-updater");
       const found = await check();
       if (!found) {
         if (showNoUpdate) {
+          setStatus("idle");
           setMessage("Gretel is up to date.");
           window.setTimeout(() => setMessage(""), 3000);
         }
@@ -44,10 +74,10 @@ export function UpdateManager() {
       setStatus(installMode === "manual" ? "manual" : "available");
       setMessage("");
     } catch (error) {
-      console.error("Could not check for Gretel updates", error);
+      const detail = reportUpdateError(stage, error);
       if (showNoUpdate) {
         setStatus("error");
-        setMessage("Could not check for updates. Try again later.");
+        setMessage(`Could not check for updates. ${detail}`);
       }
     }
   }, []);
@@ -71,6 +101,7 @@ export function UpdateManager() {
     setMessage("");
     let downloaded = 0;
     let total = 0;
+    let stage = "Download and install update";
 
     try {
       await update.downloadAndInstall((event) => {
@@ -87,12 +118,13 @@ export function UpdateManager() {
       });
 
       setStatus("ready");
+      stage = "Restart after update";
       const { relaunch } = await import("@tauri-apps/plugin-process");
       await relaunch();
     } catch (error) {
-      console.error("Could not install Gretel update", error);
+      const detail = reportUpdateError(stage, error);
       setStatus("error");
-      setMessage("The update could not be installed. Your current version is unchanged.");
+      setMessage(detail);
     }
   }
 
