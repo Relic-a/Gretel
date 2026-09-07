@@ -78,6 +78,28 @@ test("rotation replaces destinations and retains only the configured window", as
   assert.ok(statSync(logFile).size < maxBytes);
 });
 
+test("redacts credentials copied into text, URLs, nested errors and encoded values", async () => {
+  const secret = "test-credential-9f2c+private";
+  const clean = logger.redactLogFields({
+    message: `upstream rejected ${secret}`,
+    values: [secret, encodeURIComponent(secret), Buffer.from(secret).toString("base64")],
+    nested: { error: new Error(`failure ${secret}`) },
+    url: `https://provider.invalid/callback?token=${encodeURIComponent(secret)}`,
+    headers: { authorization: `Bearer ${secret}` },
+    status: 502
+  });
+  const serialized = JSON.stringify(clean);
+  for (const value of [secret, encodeURIComponent(secret), Buffer.from(secret).toString("base64")]) {
+    assert.ok(!serialized.includes(value));
+  }
+  assert.equal(clean.status, 502);
+  assert.match(clean.message, /upstream rejected/);
+  assert.match(clean.nested.error.errorMessage, /failure \[REDACTED\]/);
+  assert.equal(logger.redactLogFields({ laterError: secret }).laterError, "[REDACTED]");
+  const malformed = "invalid-utf16-\ud800";
+  assert.equal(logger.redactLogFields({ apiKey: malformed, message: malformed }).message, "[REDACTED]");
+});
+
 test("file write failures do not reject the logging queue", async () => {
   const directoryPath = path.join(workDir, "not-a-file");
   mkdirSync(directoryPath);

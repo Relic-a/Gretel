@@ -2,6 +2,7 @@ import { appendFile, mkdir, rename, stat, unlink } from "node:fs/promises";
 import { appendFileSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import pino from "pino";
+import { getUserSettings } from "./settings";
 
 export type LogFields = Record<string, unknown>;
 export type LogLevel = "debug" | "info" | "warn" | "error";
@@ -132,7 +133,58 @@ export function requestFields(request: Request, fields: LogFields = {}) {
 }
 
 export function redactLogFields(fields: LogFields) {
+  collectSecrets(fields);
+  for (const [key, value] of Object.entries(process.env)) {
+    if (isSensitiveKey(key) && value) rememberSecret(value);
+  }
+  const apiKey = getUserSettings().openRouterApiKey;
+  if (apiKey) rememberSecret(apiKey);
   return sanitizeValue(fields, 0, new WeakSet<object>()) as LogFields;
+}
+
+// Learn credential values before sanitizing a record, including credentials
+// inside URLs/serialized fields, so their copies in free text are removed too.
+const diagnosticSecrets = new Set<string>();
+
+function rememberSecret(value: string) {
+  if (value.length < 4 || value === "[REDACTED]") return;
+  const variants = [value, Buffer.from(value).toString("base64")];
+  // Diagnostics may contain lone UTF-16 surrogates; encoding them must not
+  // throw from the error-reporting path.
+  try { variants.push(encodeURIComponent(value)); } catch {}
+  for (const variant of variants) {
+    diagnosticSecrets.add(variant);
+  }
+  while (diagnosticSecrets.size > 768) diagnosticSecrets.delete(diagnosticSecrets.values().next().value!);
+}
+
+function collectSecrets(value: unknown, depth = 0, seen = new WeakSet<object>(), sensitive = false) {
+  if (depth > maxFieldDepth) return;
+  if (typeof value === "string") {
+    if (sensitive) rememberSecret(value);
+    for (const match of value.matchAll(/(?:[?&]|\b)(?:api[-_]?key|token|secret|password|access_token|session)=([^&;\s"']+)/gi)) {
+      rememberSecret(match[1]);
+      try { rememberSecret(decodeURIComponent(match[1])); } catch {}
+    }
+    for (const match of value.matchAll(/\bBearer\s+([A-Za-z0-9._~+\/-]+=*)/gi)) rememberSecret(match[1]);
+    if (/^\s*[\[{]/.test(value)) {
+      try { collectSecrets(JSON.parse(value), depth + 1, seen, sensitive); } catch {}
+    }
+    return;
+  }
+  if (!value || typeof value !== "object" || seen.has(value)) return;
+  seen.add(value);
+  if (value instanceof Error) collectSecrets(errorFields(value, { stack: true }), depth + 1, seen);
+  for (const [key, child] of Object.entries(value)) {
+    collectSecrets(child, depth + 1, seen, sensitive || isSensitiveKey(key));
+  }
+}
+
+function redactText(value: string) {
+  for (const secret of [...diagnosticSecrets].sort((a, b) => b.length - a.length)) {
+    value = value.split(secret).join("[REDACTED]");
+  }
+  return value.length > maxFieldStringLength ? `${value.slice(0, maxFieldStringLength)}…` : value;
 }
 
 function writeLog(
@@ -344,11 +396,13 @@ function countInsightEvents(insights: Record<string, InsightBucket>) {
 
 function sanitizeValue(value: unknown, depth: number, seen: WeakSet<object>, key = ""): unknown {
   if (isSensitiveKey(key)) return "[REDACTED]";
-  if (typeof value === "string") return value.length > maxFieldStringLength ? `${value.slice(0, maxFieldStringLength)}…` : value;
+  if (typeof value === "string") return redactText(value);
   if (value === null || typeof value !== "object") return value;
   if (depth >= maxFieldDepth) return "[TRUNCATED]";
   if (seen.has(value)) return "[Circular]";
   seen.add(value);
+
+  if (value instanceof Error) return sanitizeValue(errorFields(value, { stack: true }), depth + 1, seen);
 
   if (Array.isArray(value)) {
     return value.slice(0, 100).map((item) => sanitizeValue(item, depth + 1, seen));

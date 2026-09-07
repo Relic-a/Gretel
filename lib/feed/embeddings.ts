@@ -97,6 +97,11 @@ class OpenRouterEmbeddingProvider implements EmbeddingProvider {
     }
 
     return data.map((item, index) => {
+      if (!Array.isArray(item.embedding) || item.embedding.some(
+        (value) => typeof value !== "number" || !Number.isFinite(value)
+      )) {
+        throw new Error(`OpenRouter embedding ${index} contains invalid components`);
+      }
       const vector = normalizeVector(item.embedding || []);
 
       if (vector.length !== this.dimensions) {

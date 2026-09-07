@@ -109,6 +109,8 @@ export function getCentroid(profileId: string, cacheKey: string): StoredCentroid
     return null;
   }
 
+  touchAlgorithmCache("feed_centroids", profileId, storeKey, "cache_key", cacheKey);
+
   return {
     original: JSON.parse(row.original_json) as number[],
     current: JSON.parse(row.current_json) as number[],
@@ -281,6 +283,7 @@ export function getTopicCentroids(profileId: string, poolKey: string): StoredTop
     }>;
 
   if (rows.length > 0) {
+    for (const row of rows) touchAlgorithmCache("feed_centroids", profileId, storeKey, "cache_key", row.cache_key);
     return rows.flatMap((row) => {
       const topic = extractTopicFromKey(row.cache_key, poolKey);
       if (!topic) {
@@ -380,7 +383,23 @@ export function getRetainedEmbedding(profileId: string, videoId: string) {
     )
     .get(profileId, storeKey, videoId) as { embedding_json: string } | undefined;
 
+  if (row) touchAlgorithmCache("feed_video_embeddings", profileId, storeKey, "video_id", videoId);
   return row ? JSON.parse(row.embedding_json) as number[] : null;
+}
+
+// Refresh at most daily: actively used personalization survives the idle-cache
+// policy without turning every ranking lookup into a database write.
+function touchAlgorithmCache(
+  table: "feed_centroids" | "feed_video_embeddings",
+  profileId: string,
+  storeKey: string,
+  keyColumn: "cache_key" | "video_id",
+  key: string
+) {
+  const now = Date.now();
+  getDatabase().prepare(`UPDATE ${table} SET updated_at = ?
+    WHERE profile_id = ? AND store_key = ? AND ${keyColumn} = ? AND updated_at < ?`)
+    .run(now, profileId, storeKey, key, now - 86_400_000);
 }
 
 export function deleteRetainedEmbeddings(profileId: string, videoIds: string[]) {

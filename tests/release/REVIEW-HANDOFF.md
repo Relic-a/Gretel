@@ -1,5 +1,8 @@
 # Verification repair handoff — 2026-09-07
 
+Historical results below precede the application repairs. See
+[PRODUCT-FIXES.md](PRODUCT-FIXES.md) for the six product fixes and subsequent validation.
+
 Implementation commit: `7257dac8a9b21ccb743810bc7c58625b396008a7`. Branch: `verify/review-repair-20260907`. Worktree: `/tmp/gretel-verification-repair`.
 
 This is an isolated repair branch from `328634c8cb83a631faa07260ece58aa550381950`; main and the original integration/sibling worktrees were not modified, merged, pushed, or published. No host native installation or real-credential tests occurred. The final delivery commit adds this handoff document; its SHA is in the final response / `git rev-parse HEAD`.

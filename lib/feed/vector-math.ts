@@ -1,11 +1,16 @@
 export function normalizeVector(vector: number[]) {
-  const magnitude = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));
+  if (vector.some((value) => typeof value !== "number" || !Number.isFinite(value))) {
+    throw new Error("Vector components must be finite numbers");
+  }
+  // Scale first so valid large components cannot overflow the norm.
+  const scale = vector.reduce((maximum, value) => Math.max(maximum, Math.abs(value)), 0);
+  const magnitude = Math.sqrt(vector.reduce((sum, value) => sum + (scale ? value / scale : 0) ** 2, 0));
 
   if (magnitude === 0) {
     return vector.map(() => 0);
   }
 
-  return vector.map((value) => value / magnitude);
+  return vector.map((value) => (value / scale) / magnitude);
 }
 
 export function averageNormalizedVectors(vectors: number[][]) {

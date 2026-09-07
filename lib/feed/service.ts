@@ -423,7 +423,31 @@ export async function searchProfileVideoPage(
   return { videos: result.videos, cursor: result.hasMore ? { session: cached.id, page: index + 1 } : null };
 }
 
+const feedBuilds = new Map<string, ReturnType<typeof createFeedOnce>>();
+
 export async function createFeed(
+  profileId: string,
+  tags: string[],
+  channels: string[],
+  channelSort: ChannelSort,
+  observation: FeedObservation,
+  options: CreateFeedOptions = {}
+) {
+  // Include request-specific serving options and profile revision so callers
+  // with different exclusions or a reset profile never share a result.
+  const key = JSON.stringify([profileId, tags, channels, channelSort, options]);
+  const pending = feedBuilds.get(key);
+  if (pending) return pending;
+  const build = createFeedOnce(profileId, tags, channels, channelSort, observation, options);
+  feedBuilds.set(key, build);
+  try {
+    return await build;
+  } finally {
+    feedBuilds.delete(key);
+  }
+}
+
+async function createFeedOnce(
   profileId: string,
   tags: string[],
   channels: string[],

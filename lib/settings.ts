@@ -1,4 +1,5 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
+import { randomUUID } from "node:crypto";
 import path from "node:path";
 
 import { getDataDir } from "./data-dir";
@@ -32,11 +33,19 @@ export function getUserSettings(): UserSettings {
 
 export function setUserSettings(settings: UserSettings) {
   mkdirSync(dataDir, { recursive: true, mode: 0o700 });
-  writeFileSync(
-    /*turbopackIgnore: true*/ settingsPath,
-    `${JSON.stringify(sanitizeUserSettings(settings), null, 2)}\n`,
-    { mode: 0o600 }
-  );
+  const temporaryPath = `${settingsPath}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(
+      /*turbopackIgnore: true*/ temporaryPath,
+      `${JSON.stringify(sanitizeUserSettings(settings), null, 2)}\n`,
+      { mode: 0o600, flag: "wx", flush: true }
+    );
+    renameSync(/*turbopackIgnore: true*/ temporaryPath, /*turbopackIgnore: true*/ settingsPath);
+  } finally {
+    try { unlinkSync(/*turbopackIgnore: true*/ temporaryPath); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
   restrictLocalSettingsPermissions();
 }
 

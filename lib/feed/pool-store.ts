@@ -102,6 +102,12 @@ export function getFeedPoolState(profileId: string, poolKey: string): FeedPoolSt
       }
     | undefined;
 
+  if (row) {
+    getDatabase().prepare(`UPDATE feed_pool_state SET updated_at = ?
+      WHERE profile_id = ? AND pool_key = ? AND updated_at < ?`)
+      .run(Date.now(), profileId, poolKey, Date.now() - 86_400_000);
+  }
+
   return row
     ? {
         rootDiscoveredAt: row.root_discovered_at,

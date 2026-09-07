@@ -1,5 +1,6 @@
 import { getDatabase } from "./profile-store";
 import { getUserSettings } from "./settings";
+import { redactLogFields, logWarn, errorFields } from "./logger";
 
 export type PerformanceOperation = {
   name: string;
@@ -102,11 +103,7 @@ export function persistPerformanceTrace(
     persistPerformanceTraceUnsafe(trace, summary, options);
   } catch (error) {
     // Telemetry must never turn a successful user operation into a failure.
-    console.warn(JSON.stringify({
-      level: "warn",
-      event: "performance.persist_failed",
-      errorMessage: error instanceof Error ? error.message : String(error)
-    }));
+    logWarn("performance.persist_failed", errorFields(error));
   }
 }
 
@@ -120,6 +117,9 @@ function persistPerformanceTraceUnsafe(
   const totalMs = options.totalMs ?? roundDuration(performance.now() - trace.startedAt);
   const status = options.status || (trace.operations.some((item) => item.status === "error") ? "error" : "ok");
   const now = Date.now();
+  const clean = redactLogFields({ trace, summary }) as { trace: PerformanceTrace; summary: Record<string, unknown> };
+  trace = clean.trace;
+  summary = clean.summary;
 
   database.transaction(() => {
     database.prepare(`

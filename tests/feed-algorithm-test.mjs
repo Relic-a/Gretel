@@ -1561,6 +1561,123 @@ test("cosineSimilarity safely returns 0 on mismatched or empty dimensions", () =
   assert.equal(cosineSimilarity([1, 0], [0, 1]), 0);
 });
 
+test("normalization rejects malformed components and handles finite extremes", () => {
+  const { normalizeVector } = require(path.join(buildDir, "lib", "feed", "vector-math.js"));
+  for (const value of [NaN, Infinity, -Infinity, "NaN", "1", null]) {
+    assert.throws(() => normalizeVector([value, 1]), /finite numbers/);
+  }
+  assert.deepEqual(normalizeVector([0, 0]), [0, 0]);
+  for (const value of [Number.MAX_VALUE, Number.MIN_VALUE]) {
+    const result = normalizeVector([value, value]);
+    assert.ok(result.every(Number.isFinite));
+    assert.ok(Math.abs(magnitude(result) - 1) < 1e-12);
+  }
+});
+
+test("settings replacement failure preserves the old file and cleans its temporary file", () => {
+  const fs = require("node:fs");
+  const settings = require(path.join(buildDir, "lib", "settings.js"));
+  const dataDir = require(path.join(buildDir, "lib", "data-dir.js")).getDataDir();
+  const settingsPath = path.join(dataDir, "user-settings.json");
+  const previous = settings.getUserSettings();
+  const rename = fs.renameSync;
+  try {
+    settings.setUserSettings({ openRouterApiKey: "old-test-key", developerAnalytics: true });
+    const bytes = fs.readFileSync(settingsPath, "utf8");
+    fs.renameSync = () => { throw Object.assign(new Error("rename denied"), { code: "EACCES" }); };
+    assert.throws(() => settings.setUserSettings({ openRouterApiKey: "new-test-key" }), /rename denied/);
+    assert.equal(fs.readFileSync(settingsPath, "utf8"), bytes);
+    assert.equal(fs.readdirSync(dataDir).filter((name) => name.startsWith("user-settings.json.")).length, 0);
+    fs.renameSync = rename;
+    settings.setUserSettings({ openRouterApiKey: "new-test-key" });
+    assert.equal(settings.getUserSettings().openRouterApiKey, "new-test-key");
+    if (process.platform !== "win32") assert.equal(fs.statSync(settingsPath).mode & 0o777, 0o600);
+  } finally {
+    fs.renameSync = rename;
+    settings.setUserSettings(previous);
+  }
+});
+
+test("configured credentials are redacted in persisted diagnostic summaries and spans", () => {
+  const modules = loadRuntimeModules();
+  const settings = require(path.join(buildDir, "lib", "settings.js"));
+  const metrics = require(path.join(buildDir, "lib", "performance-metrics.js"));
+  const previous = settings.getUserSettings();
+  const key = "arbitrary-key-diagnostics-7c5b";
+  try {
+    settings.setUserSettings({ developerAnalytics: true, openRouterApiKey: key });
+    const trace = metrics.createPerformanceTrace("test.privacy");
+    trace.operations.push({ name: "provider", status: "error", durationMs: 3,
+      input: { values: [key] }, error: `upstream rejected ${key}` });
+    metrics.persistPerformanceTrace(trace, { diagnosticDetail: key, count: 3 });
+    const db = modules.profileStore.getDatabase();
+    const saved = db.prepare("SELECT summary_json FROM performance_traces WHERE id = ?").get(trace.requestId);
+    const spans = db.prepare("SELECT * FROM performance_spans WHERE trace_id = ?").all(trace.requestId);
+    assert.ok(!JSON.stringify({ saved, spans }).includes(key));
+    assert.equal(JSON.parse(saved.summary_json).count, 3);
+    assert.equal(spans[0].error, "upstream rejected [REDACTED]");
+  } finally { settings.setUserSettings(previous); }
+});
+
+test("identical feed builds share provider work and a rejected build can retry", async () => {
+  const modules = loadRuntimeModules({ youtubeClient: createFakeYoutubeClient() });
+  process.env.GRETEL_CONFIG = writeConfig("build-sharing.json", {
+    expansion: { initialExpansionCycles: 0 },
+    embeddings: { provider: "mock", dimensions: 2 }
+  });
+  const profile = modules.profileStore.createProfile("Shared build");
+  let calls = 0;
+  let rejectSearch;
+  modules.youtube.searchVideos = () => {
+    calls += 1;
+    return new Promise((_resolve, reject) => { rejectSearch = reject; });
+  };
+  try {
+    const builds = Array.from({ length: 20 }, () => modules.service.createFeed(
+      profile.id, ["alpha"], [], "mixed", observation()
+    ));
+    assert.equal(calls, 1);
+    const results = Promise.allSettled(builds);
+    rejectSearch(new Error("provider unavailable"));
+    assert.ok((await results).every((result) => result.status === "rejected"));
+    modules.youtube.searchVideos = async () => { calls += 1; return [video("retry-root")]; };
+    const retry = await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation());
+    assert.equal(calls, 2);
+    assert.ok(retry.videos.some((item) => item.id === "retry-root"));
+    const other = modules.profileStore.createProfile("Separate build");
+    try {
+      await modules.service.createFeed(other.id, ["alpha"], [], "mixed", observation());
+      assert.equal(calls, 3);
+    } finally { modules.profileStore.deleteProfile(other.id); }
+  } finally { modules.profileStore.deleteProfile(profile.id); }
+});
+
+test("cache retention keeps recently accessed personalization and expires idle entries", () => {
+  const modules = loadRuntimeModules();
+  const profile = modules.profileStore.createProfile("Cache retention");
+  const db = modules.profileStore.getDatabase();
+  const old = Date.now() - 40 * 86_400_000;
+  try {
+    for (const key of ["active", "idle"]) {
+      modules.poolStore.markRootDiscovered(profile.id, key, old);
+      modules.algorithmStore.saveCentroid(profile.id, key, [1, 0], [0.9, 0.1]);
+      modules.algorithmStore.retainEmbedding(profile.id, key, [1, 0]);
+    }
+    db.prepare("UPDATE feed_centroids SET updated_at = ? WHERE profile_id = ?").run(old, profile.id);
+    db.prepare("UPDATE feed_video_embeddings SET updated_at = ? WHERE profile_id = ?").run(old, profile.id);
+    modules.poolStore.getFeedPoolState(profile.id, "active");
+    modules.algorithmStore.getCentroid(profile.id, "active");
+    modules.algorithmStore.getRetainedEmbedding(profile.id, "active");
+    require(path.join(buildDir, "lib", "cache-cleanup.js")).cleanupOldCaches();
+    assert.ok(modules.poolStore.getFeedPoolState(profile.id, "active"));
+    assert.deepEqual(modules.algorithmStore.getCentroid(profile.id, "active").current, [0.9, 0.1]);
+    assert.deepEqual(modules.algorithmStore.getRetainedEmbedding(profile.id, "active"), [1, 0]);
+    assert.equal(modules.poolStore.getFeedPoolState(profile.id, "idle"), null);
+    assert.equal(modules.algorithmStore.getCentroid(profile.id, "idle"), null);
+    assert.equal(modules.algorithmStore.getRetainedEmbedding(profile.id, "idle"), null);
+  } finally { modules.profileStore.deleteProfile(profile.id); }
+});
+
 test("clampCentroidDrift preserves unit norm and clamps vectors exceeding maxCentroidDrift", () => {
   const { clampCentroidDrift } = require(path.join(buildDir, "lib", "feed", "centroid-drift.js"));
   const { cosineSimilarity } = require(path.join(buildDir, "lib", "feed", "vector-math.js"));
