@@ -23,8 +23,8 @@ export function isDirty() {
   }
 }
 
-export function caseResult(id, criterion, status, durationMs, evidence, reason = null) {
-  return { id, criterion, status, durationMs, evidence, failureReason: reason, reason: reason ?? undefined };
+export function caseResult(id, criterion, status, durationMs, evidence, reason = null, measurements = {}) {
+  return { id, criterion, status, durationMs, evidence, measurements, failureReason: reason, reason: reason ?? undefined };
 }
 
 export function newReport(runId, mode, seed, cases, extra = {}) {

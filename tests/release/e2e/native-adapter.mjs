@@ -160,7 +160,7 @@ if (!supported) {
 
   for (const [id, criterion] of matrix) {
     if (reportValidationError) {
-      addCase(id, criterion, "fail", { reason: reportValidationError, evidence: [] });
+      addCase(id, criterion, "fail", { category:"tooling", reason: reportValidationError, evidence: [] });
       continue;
     }
 
@@ -219,6 +219,7 @@ function addCase(id, criterion, status, details = {}) {
     durationMs: details.durationMs || 0,
     evidence: details.evidence || [],
     failureReason: details.reason ?? undefined,
+    category: details.category || (args.protocolTest || ["native.inventory","native.target-runner"].includes(id) ? "tooling" : "product"),
     scope: args.protocolTest ? "protocol-test" : "native-package",
     measurements: {}
   });

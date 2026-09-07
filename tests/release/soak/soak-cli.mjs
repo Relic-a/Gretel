@@ -316,6 +316,7 @@ async function cycleWatch(profileId, video) {
     completedWorkloadOps.watch++;
     const acknowledgedRow = readWatchedRow(profileId,video.id);
     if (!acknowledgedRow || acknowledgedRow.watched_seconds !== 300 || acknowledgedRow.duration_seconds !== 600 || acknowledgedRow.watched_ratio !== 0.5) throw Error("Acknowledged watch did not persist exact requested durations/ratio");
+    recordEvent({type:"watch-acknowledged",profileId,videoId:video.id,row:acknowledgedRow});
     const existing = durableLedger.watched.findIndex(x => x.profileId === profileId && x.videoId === video.id);
     if (existing >= 0) durableLedger.watched.splice(existing, 1);
     durableLedger.watched.push({
@@ -432,7 +433,7 @@ async function main() {
   const seededVideos = seedFeedPools(profiles);
 
   // Cycle plan with sustained idle windows
-  const cyclePlan = ["browse", "impressions", "watch", "refresh", "idle", "switchProfile"];
+  const cyclePlan = ["browse", "impressions", "watch", "refresh", "switchProfile", "idle"];
   const end = Date.now() + durationMs;
   let cycleIdx = 0;
   let lastSample = null;
@@ -574,6 +575,7 @@ async function main() {
   }
   const durableResult = verifyAcknowledgedRows(durableLedger.watched, readWatchedRow);
   if (!durableResult.ok) {historyOk=false;historyFailureReason=durableResult.reason;}
+  recordEvent({type:"durable-rows-verified-after-restart",...durableResult,records:durableLedger.watched.length});
   cases.push(caseResult(
     "soak-durable-history-post-restart",
     "Watched history remains readable via actual API after restart and matches acknowledged writes.",
