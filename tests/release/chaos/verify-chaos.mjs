@@ -19,6 +19,7 @@ import { fileURLToPath } from "node:url";
 import { canarySet, scanForCanaries } from "./lib/canaries.mjs";
 import { childEnv, makeCase, makeRunRoot } from "./lib/env.mjs";
 import { normalizeCase, sha256, writeJson } from "./lib/report.mjs";
+import { getArtifactIdentity } from "../artifact-identity.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const WORKER = path.join(ROOT, "tests/release/chaos/chaos-worker.mjs");
@@ -111,13 +112,14 @@ function sanitize(text, seed) {
     .reduce((current, value) => current.split(value).join("[REDACTED_CANARY]"), String(text));
 }
 
-function writeEvidence(output, id, context, stdout, stderr, result) {
+function writeEvidence(output, id, operation, context, stdout, stderr, result) {
   const safeId = id.replace(/[^a-zA-Z0-9_.-]/g, "_");
+  const safeOp = operation.replace(/[^a-zA-Z0-9_.-]/g, "_");
   const evidenceDir = path.join(output, "evidence");
   mkdirSync(evidenceDir, { recursive: true, mode: 0o700 });
   const paths = [];
   const save = (suffix, contents) => {
-    const file = path.join(evidenceDir, `${safeId}.${suffix}`);
+    const file = path.join(evidenceDir, `${safeId}.${safeOp}.${suffix}`);
     writeFileSync(file, sanitize(contents, context.seed), { mode: 0o600 });
     paths.push(path.relative(output, file));
   };
@@ -127,16 +129,33 @@ function writeEvidence(output, id, context, stdout, stderr, result) {
   if (existsSync(context.logFile)) {
     save("gretel.log", readFileSync(context.logFile, "utf8"));
   }
-  for (const name of readdirSync(context.logsDir)) {
-    const file = path.join(context.logsDir, name);
-    if (statSync(file).isFile() && file !== context.logFile) save(`log-${name}`, readFileSync(file, "utf8"));
+  if (existsSync(context.logsDir)) {
+    for (const name of readdirSync(context.logsDir)) {
+      const file = path.join(context.logsDir, name);
+      if (statSync(file).isFile() && file !== context.logFile) save(`log-${name}`, readFileSync(file, "utf8"));
+    }
+  }
+  // Preserve any barrier files created in case directory
+  if (existsSync(context.dir)) {
+    for (const name of readdirSync(context.dir)) {
+      if (name.endsWith(".barrier.json")) {
+        const file = path.join(context.dir, name);
+        save(`barrier-${name}`, readFileSync(file, "utf8"));
+      }
+    }
   }
   return paths;
 }
 
-function scanContextForCanaries(context) {
+function scanRawForCanaries(context, stdout = "", stderr = "") {
   const values = canarySet(context.seed);
   const leaked = [];
+  const check = (text, source) => {
+    const matches = scanForCanaries(text, values);
+    if (matches.length > 0) leaked.push({ source, count: matches.length });
+  };
+  if (stdout) check(stdout, "stdout");
+  if (stderr) check(stderr, "stderr");
   const walk = (directory) => {
     if (!existsSync(directory)) return;
     for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -147,7 +166,7 @@ function scanContextForCanaries(context) {
         let contents = "";
         try { contents = readFileSync(file, "utf8"); } catch { continue; }
         const matches = scanForCanaries(contents, values);
-        if (matches.length > 0) leaked.push(path.relative(context.dir, file));
+        if (matches.length > 0) leaked.push({ source: path.relative(context.dir, file), count: matches.length });
       }
     }
   };
@@ -194,14 +213,17 @@ async function worker(operation, context, output, args = [], options = {}) {
   if (existsSync(resultFile)) {
     try { result = JSON.parse(readFileSync(resultFile, "utf8")); } catch {}
   }
-  const evidence = writeEvidence(output, context.id, context, stdout, stderr, result);
-  return { ...ended, timedOut, result, stdout, stderr, evidence };
+  const rawLeaks = scanRawForCanaries(context, stdout, stderr);
+  const evidence = writeEvidence(output, context.id, operation, context, stdout, stderr, result);
+  return { ...ended, timedOut, result, stdout, stderr, evidence, rawLeaks };
 }
 
 function caseResult(id, criterion, status, startedAt, evidence, reason, metrics = {}) {
+  const seed = metrics.seed || 0;
+  const sanitizedReason = reason !== undefined ? sanitize(String(reason), seed) : undefined;
   return normalizeCase({
     id, criterion, status, durationMs: Math.max(0, Date.now() - startedAt),
-    evidence, reason, metrics
+    evidence, reason: sanitizedReason, metrics
   });
 }
 
@@ -225,7 +247,9 @@ async function processKillCases(args, cases) {
 }
 
 async function networkCases(args, cases) {
-  const modes = args.mode === "full" ? ["429", "500", "timeout", "reset", "malformed", "wrong-length", "nan", "success"] : ["429", "reset", "wrong-length", "success"];
+  const modes = args.mode === "full"
+    ? ["429", "500", "timeout", "reset", "partial", "malformed", "wrong-length", "nan", "success"]
+    : ["429", "reset", "partial", "nan", "success"];
   for (const mode of modes) {
     const id = `chaos.network.${mode}`;
     const started = Date.now();
@@ -233,10 +257,10 @@ async function networkCases(args, cases) {
     context.seed = args.seed + modes.indexOf(mode) + 100;
     const run = await worker("network", context, args.output, [mode], { timeoutMs: 12_000 });
     const result = run.result || {};
-    const expected = mode === "success" ? result.succeeded === true : result.succeeded === false && Boolean(result.errorClass);
+    const expected = mode === "success" ? result.succeeded === true : result.ok === true && Boolean(result.errorClass);
     const bounded = Number(result.requestCount) >= 1 && Number(result.requestCount) <= 3;
     const good = run.code === 0 && result.ok === true && bounded && expected;
-    cases.items.push(caseResult(id, `provider fixture ${mode} has bounded behavior and recovers without hanging`, good ? "pass" : "fail", started, run.evidence, good ? undefined : `Observed fixture result did not meet the bounded ${mode} expectation.`, { mode, requestCount: result.requestCount, errorClass: result.errorClass, bounded }));
+    cases.items.push(caseResult(id, `provider-component fixture ${mode} has bounded behavior and recovers without hanging`, good ? "pass" : "fail", started, run.evidence, good ? undefined : `Observed fixture result did not meet the bounded ${mode} expectation.`, { seed: context.seed, mode, requestCount: result.requestCount, errorClass: result.errorClass, bounded }));
   }
   const id = "chaos.network.in-flight-kill";
   const started = Date.now();
@@ -245,7 +269,7 @@ async function networkCases(args, cases) {
   const run = await worker("network-hold", context, args.output, [], { env: { CHAOS_HOLD: "1" }, waitForBarrier: "provider-in-flight.barrier.json", killAfterBarrier: true, timeoutMs: 8_000 });
   const restarted = await worker("profile-verify", context, args.output, [], { timeoutMs: 10_000 });
   const good = existsSync(path.join(context.dir, "provider-in-flight.barrier.json")) && run.signal === "SIGKILL" && restarted.result?.ok === true;
-  cases.items.push(caseResult(id, "kill during provider response leaves isolated process and prior data recoverable", good ? "pass" : "blocked", started, [...run.evidence, ...restarted.evidence], good ? undefined : "No event-driven provider in-flight acknowledgement was observed before bounded teardown.", { barrier: existsSync(path.join(context.dir, "provider-in-flight.barrier.json")), restart: restarted.result || null }));
+  cases.items.push(caseResult(id, "kill during provider response leaves isolated process and prior data recoverable", good ? "pass" : "blocked", started, [...run.evidence, ...restarted.evidence], good ? undefined : "No event-driven provider in-flight acknowledgement was observed before bounded teardown.", { seed: context.seed, barrier: existsSync(path.join(context.dir, "provider-in-flight.barrier.json")), restart: restarted.result || null }));
 
   const cacheId = "chaos.cache.thumbnail-write-in-flight";
   const cacheStarted = Date.now();
@@ -254,11 +278,24 @@ async function networkCases(args, cases) {
   const cacheRun = await worker("thumbnail-hold", cacheContext, args.output, [], { env: { CHAOS_HOLD: "1" }, waitForBarrier: "thumbnail-write-in-flight.barrier.json", killAfterBarrier: true, timeoutMs: 8_000 });
   const cacheChecked = await worker("thumbnail-verify", cacheContext, args.output, [], { timeoutMs: 8_000 });
   const cacheGood = existsSync(path.join(cacheContext.dir, "thumbnail-write-in-flight.barrier.json")) && cacheRun.signal === "SIGKILL" && cacheChecked.result?.ok === true;
-  cases.items.push(caseResult(cacheId, "kill during real thumbnail response leaves no partial cache file", cacheGood ? "pass" : "blocked", cacheStarted, [...cacheRun.evidence, ...cacheChecked.evidence], cacheGood ? undefined : "No event-driven thumbnail fetch acknowledgement was observed before bounded teardown.", { barrier: existsSync(path.join(cacheContext.dir, "thumbnail-write-in-flight.barrier.json")), verify: cacheChecked.result || null }));
+  cases.items.push(caseResult(cacheId, "kill during thumbnail disk write leaves no partial or corrupted cache file", cacheGood ? "pass" : "blocked", cacheStarted, [...cacheRun.evidence, ...cacheChecked.evidence], cacheGood ? undefined : "No event-driven thumbnail disk write acknowledgement was observed before bounded teardown.", { seed: cacheContext.seed, barrier: existsSync(path.join(cacheContext.dir, "thumbnail-write-in-flight.barrier.json")), verify: cacheChecked.result || null }));
+}
+
+async function feedRefreshCases(args, cases) {
+  const id = "chaos.feed.failed-refresh-preserves-prior-feed";
+  const started = Date.now();
+  const context = makeCase(cases.runRoot, id);
+  context.seed = args.seed + 250;
+  const seeded = await worker("feed-refresh-seed", context, args.output, [], { timeoutMs: 12_000 });
+  const faulted = await worker("feed-refresh-fault", context, args.output, [], { timeoutMs: 12_000 });
+  const recovered = await worker("feed-refresh-recover", context, args.output, [], { timeoutMs: 12_000 });
+  const good = seeded.result?.ok === true && faulted.result?.ok === true && recovered.result?.ok === true;
+  const evidence = [...seeded.evidence, ...faulted.evidence, ...recovered.evidence];
+  cases.items.push(caseResult(id, "failed feed refresh preserves prior feed without partial wipe and recovers on healthy retry", good ? "pass" : "fail", started, evidence, good ? undefined : "Feed refresh fault corrupted prior feed or failed to recover upon retry.", { seed: context.seed, seedResult: seeded.result, faultResult: faulted.result, recoverResult: recovered.result }));
 }
 
 async function configCases(args, cases) {
-  const modes = ["malformed-config", "absent-config", "invalid-types", "malformed-settings", "malformed-pool", "settings-crash", "corrupt-sqlite"];
+  const modes = ["malformed-config", "absent-config", "invalid-types", "malformed-settings", "malformed-pool", "corrupt-sqlite"];
   for (const mode of modes) {
     const id = `chaos.config.${mode}`;
     const started = Date.now();
@@ -269,19 +306,47 @@ async function configCases(args, cases) {
       : null;
     const run = await worker("config", context, args.output, [mode], { timeoutMs: 10_000 });
     const result = run.result || {};
-    const status = mode === "settings-crash" ? "fail" : result.ok === true && run.code === 0 ? "pass" : "fail";
-    const reason = status === "pass" ? undefined : mode === "settings-crash" ? "Reproduced loss of previously valid settings after an in-place truncated JSON write; settings writes are not atomic." : "Corrupt configuration/cache did not meet the safe-default or explicit-recovery assertion.";
-    cases.items.push(caseResult(id, `recover from ${mode} without crash-loop or silent reset`, status, started, [...(prerequisite?.evidence || []), ...run.evidence], reason, result));
+    const status = result.ok === true && run.code === 0 ? "pass" : "fail";
+    const reason = status === "pass" ? undefined : "Corrupt configuration/cache did not meet the safe-default or explicit-recovery assertion.";
+    cases.items.push(caseResult(id, `recover from ${mode} without crash-loop or silent reset`, status, started, [...(prerequisite?.evidence || []), ...run.evidence], reason, { seed: context.seed, ...result }));
   }
+
+  // Dedicated behavioral settings-crash case
+  const crashId = "chaos.config.settings-crash";
+  const crashStarted = Date.now();
+  const crashContext = makeCase(cases.runRoot, crashId);
+  crashContext.seed = args.seed + 350;
+  const crashHold = await worker("settings-hold", crashContext, args.output, ["production"], {
+    env: { CHAOS_HOLD: "1" },
+    waitForBarrier: "settings-write.barrier.json",
+    killAfterBarrier: true,
+    timeoutMs: 8_000
+  });
+  const barrier = existsSync(path.join(crashContext.dir, "settings-write.barrier.json"));
+  let verified = null;
+  if (barrier && crashHold.signal === "SIGKILL") {
+    verified = await worker("settings-verify", crashContext, args.output, [], { timeoutMs: 5_000 });
+  }
+  const good = barrier && verified?.result?.ok === true;
+  const reason = good
+    ? undefined
+    : !barrier
+      ? "Settings write barrier was not reached before bounded teardown."
+      : `Interrupted in-place settings write lost data; getUserSettings() returned empty/corrupt state: ${JSON.stringify(verified?.result?.recovered)}`;
+  cases.items.push(caseResult(crashId, "interrupted settings write preserves old or new valid state", good ? "pass" : "fail", crashStarted, [...crashHold.evidence, ...(verified?.evidence || [])], reason, { seed: crashContext.seed, barrier, recovered: verified?.result?.recovered }));
+
+  // Database faults: testing both observation of fault AND recovery after fault release
   const id = "chaos.database.faults";
   const started = Date.now();
   const context = makeCase(cases.runRoot, id);
   context.seed = args.seed + 390;
   const seeded = await worker("db-fault", context, args.output, ["seed"], { timeoutMs: 10_000 });
   const readonly = await worker("db-fault", context, args.output, ["readonly-check"], { timeoutMs: 10_000 });
+  const recoveredRo = await worker("db-fault", context, args.output, ["readonly-recover"], { timeoutMs: 10_000 });
   const busy = await worker("db-fault", context, args.output, ["busy"], { timeoutMs: 12_000 });
-  const good = readonly.result?.observed === true && busy.result?.observed === true;
-  cases.items.push(caseResult(id, "owned read-only and SQLite busy faults are observed without host storage damage", good ? "pass" : "fail", started, [...seeded.evidence, ...readonly.evidence, ...busy.evidence], good ? undefined : "A contained database fault was not observed by the real profile store.", { readonly: readonly.result, busy: busy.result }));
+  const dbGood = readonly.result?.observed === true && recoveredRo.result?.recovered === true &&
+    busy.result?.observed === true && busy.result?.recovered === true;
+  cases.items.push(caseResult(id, "owned read-only and SQLite busy faults are observed and recovered without host storage damage", dbGood ? "pass" : "fail", started, [...seeded.evidence, ...readonly.evidence, ...recoveredRo.evidence, ...busy.evidence], dbGood ? undefined : "A contained database fault was not observed or failed to recover upon lock/permission release.", { seed: context.seed, readonly: readonly.result, recoveredRo: recoveredRo.result, busy: busy.result }));
 }
 
 async function authCases(args, cases) {
@@ -291,7 +356,7 @@ async function authCases(args, cases) {
   context.seed = args.seed + 400;
   const run = await worker("api-auth", context, args.output, [], { timeoutMs: 15_000 });
   const good = run.result?.ok === true && run.code === 0;
-  cases.items.push(caseResult(id, "all sensitive production route handlers reject missing or incorrect token without mutation", good ? "pass" : "fail", started, run.evidence, good ? undefined : "At least one sensitive route did not return the expected 401 for an incorrect token.", run.result));
+  cases.items.push(caseResult(id, "all sensitive production route handlers reject missing or incorrect token without mutation", good ? "pass" : "fail", started, run.evidence, good ? undefined : "At least one sensitive route did not return the expected 401 for an incorrect token.", { seed: context.seed, ...run.result }));
 }
 
 async function privacyCases(args, cases) {
@@ -300,9 +365,9 @@ async function privacyCases(args, cases) {
   const context = makeCase(cases.runRoot, id);
   context.seed = args.seed + 500;
   const run = await worker("privacy", context, args.output, [], { timeoutMs: 10_000 });
-  const leaked = scanContextForCanaries(context);
-  const good = run.code === 0 && leaked.length === 0;
-  cases.items.push(caseResult(id, "synthetic secrets are absent from logs, stdout, and saved diagnostic evidence", good ? "pass" : "fail", started, run.evidence, good ? undefined : `Synthetic canary appeared in ${leaked.length} owned runtime artifact(s); free-text/error privacy redaction is incomplete.`, { leakedArtifacts: leaked.length }));
+  const rawLeaks = scanRawForCanaries(context, run.stdout, run.stderr);
+  const good = run.code === 0 && rawLeaks.length === 0;
+  cases.items.push(caseResult(id, "synthetic secrets are absent from logs, stdout, and saved diagnostic evidence", good ? "pass" : "fail", started, run.evidence, good ? undefined : `Synthetic canary appeared in ${rawLeaks.length} owned runtime artifact(s); free-text/error privacy redaction is incomplete.`, { seed: context.seed, leakedArtifacts: rawLeaks.length, leakSources: rawLeaks.map((l) => l.source) }));
 }
 
 async function concurrencyCases(args, cases) {
@@ -312,7 +377,7 @@ async function concurrencyCases(args, cases) {
   context.seed = args.seed + 600;
   const run = await worker("concurrency", context, args.output, [], { timeoutMs: 15_000 });
   const status = run.result?.barrier ? (run.result.ok ? "pass" : "fail") : "blocked";
-  cases.items.push(caseResult(id, "20 same-profile builds and destructive operation have acknowledged in-flight serialization and no stale resurrection", status, started, run.evidence, status === "pass" ? undefined : run.result?.barrier ? "Concurrent production build requests exposed duplicate work or stale-operation behavior." : "No deterministic provider boundary acknowledgement was available for the in-flight build workload.", run.result));
+  cases.items.push(caseResult(id, "20 same-profile builds and destructive operation have acknowledged in-flight serialization and no stale resurrection", status, started, run.evidence, status === "pass" ? undefined : run.result?.barrier ? "Concurrent production build requests exposed duplicate work or stale-operation behavior." : "No deterministic provider boundary acknowledgement was available for the in-flight build workload.", { seed: context.seed, ...run.result }));
 }
 
 async function diagnosticsCases(args, cases) {
@@ -321,7 +386,7 @@ async function diagnosticsCases(args, cases) {
   const context = makeCase(cases.runRoot, id);
   context.seed = args.seed + 700;
   const run = await worker("diagnostics", context, args.output, [], { timeoutMs: 10_000 });
-  cases.items.push(caseResult(id, "user-obtainable diagnostics capability is a sanitized support bundle or explicit gate", "blocked", started, run.evidence, "No user-obtainable sanitized support bundle/action exists; the local /diagnostics page exposes performance analytics only. A sanitized test evidence bundle is not a user support path.", run.result));
+  cases.items.push(caseResult(id, "user-obtainable diagnostics capability is a sanitized support bundle or explicit gate", "blocked", started, run.evidence, "No user-obtainable sanitized support bundle/action exists; the local /diagnostics page exposes performance analytics only. A sanitized test evidence bundle is not a user support path.", { seed: context.seed, ...run.result }));
 }
 
 function unavailableCases(args, cases) {
@@ -332,11 +397,31 @@ function unavailableCases(args, cases) {
   ];
   for (const [id, criterion, reason] of gaps) {
     const started = Date.now();
-    cases.items.push(caseResult(id, criterion, "blocked", started, [], reason));
+    cases.items.push(caseResult(id, criterion, "blocked", started, [], reason, { seed: args.seed }));
   }
 }
 
 async function negativeCases(args, cases) {
+  // Negative control: atomic settings write fixture (demonstrates that atomic writes pass where non-atomic fail)
+  const atomicId = "chaos.runner.settings-atomic-control";
+  const atomicStarted = Date.now();
+  const atomicContext = makeCase(cases.runRoot, atomicId);
+  atomicContext.seed = args.seed + 780;
+  const atomicHold = await worker("settings-hold", atomicContext, args.output, ["atomic-fixture"], {
+    env: { CHAOS_HOLD: "1", CHAOS_SETTINGS_ATOMIC: "1" },
+    waitForBarrier: "settings-write.barrier.json",
+    killAfterBarrier: true,
+    timeoutMs: 8_000
+  });
+  const atomicBarrier = existsSync(path.join(atomicContext.dir, "settings-write.barrier.json"));
+  let atomicVerified = null;
+  if (atomicBarrier && atomicHold.signal === "SIGKILL") {
+    atomicVerified = await worker("settings-verify", atomicContext, args.output, [], { timeoutMs: 5_000 });
+  }
+  const atomicPass = atomicBarrier && atomicVerified?.result?.ok === true;
+  cases.items.push(caseResult(atomicId, "negative control: atomic temp-file settings write preserves valid state after interruption", atomicPass ? "pass" : "fail", atomicStarted, [...atomicHold.evidence, ...(atomicVerified?.evidence || [])], atomicPass ? undefined : "Atomic settings negative control failed to recover valid settings.", { seed: atomicContext.seed, barrier: atomicBarrier, recovered: atomicVerified?.result?.recovered }));
+
+  // Runner negative controls
   const id = "chaos.runner.negative";
   const started = Date.now();
   const context = makeCase(cases.runRoot, id);
@@ -347,7 +432,7 @@ async function negativeCases(args, cases) {
   const cancelled = await worker("negative-hold", cancelContext, args.output, [], { waitForBarrier: "negative-cancellation.barrier.json", killAfterBarrier: true, timeoutMs: 5_000 });
   const missingPrerequisite = !existsSync(path.join(ROOT, "tests/release/chaos/fixtures/does-not-exist.json"));
   const good = failed.code !== 0 && existsSync(path.join(cancelContext.dir, "negative-cancellation.barrier.json")) && cancelled.signal === "SIGKILL" && missingPrerequisite;
-  cases.items.push(caseResult(id, "runner observes intentional failure, missing prerequisite, and cancellation as non-passing states", good ? "pass" : "fail", started, [...failed.evidence, ...cancelled.evidence], good ? undefined : "Runner negative fixture did not produce the expected bounded failure/cleanup observation.", { intentionalExit: failed.code, cancelled: cancelled.signal, missingPrerequisite }));
+  cases.items.push(caseResult(id, "runner observes intentional failure, missing prerequisite, and cancellation as non-passing states", good ? "pass" : "fail", started, [...failed.evidence, ...cancelled.evidence], good ? undefined : "Runner negative fixture did not produce the expected bounded failure/cleanup observation.", { seed: context.seed, intentionalExit: failed.code, cancelled: cancelled.signal, missingPrerequisite }));
 }
 
 async function main() {
@@ -359,6 +444,7 @@ async function main() {
   const startedAt = new Date().toISOString();
   await processKillCases(args, cases);
   await networkCases(args, cases);
+  await feedRefreshCases(args, cases);
   await configCases(args, cases);
   await authCases(args, cases);
   await privacyCases(args, cases);
@@ -382,7 +468,7 @@ async function main() {
     architecture: process.arch,
     mode: args.mode,
     strict: args.strict,
-    artifact: { path: args.output, version: packageJson.version, sha256: await sha256(path.join(ROOT, "package.json"), { createReadStream }) },
+    artifact: getArtifactIdentity(path.join(ROOT, ".next/standalone")),
     thresholds: { fullProcessKillSeeds: 10, maxNetworkAttempts: 3, concurrentBuilds: 20 },
     cases: cases.items
   };

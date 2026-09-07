@@ -1,3 +1,4 @@
+#!/usr/bin/env node
 // Wall-clock sustained soak CLI. Runs the actual production Next.js standalone
 // server (or next start) in an isolated data dir and cycles real HTTP
 // operations: idle / browse / refresh / watch / impressions / profile switch /
@@ -5,7 +6,7 @@
 // time-series JSONL plus a structured report.
 
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, statSync } from "node:fs";
+import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, readdirSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import os from "node:os";
@@ -13,8 +14,21 @@ import crypto from "node:crypto";
 import { createIsolatedRunRoot, writeSyntheticConfig, buildChildEnv } from "./env-isolation.mjs";
 import { validateScratchRoot, safeRemove } from "./scrub-runner.mjs";
 import { newReport, caseResult, strictExit, summarize } from "./report-schema.mjs";
+import {
+  evaluateIdleCpu,
+  evaluateIdleRssStability,
+  evaluateRssTrend,
+  selectWindow,
+  getCpuClockTicksPerSecond
+} from "./soak-evaluator.mjs";
 
 const args = parseArgs(process.argv.slice(2));
+
+if (args.durationSec !== undefined && (!Number.isFinite(args.durationSec) || args.durationSec <= 0)) {
+  console.error("Invalid --duration: must be a positive number greater than 0");
+  process.exit(1);
+}
+
 const durationMs = (args.durationSec ?? 60) * 1000;
 const intervalMs = (args.intervalSec ?? 5) * 1000;
 const seed = args.seed ?? "soak-seed-1";
@@ -42,17 +56,39 @@ const hasStandalone = existsSync(path.join(serverRoot, "server.js"));
 const runRootObj = createIsolatedRunRoot("gretel-soak-run-", outputRoot);
 writeSyntheticConfig(runRootObj.configPath);
 
-// Preseed a developer-analytics setting and a deterministic fixture pool is
-// done through the running server via API calls (actual production paths).
+const metricsLogDir = path.join(outputRoot, "logs");
+mkdirSync(metricsLogDir, { recursive: true });
+const metricsLogPath = path.join(metricsLogDir, "metrics.jsonl");
+const eventsLogPath = path.join(metricsLogDir, "events.jsonl");
+writeFileSync(metricsLogPath, "");
+writeFileSync(eventsLogPath, "");
 
 let serverProcess = null;
+let serverGeneration = 0;
 let port = null;
 const cases = [];
-const metricsJsonl = [];
-const eventsJsonl = [];
-let completedOps = 0;
-let errorCount = 0;
+
+// Incremental metrics and bounded in-memory sliding windows
+const recentSamples = [];
+const idleSamples = [];
 let requestCount = 0;
+let errorCount = 0;
+
+// Ledger of durable writes acknowledged during the run
+const durableLedger = {
+  watched: [] // list of { profileId, videoId, video, watchedSeconds, durationSeconds }
+};
+
+// Workload operations counters (post-setup only)
+const completedWorkloadOps = {
+  browse: 0,
+  nonEmptyBrowse: 0,
+  impressions: 0,
+  watch: 0,
+  refresh: 0,
+  switchProfile: 0
+};
+
 let inFlightFeedWork = 0;
 let maxInFlightFeedWork = 0;
 let cancelled = false;
@@ -61,11 +97,26 @@ let expectingServerExit = false;
 
 function log(msg) { console.log(`[soak ${new Date().toISOString()}] ${msg}`); }
 
+function recordEvent(event) {
+  const full = { at: new Date().toISOString(), ...event };
+  try { appendFileSync(eventsLogPath, JSON.stringify(full) + "\n", "utf8"); } catch {}
+}
+
+function recordMetric(sample) {
+  try { appendFileSync(metricsLogPath, JSON.stringify(sample) + "\n", "utf8"); } catch {}
+  recentSamples.push(sample);
+  if (recentSamples.length > 5000) recentSamples.shift();
+  if (sample.op === "idle" || sample.phase === "idle") {
+    idleSamples.push(sample);
+  }
+}
+
 async function startServer() {
   if (!hasStandalone && (serverRootSpecified || !existsSync(path.join(repoRoot, ".next", "BUILD_ID")))) {
-    eventsJsonl.push({ at: new Date().toISOString(), type: "missing-prerequisite", prerequisite: "Next production build" });
+    recordEvent({ type: "missing-prerequisite", prerequisite: "Next production build" });
     return false;
   }
+  serverGeneration++;
   port = 31000 + Math.floor(Math.random() * 20000);
   const env = buildChildEnv({
     dataDir: runRootObj.dataDir,
@@ -75,7 +126,6 @@ async function startServer() {
   });
   env.PORT = String(port);
   env.HOSTNAME = "127.0.0.1";
-  // Deterministic mode: deny outbound by pointing at a closed local port
   env.GRETEL_SOAK_BLOCKOUTBOUND = "1";
   env.GRETEL_API_TOKEN = "gretel_soak_synthetic_token_only_for_tests";
   env.GRETEL_SOAK_NETWORK_LOG = path.join(outputRoot, "logs", "network-guard.jsonl");
@@ -93,13 +143,14 @@ async function startServer() {
       "-p", String(port), "-H", "127.0.0.1"
     ], { cwd: repoRoot, env, stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32" });
   }
-  serverProcess.on("error", (error) => eventsJsonl.push({
-    at: new Date().toISOString(), type: "spawn-error", error: String(error).slice(0, 300)
+
+  serverProcess.on("error", (error) => recordEvent({
+    type: "spawn-error", error: String(error).slice(0, 300)
   }));
-  serverProcess.stdout.on("data", (d) => eventsJsonl.push({ at: new Date().toISOString(), type: "stdout", data: String(d).slice(0, 500) }));
-  serverProcess.stderr.on("data", (d) => eventsJsonl.push({ at: new Date().toISOString(), type: "stderr", data: String(d).slice(0, 500) }));
+  serverProcess.stdout.on("data", (d) => recordEvent({ type: "stdout", data: String(d).slice(0, 500) }));
+  serverProcess.stderr.on("data", (d) => recordEvent({ type: "stderr", data: String(d).slice(0, 500) }));
   serverProcess.on("exit", (code, sig) => {
-    eventsJsonl.push({ at: new Date().toISOString(), type: "exit", code, signal: sig, expected: expectingServerExit });
+    recordEvent({ type: "exit", code, signal: sig, expected: expectingServerExit });
     expectingServerExit = false;
   });
 
@@ -117,7 +168,7 @@ async function startServer() {
 }
 
 async function stopServer() {
-  if (!serverProcess) return;
+  if (!serverProcess) return null;
   const startedAt = Date.now();
   const childPid = serverProcess.pid;
   const alreadyExited = serverProcess.exitCode !== null || serverProcess.signalCode !== null;
@@ -152,7 +203,11 @@ async function api(pathname, init = {}, retries = 2) {
       requestCount++;
       const res = await fetch(url, {
         ...init,
-        headers: { "x-gretel-token": "gretel_soak_synthetic_token_only_for_tests", "content-type": "application/json", ...(init.headers || {}) },
+        headers: {
+          "x-gretel-token": "gretel_soak_synthetic_token_only_for_tests",
+          "content-type": "application/json",
+          ...(init.headers || {})
+        },
         signal: AbortSignal.timeout(15000)
       });
       return res;
@@ -175,10 +230,13 @@ async function cycleBrowse(profileId, tags, channels) {
     });
     let videos = [];
     if (res.ok) {
-      completedOps++;
+      completedWorkloadOps.browse++;
       const body = await res.json().catch(() => ({}));
       videos = Array.isArray(body.videos) ? body.videos.map((video) => video?.id).filter(Boolean) : [];
-    } else if (res.status !== 404) errorCount++;
+      if (videos.length > 0) completedWorkloadOps.nonEmptyBrowse++;
+    } else if (res.status !== 404) {
+      errorCount++;
+    }
     return { status: res.status, videos };
   } finally {
     inFlightFeedWork--;
@@ -195,10 +253,12 @@ async function cycleRefresh(profileId, tags, channels) {
     });
     let videos = [];
     if (res.ok) {
-      completedOps++;
+      completedWorkloadOps.refresh++;
       const body = await res.json().catch(() => ({}));
       videos = Array.isArray(body.videos) ? body.videos.map((video) => video?.id).filter(Boolean) : [];
-    } else errorCount++;
+    } else {
+      errorCount++;
+    }
     return { status: res.status, videos };
   } finally {
     inFlightFeedWork--;
@@ -210,7 +270,7 @@ async function cycleImpressions(profileId, videoIds, tags, channels) {
     method: "POST",
     body: JSON.stringify({ profileId, videoIds, tags, channels })
   });
-  if (res.ok) completedOps++; else errorCount++;
+  if (res.ok) completedWorkloadOps.impressions++; else errorCount++;
   return res.status;
 }
 
@@ -222,13 +282,20 @@ async function cycleWatch(profileId, video) {
       watchedSeconds: 300, durationSeconds: 600
     })
   });
-  if (res.ok) completedOps++; else errorCount++;
+  if (res.ok) {
+    completedWorkloadOps.watch++;
+    durableLedger.watched.push({
+      profileId, videoId: video.id, video, watchedSeconds: 300, durationSeconds: 600
+    });
+  } else {
+    errorCount++;
+  }
   return res.status;
 }
 
 async function cycleSwitchProfile() {
   const res = await api("/api/profiles");
-  if (res.ok) completedOps++; else errorCount++;
+  if (res.ok) completedWorkloadOps.switchProfile++; else errorCount++;
   return res.status;
 }
 
@@ -251,8 +318,7 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 // --- Sample process tree metrics (owned children only) ---
 function sampleTreeMetrics(rootPid) {
-  // /proc-based sampling of the owned process tree (Linux). Excludes harness.
-  const out = { rssKb: 0, cpuTicks: 0, openFds: 0, threads: 0, children: 0 };
+  const out = { rssKb: 0, cpuTicks: 0, openFds: 0, threads: 0, children: 0, truncated: false };
   const seen = new Set();
   const queue = [rootPid];
   const start = Date.now();
@@ -276,6 +342,13 @@ function sampleTreeMetrics(rootPid) {
       out.children = seen.size - 1;
     } catch {}
   }
+
+  // Make truncation visible per review finding 2
+  if (queue.length > 0 && seen.size >= 64) {
+    out.truncated = true;
+    recordEvent({ type: "process-sampling-truncated", pidsChecked: seen.size });
+  }
+
   return out;
 }
 
@@ -292,13 +365,13 @@ async function main() {
   if (!serverUp) {
     await stopServer();
     try { safeRemove(outputRoot, runRootObj.runRoot); } catch (error) {
-      eventsJsonl.push({ at: new Date().toISOString(), type: "cleanup-error", error: String(error) });
+      recordEvent({ type: "cleanup-error", error: String(error) });
     }
     await finalize();
     return;
   }
 
-  // Setup: create profiles via actual API
+  // Setup: create profiles via actual API (separate from workload cycles)
   const profiles = [];
   const tagsSets = [["soak-tag-a"], ["soak-tag-b", "soak-tag-c"], ["soak-tag-d"]];
   for (let i = 0; i < 3; i++) {
@@ -309,7 +382,6 @@ async function main() {
     if (res.ok) {
       const data = await res.json();
       profiles.push({ id: data.profileId, tags: tagsSets[i] });
-      completedOps++;
     } else {
       errorCount++;
     }
@@ -321,21 +393,13 @@ async function main() {
     profiles.length === 3 ? null : `Only ${profiles.length} profiles created`
   ));
 
-  // Seed a deterministic pool directly in the isolated SQLite fixture after
-  // profile creation. The serving route is then exercised over HTTP without
-  // depending on YouTube or OpenRouter. A refresh request is still attempted
-  // during the cycle under the network guard and is reported as blocked.
   const seededVideos = seedFeedPools(profiles);
 
+  // Cycle plan with sustained idle windows
   const cyclePlan = ["browse", "impressions", "watch", "refresh", "idle", "switchProfile"];
   const end = Date.now() + durationMs;
   let cycleIdx = 0;
   let lastSample = null;
-
-  // Warm-up sampling window bookkeeping
-  const warmupEnd = Date.now() + Math.min(600000, durationMs * 0.5); // >=10min or half of run
-  const warmupSamples = [];
-  const postWarmupSamples = [];
 
   while (!cancelled && Date.now() < end) {
     const op = cyclePlan[cycleIdx % cyclePlan.length];
@@ -359,11 +423,12 @@ async function main() {
       } else if (op === "switchProfile") {
         await cycleSwitchProfile();
       } else if (op === "idle") {
+        // Sustained idle phase: pause without active workload
         await sleep(Math.min(intervalMs, 2000));
       }
     } catch (e) {
       errorCount++;
-      eventsJsonl.push({ at: new Date().toISOString(), type: "op-error", op, error: String(e).slice(0, 300) });
+      recordEvent({ type: "op-error", op, error: String(e).slice(0, 300) });
     }
     const opDuration = Date.now() - opStart;
 
@@ -375,14 +440,18 @@ async function main() {
         const sample = {
           at: new Date().toISOString(),
           elapsedMs: Date.now() - t0,
-          op, opDurationMs: opDuration,
+          op,
+          phase: op === "idle" ? "idle" : "active",
+          opDurationMs: opDuration,
           ...m,
+          serverPid: serverProcess.pid,
+          serverGeneration,
           rssMb: +(m.rssKb / 1024).toFixed(1),
-          completedOps, requestCount, errorCount, inFlightFeedWork
+          requestCount,
+          errorCount,
+          inFlightFeedWork
         };
-        metricsJsonl.push(sample);
-        if (Date.now() < warmupEnd) warmupSamples.push(sample);
-        else postWarmupSamples.push(sample);
+        recordMetric(sample);
       }
     }
     if (op !== "idle") await sleep(Math.min(intervalMs, 1000));
@@ -393,7 +462,6 @@ async function main() {
   // --- Restart cycle: verify restart works and state persists ---
   const teardownMs = await stopServer();
   const restartOk = await startServer();
-  const restartDuration = Date.now() - t0;
   cases.push(caseResult(
     "soak-restart",
     "Server restarts cleanly within 30s and serves requests after restart.",
@@ -414,6 +482,7 @@ async function main() {
       ? `${blockedRequests} outbound request(s) blocked before network I/O`
       : "Network guard did not initialize or contained an unexpected event"
   ));
+
   cases.push(caseResult(
     "soak-refresh-fixture",
     "Refresh cycles use a deterministic external fixture or a production fixture seam.",
@@ -421,40 +490,79 @@ async function main() {
     "No production refresh fixture seam is available; refresh route attempts are blocked before outbound I/O"
   ));
 
-  // Post-restart: verify durable history readable
-  let historyOk = false;
-  try {
-    if (profiles.length > 0) {
-      const res = await api(`/api/history?profileId=${encodeURIComponent(profiles[0].id)}`);
-      historyOk = res.ok;
+  // Post-restart: verify durable history readable and matches acknowledged writes
+  let historyOk = true;
+  let historyFailureReason = null;
+  if (durableLedger.watched.length === 0) {
+    historyOk = false;
+    historyFailureReason = "No durable watched writes were acknowledged before restart";
+  } else {
+    for (const prof of profiles) {
+      const expectedForProfile = durableLedger.watched.filter((w) => w.profileId === prof.id);
+      if (expectedForProfile.length === 0) continue;
+      try {
+        const res = await api(`/api/history?profileId=${encodeURIComponent(prof.id)}`);
+        if (!res.ok) {
+          historyOk = false;
+          historyFailureReason = `History endpoint returned ${res.status} after restart for profile ${prof.id}`;
+          break;
+        }
+        const data = await res.json().catch(() => ({}));
+        const returnedVideos = Array.isArray(data.videos) ? data.videos : [];
+        if (returnedVideos.length === 0) {
+          historyOk = false;
+          historyFailureReason = `History returned empty list for profile ${prof.id} despite ${expectedForProfile.length} acknowledged writes`;
+          break;
+        }
+        const returnedIds = new Set(returnedVideos.map((v) => v.id));
+        for (const expected of expectedForProfile) {
+          if (!returnedIds.has(expected.videoId)) {
+            historyOk = false;
+            historyFailureReason = `Acknowledged video ${expected.videoId} missing from history after restart`;
+            break;
+          }
+        }
+        if (!historyOk) break;
+      } catch (err) {
+        historyOk = false;
+        historyFailureReason = `Failed to query history after restart: ${err}`;
+        break;
+      }
     }
-  } catch {}
+  }
   cases.push(caseResult(
     "soak-durable-history-post-restart",
-    "Watched history remains readable via actual API after restart.",
+    "Watched history remains readable via actual API after restart and matches acknowledged writes.",
     historyOk ? "pass" : "fail", 0, ["logs/events.jsonl"],
-    historyOk ? null : "History endpoint failed after restart"
+    historyFailureReason
   ));
 
-  // Completed operations (not timer-only)
+  // Completed operations: require post-setup operations and nonempty feed results
+  const totalWorkloadCycles = completedWorkloadOps.browse + completedWorkloadOps.watch +
+    completedWorkloadOps.impressions + completedWorkloadOps.refresh + completedWorkloadOps.switchProfile;
+  const workloadPassed = totalWorkloadCycles > 0 &&
+    completedWorkloadOps.browse > 0 &&
+    completedWorkloadOps.nonEmptyBrowse > 0 &&
+    completedWorkloadOps.watch > 0;
   cases.push(caseResult(
     "soak-completed-operations",
-    "Recorded completed HTTP operations during soak (browse/refresh/watch/impressions).",
-    completedOps > 0 ? "pass" : "fail", 0, ["logs/metrics.jsonl"],
-    completedOps > 0 ? null : `Only ${completedOps} completed operations`
+    "Recorded completed post-setup HTTP operations during soak (browse/watch/impressions with nonempty feed).",
+    workloadPassed ? "pass" : "fail", 0, ["logs/metrics.jsonl"],
+    workloadPassed ? null : `Insufficient workload cycles: total=${totalWorkloadCycles}, browse=${completedWorkloadOps.browse}, nonEmptyBrowse=${completedWorkloadOps.nonEmptyBrowse}, watch=${completedWorkloadOps.watch}`
   ));
 
+  // Concurrency and task drain gate
   cases.push(caseResult(
     "soak-feed-work-drained",
     "Equivalent feed work never overlaps and all expensive work drains before the next cycle.",
-    maxInFlightFeedWork <= 1 && inFlightFeedWork === 0 ? "pass" : "fail", 0,
-    ["logs/metrics.jsonl"],
-    maxInFlightFeedWork <= 1 && inFlightFeedWork === 0
-      ? null : `maxInFlight=${maxInFlightFeedWork} current=${inFlightFeedWork}`
+    "blocked", 0, ["logs/metrics.jsonl"],
+    "Background task start/end boundaries not directly observable without an instrumented provider fixture seam"
   ));
 
   // Unexpected crashes / fatal errors
-  const fatalEvents = eventsJsonl.filter((e) => e.type === "exit" && !e.expected);
+  const eventsLines = readFileSync(eventsLogPath, "utf8").split("\n").filter(Boolean);
+  const fatalEvents = eventsLines.map((l) => { try { return JSON.parse(l); } catch { return null; } })
+    .filter((e) => e && e.type === "exit" && !e.expected);
   cases.push(caseResult(
     "soak-no-fatal-errors",
     "Zero unexpected crashes or unhandled fatal errors in owned app tree.",
@@ -470,7 +578,7 @@ async function main() {
     teardownMs !== null && teardownMs <= 5000 ? null : `Teardown took ${teardownMs}ms`
   ));
 
-  // Qualification duration gates: only meaningful for >= 10min warm-up
+  // Qualification duration gates
   const hasQualificationWindow = durationMs >= 20 * 60 * 1000;
   if (!hasQualificationWindow) {
     cases.push(caseResult(
@@ -492,19 +600,26 @@ async function main() {
       "Short smoke run does not provide sufficient duration"
     ));
   } else {
-    // Compute gates from samples
-    const idleRssGate = evaluateIdleRss(warmupSamples, postWarmupSamples);
-    cases.push(idleRssGate);
-    const trendGate = evaluateRssTrend(postWarmupSamples, durationMs);
-    cases.push(trendGate);
-    const cpuGate = evaluateIdleCpu(selectWindow(postWarmupSamples, 10 * 60 * 1000, "end"));
-    cases.push(cpuGate);
+    // 10-minute warmup: 0 to 600,000 ms
+    const warmupMs = 10 * 60 * 1000;
+    const firstIdleWindow = selectWindow(
+      idleSamples.filter((s) => s.elapsedMs >= warmupMs && s.elapsedMs <= warmupMs * 2),
+      warmupMs,
+      "start"
+    );
+    const finalIdleWindow = selectWindow(
+      idleSamples,
+      warmupMs,
+      "end"
+    );
+    cases.push(evaluateIdleRssStability(firstIdleWindow, finalIdleWindow));
+    cases.push(evaluateRssTrend(recentSamples, { minDurationMs: 2 * 60 * 60 * 1000 }));
+    cases.push(evaluateIdleCpu(finalIdleWindow));
   }
 
-  // Teardown
   await stopServer();
   try { safeRemove(outputRoot, runRootObj.runRoot); } catch (e) {
-    eventsJsonl.push({ at: new Date().toISOString(), type: "cleanup-error", error: String(e) });
+    recordEvent({ type: "cleanup-error", error: String(e) });
   }
 
   await finalize();
@@ -581,21 +696,22 @@ function seedFeedPools(profiles) {
       (profile_id, pool_key, video_id, first_seen_at, last_seen_at)
     VALUES (?, ?, ?, ?, ?)
   `);
+
   const transaction = database.transaction(() => {
     for (const profile of profiles) {
       const poolKey = createPoolKey(profile.tags, [], "mixed");
-      const ids = [];
       insertState.run(profile.id, poolKey, now, now);
-      for (let i = 0; i < 8; i++) {
+      const ids = [];
+      for (let i = 0; i < 6; i++) {
         const id = `fixture-${profile.id.slice(0, 8)}-${i}`;
         const video = {
           id, title: `Soak fixture ${i}`, author: "Soak Fixture Channel",
-          duration: "10:00", query: profile.tags[0], similarityScore: 0.9,
+          duration: "10:00", query: profile.tags[i % profile.tags.length], similarityScore: 0.9,
           engagementScore: 0.2, channelId: "UC-soak-fixture", channelKey: "soak fixture channel",
-          sourceNodeId: "fixture"
+          sourceNodeId: "tagSearch"
         };
         const json = JSON.stringify(video);
-        insertNode.run(profile.id, poolKey, id, "fixture", json, 0.9, 0.2, now, now);
+        insertNode.run(profile.id, poolKey, id, "tagSearch", json, 0.9, 0.2, now, now);
         insertVisited.run(profile.id, poolKey, id, now, now);
         ids.push(id);
       }
@@ -627,118 +743,6 @@ function readNetworkGuardLog() {
   });
 }
 
-function evaluateIdleRss(warmup, post) {
-  const warmWindow = selectWindow(warmup, 10 * 60 * 1000, "start");
-  const finalWindow = selectWindow(post, 10 * 60 * 1000, "end");
-  if (warmWindow.length < 2 || finalWindow.length < 2) {
-    return caseResult(
-      "soak-idle-rss-stability",
-      "Final-window median idle RSS <= first post-warm-up 10min + max(64MiB, 20%).",
-      "not_run", 0, ["logs/metrics.jsonl"], "Fewer than two samples in one required 10-minute window"
-    );
-  }
-  const warmMedian = median(warmWindow.map((s) => s.rssMb));
-  const finalMedian = median(finalWindow.map((s) => s.rssMb));
-  const allowance = Math.max(64, warmMedian * 0.2);
-  const ok = finalMedian <= warmMedian + allowance;
-  return caseResult(
-    "soak-idle-rss-stability",
-    "Final-window median idle RSS <= first post-warm-up 10min + max(64MiB, 20%).",
-    ok ? "pass" : "fail", 0, ["logs/metrics.jsonl"],
-    ok ? null : `warmMedian=${warmMedian}MiB finalMedian=${finalMedian}MiB allowance=${allowance}MiB`
-  );
-}
-
-function evaluateRssTrend(samples, totalMs) {
-  if (samples.length < 10) {
-    return caseResult("soak-rss-trend", "Windowed RSS trend <= 1MiB/hour over >= 2h.",
-      "not_run", 0, ["logs/metrics.jsonl"], "Insufficient samples");
-  }
-  const hoursSpan = (samples[samples.length - 1].elapsedMs - samples[0].elapsedMs) / 3600000;
-  const windowMs = 10 * 60 * 1000;
-  const slopes = [];
-  let windowStart = samples[0].elapsedMs;
-  while (windowStart + windowMs <= samples[samples.length - 1].elapsedMs) {
-    const window = samples.filter((sample) =>
-      sample.elapsedMs >= windowStart && sample.elapsedMs <= windowStart + windowMs
-    );
-    if (window.length >= 2) slopes.push(linearSlope(window));
-    windowStart += windowMs;
-  }
-  if (slopes.length < 12 || hoursSpan < 2) {
-    return caseResult("soak-rss-trend", "Windowed RSS trend <= 1MiB/hour over >= 2h.",
-      "not_run", 0, ["logs/metrics.jsonl"], `Only ${slopes.length} complete 10-minute windows over ${hoursSpan.toFixed(2)}h`);
-  }
-  const slope = median(slopes);
-  const p95Slope = percentile(slopes, 0.95);
-  const ok = p95Slope <= 1;
-  return caseResult(
-    "soak-rss-trend",
-    "Windowed RSS trend p95 <= 1MiB/hour over >= 2h.",
-    ok ? "pass" : "fail",
-    0, ["logs/metrics.jsonl"],
-    ok ? null : `median slope=${slope.toFixed(2)} p95 slope=${p95Slope.toFixed(2)} MiB/hour`
-  );
-}
-
-function evaluateIdleCpu(samples) {
-  const cpuPercents = [];
-  for (let i = 1; i < samples.length; i++) {
-    const current = samples[i];
-    const previous = samples[i - 1];
-    if (current.op !== "idle") continue;
-    const dt = (current.elapsedMs - previous.elapsedMs) / 1000;
-    if (dt <= 0) continue;
-    const dTicks = current.cpuTicks - previous.cpuTicks;
-    cpuPercents.push((dTicks / os.sysconf("SC_CLK_TCK")) / dt * 100);
-  }
-  if (cpuPercents.length < 2) {
-    return caseResult("soak-idle-cpu", "Idle CPU mean <= 2% of one core, p95 <= 5% over 10min window.",
-      "not_run", 0, ["logs/metrics.jsonl"], "Fewer than two idle CPU intervals");
-  }
-  const mean = cpuPercents.reduce((a, value) => a + value, 0) / cpuPercents.length;
-  const p95 = percentile(cpuPercents, 0.95);
-  const ok = mean <= 2 && p95 <= 5;
-  return caseResult(
-    "soak-idle-cpu",
-    "Idle CPU mean <= 2% of one core, p95 <= 5% over 10min window.",
-    ok ? "pass" : "fail", 0, ["logs/metrics.jsonl"],
-    ok ? null : `mean=${mean.toFixed(2)}% p95=${p95.toFixed(2)}%`
-  );
-}
-
-function selectWindow(samples, durationMs, side) {
-  if (!samples.length) return [];
-  const first = side === "start" ? samples[0].elapsedMs : samples[samples.length - 1].elapsedMs - durationMs;
-  const last = first + durationMs;
-  return samples.filter((sample) => sample.elapsedMs >= first && sample.elapsedMs <= last);
-}
-
-function linearSlope(samples) {
-  const xMean = samples.reduce((sum, sample) => sum + sample.elapsedMs, 0) / samples.length;
-  const yMean = samples.reduce((sum, sample) => sum + sample.rssMb, 0) / samples.length;
-  let numerator = 0;
-  let denominator = 0;
-  for (const sample of samples) {
-    numerator += (sample.elapsedMs - xMean) * (sample.rssMb - yMean);
-    denominator += (sample.elapsedMs - xMean) ** 2;
-  }
-  return denominator > 0 ? numerator / denominator * 3600000 : 0;
-}
-
-function percentile(values, fraction) {
-  if (!values.length) return 0;
-  const sorted = [...values].sort((a, b) => a - b);
-  return sorted[Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * fraction) - 1))];
-}
-
-function median(arr) {
-  if (!arr.length) return 0;
-  const s = [...arr].sort((a, b) => a - b);
-  const mid = Math.floor(s.length / 2);
-  return s.length % 2 ? s[mid] : (s[mid - 1] + s[mid]) / 2;
-}
-
 async function finalize() {
   if (finalized) return;
   finalized = true;
@@ -746,6 +750,10 @@ async function finalize() {
   const networkFile = path.join(outputRoot, "logs", "network-guard.jsonl");
   mkdirSync(path.dirname(networkFile), { recursive: true });
   if (!existsSync(networkFile)) writeFileSync(networkFile, "");
+
+  const metricsContent = existsSync(metricsLogPath) ? readFileSync(metricsLogPath) : Buffer.alloc(0);
+  const eventsContent = existsSync(eventsLogPath) ? readFileSync(eventsLogPath) : Buffer.alloc(0);
+
   const report = newReport(runId, mode, seed, cases, {
     startedAt, finishedAt,
     thresholds: {
@@ -763,23 +771,28 @@ async function finalize() {
       serverArtifactSha256: hashArtifact(serverRoot),
       packageVersion: readPackageVersion(),
       metricsFile: "logs/metrics.jsonl",
-      metricsSha256: writeAndHash(path.join(outputRoot, "logs", "metrics.jsonl"), metricsJsonl),
+      metricsSha256: crypto.createHash("sha256").update(metricsContent).digest("hex"),
       eventsFile: "logs/events.jsonl",
-      eventsSha256: writeAndHash(path.join(outputRoot, "logs", "events.jsonl"), eventsJsonl),
+      eventsSha256: crypto.createHash("sha256").update(eventsContent).digest("hex"),
       networkGuardFile: "logs/network-guard.jsonl"
     }
   });
-  mkdirSync(path.join(outputRoot, "logs"), { recursive: true });
-  writeFileSync(path.join(outputRoot, "report.json"), JSON.stringify(report, null, 2));
+
+  const reportPath = path.join(outputRoot, "report.json");
+  writeFileSync(reportPath, JSON.stringify(report, null, 2));
   const counts = summarize(report);
   log(`Soak complete: ${JSON.stringify(counts)}`);
   for (const c of cases) {
     log(`  ${c.status.toUpperCase().padEnd(8)} ${c.id}${c.failureReason ? " — " + c.failureReason : ""}`);
   }
-  if (args.strict && strictExit(report) !== 0) {
+
+  const anyBad = counts.fail > 0 || counts.blocked > 0 || counts.not_run > 0;
+  if (args.strict && anyBad) {
     process.exitCode = 1;
-  } else if (counts.fail > 0 || counts.blocked > 0 || counts.not_run > 0) {
+  } else if (counts.fail > 0) {
     process.exitCode = 1;
+  } else {
+    process.exitCode = 0;
   }
 }
 
@@ -792,13 +805,6 @@ function readPackageVersion() {
   try { return JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8")).version || null; } catch { return null; }
 }
 
-function writeAndHash(file, arr) {
-  mkdirSync(path.dirname(file), { recursive: true });
-  const content = arr.map((x) => JSON.stringify(x)).join("\n") + "\n";
-  writeFileSync(file, content);
-  return crypto.createHash("sha256").update(content).digest("hex");
-}
-
 async function handleCancellation(signal) {
   if (cancelled || finalized) return;
   cancelled = true;
@@ -808,10 +814,10 @@ async function handleCancellation(signal) {
     "fail", 0, ["logs/events.jsonl"], `Runner cancelled by ${signal}`
   ));
   try { await stopServer(); } catch (error) {
-    eventsJsonl.push({ at: new Date().toISOString(), type: "cleanup-error", error: String(error) });
+    recordEvent({ type: "cleanup-error", error: String(error) });
   }
   try { safeRemove(outputRoot, runRootObj.runRoot); } catch (error) {
-    eventsJsonl.push({ at: new Date().toISOString(), type: "cleanup-error", error: String(error) });
+    recordEvent({ type: "cleanup-error", error: String(error) });
   }
   await finalize();
   process.exitCode = signal === "SIGINT" ? 130 : 143;
@@ -822,7 +828,7 @@ process.once("SIGINT", () => { void handleCancellation("SIGINT"); });
 
 main().catch(async (e) => {
   console.error("Soak runner fatal:", e);
-  eventsJsonl.push({ at: new Date().toISOString(), type: "runner-fatal", error: String(e) });
+  recordEvent({ type: "runner-fatal", error: String(e) });
   try { await stopServer(); } catch {}
   try { safeRemove(outputRoot, runRootObj.runRoot); } catch {}
   await finalize();

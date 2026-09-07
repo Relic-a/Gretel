@@ -4,13 +4,16 @@
  * Protocol adapter for native package verification.
  *
  * Native installer tests must run in a disposable target OS image. This adapter
- * validates the explicit artifact inventory and emits a blocked report until a
- * target runner is supplied. It never installs a package on the developer host.
+ * validates the explicit artifact inventory, invokes the supplied target runner
+ * according to the documented runner contract, validates the report schema, hashes,
+ * and evidence, and emits a structured verification report.
+ *
+ * It never installs a package on the developer host.
  */
 
 import { createHash } from "node:crypto";
-import { execFileSync } from "node:child_process";
-import { existsSync, realpathSync } from "node:fs";
+import { execFileSync, spawnSync } from "node:child_process";
+import { copyFileSync, existsSync, realpathSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -26,14 +29,17 @@ const cases = [];
 const oldArtifact = await inspectArtifact(args.oldArtifact, "old");
 const newArtifact = await inspectArtifact(args.newArtifact, "new");
 const runner = args.runner ? await inspectRunner(args.runner) : { present: false, reason: "No disposable target OS runner supplied." };
-const targetOs = args.targetOs || "";
+const targetOs = args.targetOs || platformName(process.platform);
+const packageFormat = args.packageFormat || inferPackageFormat(args.newArtifact || args.oldArtifact || "");
+const timeoutMs = Number.isSafeInteger(Number(args.timeout)) && Number(args.timeout) > 0 ? Number(args.timeout) : 60_000;
 
 addCase("native.inventory", "Explicit old and new package artifacts are present, non-empty, and identified by hash.", oldArtifact.present && newArtifact.present ? "pass" : "blocked", {
   reason: oldArtifact.present && newArtifact.present ? undefined : [oldArtifact.reason, newArtifact.reason].filter(Boolean).join(" "),
   evidence: []
 });
 
-const targetMatches = targetOs && ["linux", "macos", "windows"].includes(targetOs) && targetOs === platformName(process.platform);
+const supportedOsList = ["linux", "macos", "windows"];
+const targetMatches = targetOs && supportedOsList.includes(targetOs) && targetOs === platformName(process.platform);
 addCase("native.target-runner", "The adapter executes only inside an explicitly selected disposable target OS runner.", runner.present && targetMatches ? "pass" : "blocked", {
   reason: runner.present ? (targetMatches ? undefined : `target OS ${targetOs || "(missing)"} does not match host ${platformName(process.platform)}`) : runner.reason,
   evidence: []
@@ -51,18 +57,113 @@ const matrix = [
   ["native.update-interruption", "A download interruption leaves the old executable launchable."],
   ["native.update-install-failure", "An install failure leaves the old executable launchable."],
   ["native.update-success", "A verified update relaunches the new version with data unchanged."],
-  ["native.arch-manual-update", "Arch packages are verified as manual update paths and never claimed automatic."
-  ]
+  ["native.arch-manual-update", "Arch packages are verified as manual update paths and never claimed automatic."]
 ];
 
-for (const [id, criterion] of matrix) {
-  const supported = runner.present && targetMatches && oldArtifact.present && newArtifact.present;
-  addCase(id, criterion, supported ? "blocked" : "blocked", {
-    reason: supported
-      ? "Runner supplied but no validated native protocol result was returned; implement the target runner contract before claiming a pass."
-      : "Native evidence requires explicit old/new artifacts and a disposable target OS runner.",
-    evidence: []
-  });
+const supported = runner.present && targetMatches && oldArtifact.present && newArtifact.present;
+
+if (!supported) {
+  for (const [id, criterion] of matrix) {
+    addCase(id, criterion, "blocked", {
+      reason: !runner.present
+        ? "No disposable target OS runner supplied."
+        : !targetMatches
+          ? `target OS ${targetOs} does not match host ${platformName(process.platform)}`
+          : "Native evidence requires explicit old/new artifacts and a disposable target OS runner.",
+      evidence: []
+    });
+  }
+} else {
+  // Execute the target runner protocol contract
+  const targetScratchDir = path.join(runRoot, "runner-scratch");
+  const targetEvidenceDir = path.join(runRoot, "runner-evidence");
+  const targetReportFile = path.join(runRoot, "runner-report.json");
+  const protocolRunId = `native-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+
+  await mkdir(targetScratchDir, { recursive: true, mode: 0o700 });
+  await mkdir(targetEvidenceDir, { recursive: true, mode: 0o700 });
+
+  const runnerResult = spawnSync(runner.path, [
+    "--run-id", protocolRunId,
+    "--scratch-dir", targetScratchDir,
+    "--evidence-dir", targetEvidenceDir,
+    "--report-file", targetReportFile,
+    "--old-artifact", oldArtifact.path,
+    "--old-hash", oldArtifact.sha256,
+    "--new-artifact", newArtifact.path,
+    "--new-hash", newArtifact.sha256,
+    "--target-os", targetOs,
+    "--package-format", packageFormat
+  ], { cwd: repoRoot, timeout: timeoutMs, encoding: "utf8" });
+
+  let targetReport = null;
+  let reportValidationError = "";
+
+  if (runnerResult.error) {
+    reportValidationError = runnerResult.error.code === "ETIMEDOUT"
+      ? `Target runner timed out after ${timeoutMs}ms.`
+      : `Failed to execute target runner: ${runnerResult.error.message}`;
+  } else if (!existsSync(targetReportFile)) {
+    reportValidationError = `Target runner exited with code ${runnerResult.status} but produced no report at ${targetReportFile}.`;
+  } else {
+    try {
+      targetReport = JSON.parse(await readFile(targetReportFile, "utf8"));
+    } catch {
+      reportValidationError = "Target runner produced malformed JSON report.";
+    }
+  }
+
+  if (targetReport && !reportValidationError) {
+    if (targetReport.schemaVersion !== 1) {
+      reportValidationError = `Unsupported runner report schemaVersion ${targetReport.schemaVersion}; expected 1.`;
+    } else if (targetReport.runId !== protocolRunId) {
+      reportValidationError = `Stale runner report rejected: report runId ${targetReport.runId} does not match execution token ${protocolRunId}.`;
+    } else if (targetReport.targetOs !== targetOs) {
+      reportValidationError = `Runner report targetOs ${targetReport.targetOs} does not match expected target ${targetOs}.`;
+    } else if (targetReport.oldArtifactHash !== oldArtifact.sha256) {
+      reportValidationError = `Old artifact hash mismatch in runner report: expected ${oldArtifact.sha256}, got ${targetReport.oldArtifactHash}.`;
+    } else if (targetReport.newArtifactHash !== newArtifact.sha256) {
+      reportValidationError = `New artifact hash mismatch in runner report: expected ${newArtifact.sha256}, got ${targetReport.newArtifactHash}.`;
+    } else if (!Array.isArray(targetReport.cases)) {
+      reportValidationError = "Target runner report missing cases array.";
+    }
+  }
+
+  const outputEvidenceDir = path.join(output, "evidence");
+  await mkdir(outputEvidenceDir, { recursive: true, mode: 0o700 });
+
+  for (const [id, criterion] of matrix) {
+    if (reportValidationError) {
+      addCase(id, criterion, "fail", { reason: reportValidationError, evidence: [] });
+      continue;
+    }
+
+    const matchedCase = targetReport.cases.find((c) => c.id === id);
+    if (!matchedCase) {
+      addCase(id, criterion, "fail", { reason: `Target runner report omitted required matrix case ${id}.`, evidence: [] });
+      continue;
+    }
+
+    const caseStatus = ["pass", "fail", "blocked", "not_run"].includes(matchedCase.status) ? matchedCase.status : "fail";
+    const caseEvidence = [];
+
+    if (Array.isArray(matchedCase.evidence)) {
+      for (const evName of matchedCase.evidence) {
+        const srcPath = path.join(targetEvidenceDir, evName);
+        if (existsSync(srcPath)) {
+          const destName = `${id}.${evName}`;
+          copyFileSync(srcPath, path.join(outputEvidenceDir, destName));
+          caseEvidence.push(path.join("evidence", destName));
+        }
+      }
+    }
+
+    addCase(id, criterion, caseStatus, {
+      reason: matchedCase.failureReason || undefined,
+      durationMs: matchedCase.durationMs || 0,
+      evidence: caseEvidence
+    });
+  }
 }
 
 const report = {
@@ -77,22 +178,23 @@ const report = {
   platform: process.platform,
   architecture: process.arch,
   mode: "native-package",
-  artifact: { old: oldArtifact, new: newArtifact, targetOs: targetOs || null, runner: runner.present ? args.runner : null },
+  artifact: { old: oldArtifact, new: newArtifact, targetOs: targetOs || null, packageFormat, runner: runner.present ? args.runner : null },
   thresholds: { startupReadyMs: 30_000, teardownMs: 10_000 },
   cases
 };
+
 await writeFile(path.join(output, "report.json"), `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
-console.log(JSON.stringify({ report: path.join(output, "report.json"), runRoot, blocked: cases.filter((entry) => entry.status === "blocked").length }));
+console.log(JSON.stringify({ report: path.join(output, "report.json"), runRoot, pass: cases.filter((entry) => entry.status === "pass").length, fail: cases.filter((entry) => entry.status === "fail").length, blocked: cases.filter((entry) => entry.status === "blocked").length }));
 process.exitCode = cases.some((entry) => entry.status === "fail" || (args.strict && ["blocked", "not_run"].includes(entry.status))) ? 1 : 0;
 
-function addCase(id, criterion, status, details) {
+function addCase(id, criterion, status, details = {}) {
   cases.push({
     id,
     criterion,
     status,
-    durationMs: 0,
+    durationMs: details.durationMs || 0,
     evidence: details.evidence || [],
-    failureReason: details.reason,
+    failureReason: details.reason ?? undefined,
     scope: "native-package",
     measurements: {}
   });
@@ -120,6 +222,17 @@ async function inspectRunner(requested) {
   } catch (error) {
     return { present: false, reason: error instanceof Error ? error.message : String(error) };
   }
+}
+
+function inferPackageFormat(filename) {
+  if (filename.endsWith(".deb")) return "deb";
+  if (filename.endsWith(".rpm")) return "rpm";
+  if (filename.endsWith(".AppImage") || filename.endsWith(".appimage")) return "appimage";
+  if (filename.endsWith(".pkg.tar.zst") || filename.includes(".arch-package")) return "arch";
+  if (filename.endsWith(".dmg")) return "dmg";
+  if (filename.endsWith(".app.tar.gz") || filename.endsWith(".tar.gz")) return "tar.gz";
+  if (filename.endsWith(".exe")) return "nsis";
+  return "deb";
 }
 
 async function prepareOutput(requested) {
@@ -162,12 +275,16 @@ function parseArgs(argv) {
     else if (arg === "--new-artifact") result.newArtifact = argv[++index];
     else if (arg.startsWith("--target-os=")) result.targetOs = arg.slice(12);
     else if (arg === "--target-os") result.targetOs = argv[++index];
+    else if (arg.startsWith("--package-format=")) result.packageFormat = arg.slice(17);
+    else if (arg === "--package-format") result.packageFormat = argv[++index];
     else if (arg.startsWith("--runner=")) result.runner = arg.slice(9);
     else if (arg === "--runner") result.runner = argv[++index];
+    else if (arg.startsWith("--timeout=")) result.timeout = Number(arg.slice(10));
+    else if (arg === "--timeout") result.timeout = Number(argv[++index]);
     else if (arg.startsWith("--output=")) result.output = arg.slice(9);
     else if (arg === "--output") result.output = argv[++index];
     else if (arg === "--help" || arg === "-h") {
-      console.log("Usage: node native-adapter.mjs --old-artifact FILE --new-artifact FILE --target-os linux|macos|windows --runner EXECUTABLE [--output DIR] [--strict]");
+      console.log("Usage: node native-adapter.mjs --old-artifact FILE --new-artifact FILE --target-os linux|macos|windows --runner EXECUTABLE [--package-format FORMAT] [--output DIR] [--strict] [--timeout MS]");
       process.exit(0);
     }
   }

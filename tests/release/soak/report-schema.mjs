@@ -23,7 +23,7 @@ export function isDirty() {
 }
 
 export function caseResult(id, criterion, status, durationMs, evidence, reason = null) {
-  return { id, criterion, status, durationMs, evidence, failureReason: reason };
+  return { id, criterion, status, durationMs, evidence, failureReason: reason, reason: reason ?? undefined };
 }
 
 export function newReport(runId, mode, seed, cases, extra = {}) {
@@ -42,7 +42,8 @@ export function newReport(runId, mode, seed, cases, extra = {}) {
     architecture: process.arch,
     mode,
     thresholds: extra.thresholds || {},
-    artifactMetadata: extra.artifactMetadata || {},
+    artifact: extra.artifact || extra.artifactMetadata || {},
+    artifactMetadata: extra.artifactMetadata || extra.artifact || {},
     cases
   };
 }

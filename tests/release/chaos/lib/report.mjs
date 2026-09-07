@@ -25,6 +25,7 @@ export function normalizeCase({
     durationMs,
     evidence,
     reason: reason ?? undefined,
+    failureReason: reason ?? undefined,
     logs,
     metrics
   };
