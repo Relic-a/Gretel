@@ -6,15 +6,19 @@
 // time-series JSONL plus a structured report.
 
 import { spawn } from "node:child_process";
-import { readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, readdirSync, statSync } from "node:fs";
+import { createReadStream, readFileSync, writeFileSync, appendFileSync, mkdirSync, existsSync, readdirSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import os from "node:os";
 import crypto from "node:crypto";
 import { createIsolatedRunRoot, writeSyntheticConfig, buildChildEnv } from "./env-isolation.mjs";
 import { validateScratchRoot, safeRemove } from "./scrub-runner.mjs";
+import { getArtifactIdentity } from "../artifact-identity.mjs";
+import { verifyAcknowledgedRows } from "./durable-evaluator.mjs";
 import { newReport, caseResult, strictExit, summarize } from "./report-schema.mjs";
 import {
+  selectIdleWindows,
+  runIdlePhase,
   evaluateIdleCpu,
   evaluateIdleRssStability,
   evaluateRssTrend,
@@ -22,6 +26,19 @@ import {
   getCpuClockTicksPerSecond
 } from "./soak-evaluator.mjs";
 
+if (process.argv.includes("--phase-self-test")) {
+  let now = 0;
+  const samples = [];
+  for (let cycle=0; cycle<9; cycle++) {
+    const activeEnd = now + 600000;
+    while (now < activeEnd) {samples.push({elapsedMs:now,op:"browse",phase:"active",phaseId:`active-${cycle}`,rssMb:200,cpuTicks:now/1000,processIdentity:"fixture:1"});now+=10001;}
+    await runIdlePhase({durationMs: 610000, intervalMs: 10000, phaseId: `virtual-idle-${cycle}`, now: () => now, sleep: async ms => { now += ms + 1; }, sample: phase => samples.push({...phase, elapsedMs: now, rssMb: 200, cpuTicks: now / 1000, processIdentity: "fixture:1"})});
+    now++;
+  }
+  const windows = selectIdleWindows(samples.filter(s=>s.phase==="idle"));
+  console.log(JSON.stringify({scope:"self-test-virtual-time",virtualDurationMs:now,cpu:evaluateIdleCpu(windows.last,{clockTicks:100}),rss:evaluateIdleRssStability(windows.first,windows.last),trend:evaluateRssTrend(samples)}));
+  process.exit(0);
+}
 const args = parseArgs(process.argv.slice(2));
 
 if (args.durationSec !== undefined && (!Number.isFinite(args.durationSec) || args.durationSec <= 0)) {
@@ -31,6 +48,7 @@ if (args.durationSec !== undefined && (!Number.isFinite(args.durationSec) || arg
 
 const durationMs = (args.durationSec ?? 60) * 1000;
 const intervalMs = (args.intervalSec ?? 5) * 1000;
+if (!Number.isFinite(intervalMs) || intervalMs < 1000 || intervalMs > 30000) throw Error("Sampling interval must be 1–30 seconds; maximum permitted measurement gap is 30 seconds.");
 const seed = args.seed ?? "soak-seed-1";
 const mode = args.mode || "quick";
 let outputRoot;
@@ -71,6 +89,11 @@ const cases = [];
 // Incremental metrics and bounded in-memory sliding windows
 const recentSamples = [];
 const idleSamples = [];
+let coverageLost = false;
+let fatalEventCount = 0;
+let evidenceWriteError = null;
+let metricBytes = 0, eventBytes = 0;
+const evidenceBudgetBytes = 64 * 1024 * 1024;
 let requestCount = 0;
 let errorCount = 0;
 
@@ -98,16 +121,22 @@ let expectingServerExit = false;
 function log(msg) { console.log(`[soak ${new Date().toISOString()}] ${msg}`); }
 
 function recordEvent(event) {
+  if (event.type === "exit" && !event.expected) fatalEventCount++;
   const full = { at: new Date().toISOString(), ...event };
-  try { appendFileSync(eventsLogPath, JSON.stringify(full) + "\n", "utf8"); } catch {}
+  const line = JSON.stringify(full) + "\n";
+  eventBytes += Buffer.byteLength(line);
+  try { if (eventBytes > evidenceBudgetBytes) throw Error("Event evidence budget exhausted"); appendFileSync(eventsLogPath, line, "utf8"); } catch (error) { evidenceWriteError = String(error); }
 }
 
 function recordMetric(sample) {
-  try { appendFileSync(metricsLogPath, JSON.stringify(sample) + "\n", "utf8"); } catch {}
+  const line = JSON.stringify(sample) + "\n";
+  metricBytes += Buffer.byteLength(line);
+  try { if (metricBytes > evidenceBudgetBytes) throw Error("Metrics evidence budget exhausted"); appendFileSync(metricsLogPath, line, "utf8"); } catch (error) { evidenceWriteError = String(error); coverageLost = true; }
   recentSamples.push(sample);
-  if (recentSamples.length > 5000) recentSamples.shift();
+  if (recentSamples.length > 200000) { recentSamples.shift(); coverageLost = true; }
   if (sample.op === "idle" || sample.phase === "idle") {
     idleSamples.push(sample);
+    if (idleSamples.length > 200000) { idleSamples.shift(); coverageLost = true; }
   }
 }
 
@@ -144,6 +173,7 @@ async function startServer() {
     ], { cwd: repoRoot, env, stdio: ["pipe", "pipe", "pipe"], detached: process.platform !== "win32" });
   }
 
+  recordEvent({type:"owned-server", pid:serverProcess.pid, port});
   serverProcess.on("error", (error) => recordEvent({
     type: "spawn-error", error: String(error).slice(0, 300)
   }));
@@ -284,8 +314,12 @@ async function cycleWatch(profileId, video) {
   });
   if (res.ok) {
     completedWorkloadOps.watch++;
+    const acknowledgedRow = readWatchedRow(profileId,video.id);
+    if (!acknowledgedRow || acknowledgedRow.watched_seconds !== 300 || acknowledgedRow.duration_seconds !== 600 || acknowledgedRow.watched_ratio !== 0.5) throw Error("Acknowledged watch did not persist exact requested durations/ratio");
+    const existing = durableLedger.watched.findIndex(x => x.profileId === profileId && x.videoId === video.id);
+    if (existing >= 0) durableLedger.watched.splice(existing, 1);
     durableLedger.watched.push({
-      profileId, videoId: video.id, video, watchedSeconds: 300, durationSeconds: 600
+      profileId, videoId: video.id, video, watchedSeconds: 300, durationSeconds: 600, row:acknowledgedRow
     });
   } else {
     errorCount++;
@@ -318,7 +352,7 @@ function sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
 
 // --- Sample process tree metrics (owned children only) ---
 function sampleTreeMetrics(rootPid) {
-  const out = { rssKb: 0, cpuTicks: 0, openFds: 0, threads: 0, children: 0, truncated: false };
+  const out = { rssKb: 0, cpuTicks: 0, openFds: 0, threads: 0, children: 0, truncated: false, measurementError: null, identities: [] };
   const seen = new Set();
   const queue = [rootPid];
   const start = Date.now();
@@ -329,10 +363,11 @@ function sampleTreeMetrics(rootPid) {
     try {
       const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
       const parts = stat.slice(stat.lastIndexOf(") ") + 2).split(" ");
+      out.identities.push(`${pid}:${parts[19]}`);
       out.cpuTicks += Number(parts[11]) + Number(parts[12]); // utime+stime
       const status = readFileSync(`/proc/${pid}/status`, "utf8");
       const rss = /VmRSS:\s+(\d+)/.exec(status);
-      if (rss) out.rssKb += Number(rss[1]);
+      if (rss) out.rssKb += Number(rss[1]); else throw Error("Missing RSS");
       const threads = /Threads:\s+(\d+)/.exec(status);
       if (threads) out.threads += Number(threads[1]);
       const fds = readdirSync(`/proc/${pid}/fd`);
@@ -340,11 +375,12 @@ function sampleTreeMetrics(rootPid) {
       const childrenRaw = readFileSync(`/proc/${pid}/task/${pid}/children`, "utf8").trim();
       for (const c of childrenRaw.split(/\s+/).filter(Boolean)) queue.push(Number(c));
       out.children = seen.size - 1;
-    } catch {}
+    } catch (error) { out.measurementError = String(error); }
   }
+  out.processIdentity = out.identities.sort().join(",");
 
   // Make truncation visible per review finding 2
-  if (queue.length > 0 && seen.size >= 64) {
+  if (queue.length > 0) {
     out.truncated = true;
     recordEvent({ type: "process-sampling-truncated", pidsChecked: seen.size });
   }
@@ -419,12 +455,17 @@ async function main() {
         const vids = (seededVideos[prof.id] || []).slice(0, 2);
         if (vids.length) await cycleImpressions(prof.id, vids, prof.tags, []);
       } else if (op === "watch") {
-        await cycleWatch(prof.id, syntheticVideo(`watch-${cycleIdx}`));
+        await cycleWatch(prof.id, syntheticVideo(`watch-${cycleIdx % 60}`));
       } else if (op === "switchProfile") {
         await cycleSwitchProfile();
       } else if (op === "idle") {
-        // Sustained idle phase: pause without active workload
-        await sleep(Math.min(intervalMs, 2000));
+        await runIdlePhase({durationMs: Math.min(600000, end - Date.now()), intervalMs, phaseId: `idle-${cycleIdx}`, cancelled: () => cancelled,
+          sample: phase => {
+            if (!serverProcess?.pid) return;
+            const m = sampleTreeMetrics(serverProcess.pid);
+            recordMetric({...m, ...phase, elapsedMs: Date.now() - t0, serverPid: serverProcess.pid, serverGeneration, rssMb: m.rssKb / 1024});
+          }
+        });
       }
     } catch (e) {
       errorCount++;
@@ -433,7 +474,7 @@ async function main() {
     const opDuration = Date.now() - opStart;
 
     // Sample metrics every interval
-    if (!lastSample || Date.now() - lastSample >= intervalMs) {
+    if (op !== "idle" && (!lastSample || Date.now() - lastSample >= intervalMs)) {
       lastSample = Date.now();
       if (serverProcess && serverProcess.pid) {
         const m = sampleTreeMetrics(serverProcess.pid);
@@ -487,7 +528,7 @@ async function main() {
     "soak-refresh-fixture",
     "Refresh cycles use a deterministic external fixture or a production fixture seam.",
     "blocked", 0, ["logs/network-guard.jsonl"],
-    "No production refresh fixture seam is available; refresh route attempts are blocked before outbound I/O"
+    "Unfinished soak tooling: the existing E2E provider fixture is not integrated into this workload; refresh attempts are network-denied"
   ));
 
   // Post-restart: verify durable history readable and matches acknowledged writes
@@ -516,7 +557,8 @@ async function main() {
         }
         const returnedIds = new Set(returnedVideos.map((v) => v.id));
         for (const expected of expectedForProfile) {
-          if (!returnedIds.has(expected.videoId)) {
+          const actual = returnedVideos.find(v => v.id === expected.videoId);
+          if (!actual || ["title","author","duration","query"].some(key => actual[key] !== expected.video[key])) {
             historyOk = false;
             historyFailureReason = `Acknowledged video ${expected.videoId} missing from history after restart`;
             break;
@@ -530,6 +572,8 @@ async function main() {
       }
     }
   }
+  const durableResult = verifyAcknowledgedRows(durableLedger.watched, readWatchedRow);
+  if (!durableResult.ok) {historyOk=false;historyFailureReason=durableResult.reason;}
   cases.push(caseResult(
     "soak-durable-history-post-restart",
     "Watched history remains readable via actual API after restart and matches acknowledged writes.",
@@ -556,18 +600,16 @@ async function main() {
     "soak-feed-work-drained",
     "Equivalent feed work never overlaps and all expensive work drains before the next cycle.",
     "blocked", 0, ["logs/metrics.jsonl"],
-    "Background task start/end boundaries not directly observable without an instrumented provider fixture seam"
+    "Unfinished soak tooling: provider/task counters from the existing E2E fixture are not integrated into soak"
   ));
 
   // Unexpected crashes / fatal errors
-  const eventsLines = readFileSync(eventsLogPath, "utf8").split("\n").filter(Boolean);
-  const fatalEvents = eventsLines.map((l) => { try { return JSON.parse(l); } catch { return null; } })
-    .filter((e) => e && e.type === "exit" && !e.expected);
+
   cases.push(caseResult(
     "soak-no-fatal-errors",
     "Zero unexpected crashes or unhandled fatal errors in owned app tree.",
-    fatalEvents.length === 0 ? "pass" : "fail", 0, ["logs/events.jsonl"],
-    fatalEvents.length === 0 ? null : `${fatalEvents.length} fatal exit events`
+    fatalEventCount === 0 ? "pass" : "fail", 0, ["logs/events.jsonl"],
+    fatalEventCount === 0 ? null : `${fatalEventCount} fatal exit events`
   ));
 
   // Teardown within 5 sec
@@ -602,17 +644,9 @@ async function main() {
   } else {
     // 10-minute warmup: 0 to 600,000 ms
     const warmupMs = 10 * 60 * 1000;
-    const firstIdleWindow = selectWindow(
-      idleSamples.filter((s) => s.elapsedMs >= warmupMs && s.elapsedMs <= warmupMs * 2),
-      warmupMs,
-      "start"
-    );
-    const finalIdleWindow = selectWindow(
-      idleSamples,
-      warmupMs,
-      "end"
-    );
+    const {first:firstIdleWindow, last:finalIdleWindow} = selectIdleWindows(idleSamples.filter(s => s.phaseStart - t0 >= warmupMs));
     cases.push(evaluateIdleRssStability(firstIdleWindow, finalIdleWindow));
+    if (coverageLost && recentSamples.length) recentSamples[0].coverageLost = true;
     cases.push(evaluateRssTrend(recentSamples, { minDurationMs: 2 * 60 * 60 * 1000 }));
     cases.push(evaluateIdleCpu(finalIdleWindow));
   }
@@ -751,9 +785,10 @@ async function finalize() {
   mkdirSync(path.dirname(networkFile), { recursive: true });
   if (!existsSync(networkFile)) writeFileSync(networkFile, "");
 
-  const metricsContent = existsSync(metricsLogPath) ? readFileSync(metricsLogPath) : Buffer.alloc(0);
-  const eventsContent = existsSync(eventsLogPath) ? readFileSync(eventsLogPath) : Buffer.alloc(0);
+  const metricsHash = await streamHash(metricsLogPath);
+  const eventsHash = await streamHash(eventsLogPath);
 
+  if (evidenceWriteError) cases.push(caseResult("soak-evidence-write", "Incremental evidence remains complete within explicit 64MiB per-file budgets", "fail", 0, [], evidenceWriteError));
   const report = newReport(runId, mode, seed, cases, {
     startedAt, finishedAt,
     thresholds: {
@@ -765,15 +800,16 @@ async function finalize() {
       defaultDisposableBudgetMiB: 512
     },
     artifactMetadata: {
+      ...getArtifactIdentity(serverRoot),
       serverRoot: serverRoot,
       serverMode: hasStandalone ? "standalone" : "next-start",
       evidenceScope: "production-server",
       serverArtifactSha256: hashArtifact(serverRoot),
       packageVersion: readPackageVersion(),
       metricsFile: "logs/metrics.jsonl",
-      metricsSha256: crypto.createHash("sha256").update(metricsContent).digest("hex"),
+      metricsSha256: metricsHash,
       eventsFile: "logs/events.jsonl",
-      eventsSha256: crypto.createHash("sha256").update(eventsContent).digest("hex"),
+      eventsSha256: eventsHash,
       networkGuardFile: "logs/network-guard.jsonl"
     }
   });
@@ -834,3 +870,11 @@ main().catch(async (e) => {
   await finalize();
   process.exitCode = 1;
 });
+
+async function streamHash(file) { const hash = crypto.createHash("sha256"); for await (const chunk of createReadStream(file)) hash.update(chunk); return hash.digest("hex"); }
+
+function readWatchedRow(profileId, videoId) {
+  const Database = createRequire(import.meta.url)("better-sqlite3");
+  const db = new Database(path.join(runRootObj.dataDir,"gretel.sqlite"),{readonly:true});
+  try { return db.prepare("SELECT * FROM watched_videos WHERE profile_id = ? AND video_id = ?").get(profileId,videoId); } finally { db.close(); }
+}

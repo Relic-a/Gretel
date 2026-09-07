@@ -1,0 +1,11 @@
+import assert from 'node:assert/strict';
+import {mkdtempSync,writeFileSync,symlinkSync,mkdirSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import path from 'node:path';
+import {getArtifactIdentity} from './artifact-identity.mjs';
+const scratch=mkdtempSync(path.join(tmpdir(),'gretel-identity-controls-')),root=path.join(scratch,'artifact');mkdirSync(root);
+writeFileSync(path.join(root,'server.js'),'old');const old=getArtifactIdentity(root);
+writeFileSync(path.join(root,'server.js'),'new');assert.notEqual(old.manifestSha256,getArtifactIdentity(root).manifestSha256);
+symlinkSync('server.js',path.join(root,'alias'));const linked=getArtifactIdentity(root);assert(linked.complete);assert.notEqual(linked.manifestSha256,getArtifactIdentity(path.join(root,'server.js')).manifestSha256);
+writeFileSync(path.join(scratch,'sentinel'),'synthetic owned sentinel');symlinkSync('../sentinel',path.join(root,'escaping'));assert.equal(getArtifactIdentity(root).present,false);
+console.log(`Artifact mutation and symlink controls passed: ${scratch}`);

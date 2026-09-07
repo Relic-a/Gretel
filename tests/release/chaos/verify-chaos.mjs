@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { categorizeCase } from "../case-category.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import {
   existsSync,
@@ -19,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import { canarySet, scanForCanaries } from "./lib/canaries.mjs";
 import { childEnv, makeCase, makeRunRoot } from "./lib/env.mjs";
 import { normalizeCase, sha256, writeJson } from "./lib/report.mjs";
-import { getArtifactIdentity } from "../artifact-identity.mjs";
+import { getArtifactIdentity, getChaosSourceIdentity } from "../artifact-identity.mjs";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const WORKER = path.join(ROOT, "tests/release/chaos/chaos-worker.mjs");
@@ -107,20 +108,24 @@ function waitForFile(filePath, timeoutMs = 3_000) {
 
 function sanitize(text, seed) {
   const values = canarySet(seed);
-  return [values.raw, values.encodedBase64, values.encodedUrl]
+  return [values.raw, values.encodedBase64, values.encodedUrl, `synthetic-initial-key-${seed}`, `synthetic-updated-key-${seed}`]
     .filter(Boolean)
     .reduce((current, value) => current.split(value).join("[REDACTED_CANARY]"), String(text));
 }
 
+let evidenceSequence = 0;
 function writeEvidence(output, id, operation, context, stdout, stderr, result) {
   const safeId = id.replace(/[^a-zA-Z0-9_.-]/g, "_");
-  const safeOp = operation.replace(/[^a-zA-Z0-9_.-]/g, "_");
+  const safeOp = `${operation.replace(/[^a-zA-Z0-9_.-]/g, "_")}.${evidenceSequence++}`;
   const evidenceDir = path.join(output, "evidence");
   mkdirSync(evidenceDir, { recursive: true, mode: 0o700 });
   const paths = [];
+  const rawObservations = [];
   const save = (suffix, contents) => {
     const file = path.join(evidenceDir, `${safeId}.${safeOp}.${suffix}`);
-    writeFileSync(file, sanitize(contents, context.seed), { mode: 0o600 });
+    const raw = String(contents), markers = [...Object.values(canarySet(context.seed)), `synthetic-initial-key-${context.seed}`, `synthetic-updated-key-${context.seed}`].filter(value => typeof value === "string" && value);
+    rawObservations.push({source:suffix, channel:suffix === "result.json" ? "fixture-result" : "runtime-or-barrier", syntheticMarkerMatches:markers.filter(value => raw.includes(value)).length});
+    writeFileSync(file, sanitize(raw, context.seed), { mode: 0o600 });
     paths.push(path.relative(output, file));
   };
   save("stdout.log", stdout);
@@ -144,6 +149,9 @@ function writeEvidence(output, id, operation, context, stdout, stderr, result) {
       }
     }
   }
+  const scanPath = path.join(evidenceDir,`${safeId}.${safeOp}.raw-scan.json`);
+  writeFileSync(scanPath,JSON.stringify({scannedBeforeSanitizing:true,observations:rawObservations},null,2));
+  paths.push(path.relative(output,scanPath));
   return paths;
 }
 
@@ -287,11 +295,15 @@ async function feedRefreshCases(args, cases) {
   const context = makeCase(cases.runRoot, id);
   context.seed = args.seed + 250;
   const seeded = await worker("feed-refresh-seed", context, args.output, [], { timeoutMs: 12_000 });
+  const samePoolContext = makeCase(cases.runRoot,"chaos.feed.same-pool-failure");samePoolContext.seed=args.seed+251;
+  const samePoolSeed = await worker("feed-refresh-seed",samePoolContext,args.output,[],{timeoutMs:12000});
+  const samePool = await worker("same-pool-fault", samePoolContext, args.output, [], {timeoutMs:12000});
+  cases.items.push(caseResult("chaos.feed.same-pool-failure", "Same active pool retains exact nodes after acknowledged candidate response and embedding failure", samePool.result?.ok ? "pass" : "fail", started, [...samePoolSeed.evidence,...samePool.evidence], samePool.result?.ok ? undefined : "Same-pool fault boundary or exact preservation assertion failed", {result:samePool.result}));
   const faulted = await worker("feed-refresh-fault", context, args.output, [], { timeoutMs: 12_000 });
   const recovered = await worker("feed-refresh-recover", context, args.output, [], { timeoutMs: 12_000 });
   const good = seeded.result?.ok === true && faulted.result?.ok === true && recovered.result?.ok === true;
   const evidence = [...seeded.evidence, ...faulted.evidence, ...recovered.evidence];
-  cases.items.push(caseResult(id, "failed feed refresh preserves prior feed without partial wipe and recovers on healthy retry", good ? "pass" : "fail", started, evidence, good ? undefined : "Feed refresh fault corrupted prior feed or failed to recover upon retry.", { seed: context.seed, seedResult: seeded.result, faultResult: faulted.result, recoverResult: recovered.result }));
+  cases.items.push(caseResult(id, "failed different-pool build preserves the original pool across source-module worker restart and recovers on retry", good ? "pass" : "fail", started, evidence, good ? undefined : "Feed refresh fault corrupted prior feed or failed to recover upon retry.", { seed: context.seed, seedResult: seeded.result, faultResult: faulted.result, recoverResult: recovered.result }));
 }
 
 async function configCases(args, cases) {
@@ -377,7 +389,7 @@ async function concurrencyCases(args, cases) {
   context.seed = args.seed + 600;
   const run = await worker("concurrency", context, args.output, [], { timeoutMs: 15_000 });
   const status = run.result?.barrier ? (run.result.ok ? "pass" : "fail") : "blocked";
-  cases.items.push(caseResult(id, "20 same-profile builds and destructive operation have acknowledged in-flight serialization and no stale resurrection", status, started, run.evidence, status === "pass" ? undefined : run.result?.barrier ? "Concurrent production build requests exposed duplicate work or stale-operation behavior." : "No deterministic provider boundary acknowledgement was available for the in-flight build workload.", { seed: context.seed, ...run.result }));
+  cases.items.push(caseResult(id, "20 same-profile builds and destructive operation have acknowledged in-flight serialization and profile deletion remains durable", status, started, run.evidence, status === "pass" ? undefined : run.result?.barrier ? "Concurrent production build requests exposed duplicate provider work; deletion succeeded and no stale resurrection was observed." : "No deterministic provider boundary acknowledgement was available for the in-flight build workload.", { seed: context.seed, ...run.result }));
 }
 
 async function diagnosticsCases(args, cases) {
@@ -457,6 +469,7 @@ async function main() {
   const dirty = Boolean(spawnSync("git", ["status", "--porcelain", "--untracked-files=all"], { cwd: ROOT, encoding: "utf8" }).stdout.trim());
   const report = {
     schemaVersion: 1,
+    executionToken: process.env.GRETEL_VERIFICATION_TOKEN || null,
     layer: "chaos",
     runId: `chaos-${args.seed}-${Date.now()}`,
     startedAt,
@@ -468,11 +481,11 @@ async function main() {
     architecture: process.arch,
     mode: args.mode,
     strict: args.strict,
-    artifact: getArtifactIdentity(path.join(ROOT, ".next/standalone")),
+    artifact: getChaosSourceIdentity(ROOT),
     thresholds: { fullProcessKillSeeds: 10, maxNetworkAttempts: 3, concurrentBuilds: 20 },
-    cases: cases.items
+    cases: cases.items.map(categorizeCase)
   };
-  await writeJson(path.join(args.output, "report.json"), report);
+  writeFileSync(path.join(args.output, "report.json"), sanitize(JSON.stringify(report, null, 2), args.seed).replace(/synthetic-(initial|updated)-key-[0-9]+/g, "[REDACTED_SYNTHETIC_KEY]"));
   const failing = cases.items.filter((item) => item.status !== "pass");
   process.stdout.write(`CHAOS report: ${cases.items.length} cases; ${cases.items.length - failing.length} pass; ${failing.length} fail/blocked\n`);
   if (failing.length > 0) process.exitCode = 1;

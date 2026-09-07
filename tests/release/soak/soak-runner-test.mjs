@@ -36,7 +36,7 @@ console.log("[soak-runner-test] Running failure propagation and runner tests..."
     "--server-root", path.join(out.runRoot, "nonexistent-server"),
     "--output", out.runRoot,
     "--strict"
-  ], { cwd: repoRoot, encoding: "utf8" });
+  ], { cwd: repoRoot, timeout: 120000, encoding: "utf8" });
 
   assert.notEqual(res.status, 0, "Wrapper must exit nonzero when child runner fails");
   const finalReport = JSON.parse(readFileSync(path.join(out.runRoot, "report.json"), "utf8"));
@@ -55,16 +55,16 @@ console.log("[soak-runner-test] Running failure propagation and runner tests..."
     storageScript,
     "--days", "14",
     "--output", out.runRoot,
-    "--strict"
+    "--strict", "--simulate-broken-rotation"
   ], {
     cwd: repoRoot,
-    encoding: "utf8",
+    timeout: 120000, encoding: "utf8",
     stdio: ["ignore", "pipe", "pipe"] // stdin closed (/dev/null)
   });
 
   assert.equal(res.status, 1, `Storage runner with stdin closed must exit 1 on failure, got ${res.status}`);
   const report = JSON.parse(readFileSync(path.join(out.runRoot, "report.json"), "utf8"));
-  assert.ok(report.cases.some((c) => c.status === "fail"), "Storage report has failing cases (symlink escape)");
+  assert.ok(report.cases.some((c) => c.id === "soak-storage-log-bounds" && c.status === "fail"), "Dedicated no-op logger criterion fails");
   console.log("✔ Storage runner with closed stdin propagates exit code 1 reliably without EOF exit(0) hijack");
 }
 
@@ -76,7 +76,7 @@ console.log("[soak-runner-test] Running failure propagation and runner tests..."
     "--days", "14",
     "--output", out.runRoot,
     "--simulate-broken-rotation"
-  ], { cwd: repoRoot, encoding: "utf8" });
+  ], { cwd: repoRoot, timeout: 120000, encoding: "utf8" });
 
   assert.equal(res.status, 1, "Simulated broken rotation must exit 1");
   const report = JSON.parse(readFileSync(path.join(out.runRoot, "report.json"), "utf8"));
@@ -93,7 +93,7 @@ console.log("[soak-runner-test] Running failure propagation and runner tests..."
     path.join(repoRoot, "tests", "release", "soak", "soak-cli.mjs"),
     "--duration", "0",
     "--output", out.runRoot
-  ], { cwd: repoRoot, encoding: "utf8" });
+  ], { cwd: repoRoot, timeout: 120000, encoding: "utf8" });
 
   assert.notEqual(res.status, 0, "CLI must reject zero duration with nonzero exit code");
   console.log("✔ Zero duration argument is rejected with nonzero exit code");

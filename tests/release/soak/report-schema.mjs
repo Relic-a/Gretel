@@ -1,3 +1,4 @@
+import { categorizeCase } from "../case-category.mjs";
 // Shared report-schema helpers for the soak verification layer.
 
 import { execFileSync } from "node:child_process";
@@ -31,6 +32,7 @@ export function newReport(runId, mode, seed, cases, extra = {}) {
   const finishedAt = extra.finishedAt || new Date().toISOString();
   return {
     schemaVersion: SCHEMA_VERSION,
+    executionToken: process.env.GRETEL_VERIFICATION_TOKEN || null,
     layer: LAYER,
     runId,
     startedAt,
@@ -44,7 +46,7 @@ export function newReport(runId, mode, seed, cases, extra = {}) {
     thresholds: extra.thresholds || {},
     artifact: extra.artifact || extra.artifactMetadata || {},
     artifactMetadata: extra.artifactMetadata || extra.artifact || {},
-    cases
+    cases: cases.map(categorizeCase)
   };
 }
 

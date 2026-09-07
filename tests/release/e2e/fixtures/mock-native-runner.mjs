@@ -21,7 +21,7 @@ if (!args.reportFile) {
   process.exit(1);
 }
 
-const matrix = [
+const fallbackMatrix = [
   "native.fresh-install",
   "native.reinstall-preserve",
   "native.upgrade-preserve",
@@ -36,9 +36,11 @@ const matrix = [
   "native.arch-manual-update"
 ];
 
+const matrix = args.caseIds ? args.caseIds.split(",") : fallbackMatrix;
+
 if (args.evidenceDir) {
   mkdirSync(args.evidenceDir, { recursive: true });
-  writeFileSync(path.join(args.evidenceDir, "protocol-mock.log"), "Mock native runner executed successfully in disposable test container.\n");
+  writeFileSync(path.join(args.evidenceDir, "protocol-mock.log"), "Harmless native protocol fixture executed. No installer or container was run.\n");
 }
 
 const report = {
@@ -49,7 +51,8 @@ const report = {
   packageFormat: args.packageFormat || "deb",
   oldArtifactHash: args.oldHash || "mock-old-hash",
   newArtifactHash: args.newHash || "mock-new-hash",
-  qualification: "protocol-test-fixture-not-native-qualification",
+  qualification: "protocol-test",
+  architecture: args.architecture,
   cases: matrix.map((id) => ({
     id,
     status: "pass",

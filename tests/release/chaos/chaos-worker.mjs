@@ -137,7 +137,7 @@ async function createFixtureServer(mode) {
       return;
     }
     if (mode === "nan") {
-      // Complete valid JSON with non-numeric/NaN vector value to test vector calculation/validation
+      // Valid JSON containing the string "NaN": malformed vector component type, not numeric NaN.
       response.writeHead(200, { "Content-Type": "application/json" });
       response.end(JSON.stringify({ data: [{ index: 0, embedding: ["NaN", 0, 0, 0] }] }));
       return;
@@ -324,38 +324,24 @@ function settingsHold(mode = "production") {
   const origWriteFileSync = fsModule.writeFileSync;
   let armed = true;
 
-  if (mode === "atomic-fixture" || process.env.CHAOS_SETTINGS_ATOMIC === "1") {
-    // Atomic fixture: simulate atomic temp file + rename write pattern
-    fsModule.writeFileSync = function(targetPath, data, options) {
-      if (armed && (targetPath === settingsPath || String(targetPath).endsWith("user-settings.json"))) {
-        armed = false;
-        const tmpPath = `${settingsPath}.${Date.now()}.tmp`;
-        origWriteFileSync.call(this, tmpPath, String(data).slice(0, 15), options);
-        writeBarrier("settings-write", { mode: "atomic-fixture", targetPath, tmpPath, boundary: "tmp-write" });
-        if (process.env.CHAOS_HOLD === "1") {
-          while (true) {} // hold until SIGKILL
-        }
-      }
-      return origWriteFileSync.apply(this, arguments);
-    };
-  } else {
-    // Production behavior: Gretel's setUserSettings performs in-place writeFileSync directly to settingsPath.
-    // At the open/truncate/write boundary, opening with 'w' truncates the file before writing.
-    fsModule.writeFileSync = function(targetPath, data, options) {
-      if (armed && (targetPath === settingsPath || String(targetPath).endsWith("user-settings.json"))) {
-        armed = false;
-        // Truncate and write partial data to simulate crash mid-write
-        const fd = fsModule.openSync(targetPath, "w");
-        fsModule.writeSync(fd, String(data).slice(0, 15));
-        fsModule.closeSync(fd);
-        writeBarrier("settings-write", { mode: "production", targetPath, boundary: "in-place-truncate-and-write" });
-        if (process.env.CHAOS_HOLD === "1") {
-          while (true) {} // hold until SIGKILL
-        }
-      }
-      return origWriteFileSync.apply(this, arguments);
-    };
-  }
+  // One barrier handles final-file and temp-file writes. Match the synthetic
+  // settings payload, rather than assuming the implementation's destination name.
+  fsModule.writeFileSync = function(targetPath, data, options) {
+    const payload = String(data);
+    if (armed && payload.includes(`synthetic-updated-key-${seed}`) && path.dirname(String(targetPath)) === path.dirname(settingsPath)) {
+      armed = false;
+      const destination = mode === "atomic-fixture" && String(targetPath) === settingsPath ? `${settingsPath}.fixture.tmp` : targetPath;
+      const fd = fsModule.openSync(destination, "w", 0o600);
+      fsModule.writeSync(fd, payload.slice(0, 15));
+      fsModule.closeSync(fd);
+      writeBarrier("settings-write", {targetPath: destination, boundary: String(destination) === settingsPath ? "final-write-partial" : "temporary-write-partial"});
+      if (process.env.CHAOS_HOLD === "1") while (true) {}
+      origWriteFileSync.call(this, destination, data, options);
+      if (destination !== targetPath && mode === "atomic-fixture") fsModule.renameSync(destination, targetPath);
+      return;
+    }
+    return origWriteFileSync.apply(this, arguments);
+  };
 
   // 3. Initiate second write
   const updatedSettings = {
@@ -373,8 +359,8 @@ function settingsVerify() {
   const recovered = settings.getUserSettings();
   const expectedOld = `synthetic-initial-key-${seed}`;
   const expectedNew = `synthetic-updated-key-${seed}`;
-  const isValidOld = recovered.openRouterApiKey === expectedOld;
-  const isValidNew = recovered.openRouterApiKey === expectedNew;
+  const isValidOld = JSON.stringify(recovered) === JSON.stringify({openRouterApiKey:expectedOld, openRouterModel:"synthetic-initial-model", developerAnalytics:true});
+  const isValidNew = JSON.stringify(recovered) === JSON.stringify({openRouterApiKey:expectedNew, openRouterModel:"synthetic-updated-model"});
   const ok = isValidOld || isValidNew;
   finish({
     ok,
@@ -456,7 +442,7 @@ async function feedRefreshSeed() {
 
   // Save state file
   const statePath = path.join(caseDir, "seed-feed.json");
-  writeFileSync(statePath, JSON.stringify({ profileId: profile.id, initialVideos }) + "\n", { mode: 0o600 });
+  writeFileSync(statePath, JSON.stringify({ profileId: profile.id, initialVideos, initialRecords:feedData.videos.map(stableVideo) }) + "\n", { mode: 0o600 });
 
   finish({
     ok: buildRes.status === 200 && initialVideos.length >= 2,
@@ -500,7 +486,7 @@ async function feedRefreshFault() {
   const currentVideos = feedData.videos ? feedData.videos.map((v) => v.id) : [];
 
   const feedPreserved = currentVideos.length === state.initialVideos.length &&
-    currentVideos.every((id, idx) => id === state.initialVideos[idx]);
+    currentVideos.every((id, idx) => id === state.initialVideos[idx]) && JSON.stringify(feedData.videos.map(stableVideo)) === JSON.stringify(state.initialRecords);
 
   finish({
     ok: buildStatus >= 400 && feedPreserved && currentVideos.length > 0,
@@ -529,7 +515,7 @@ async function feedRefreshRecover() {
   }));
   const restartFeedData = await restartFeedRes.json();
   const restartVideos = restartFeedData.videos ? restartFeedData.videos.map((v) => v.id) : [];
-  const restartPreserved = restartVideos.length === state.initialVideos.length;
+  const restartPreserved = JSON.stringify(restartVideos) === JSON.stringify(state.initialVideos) && JSON.stringify(restartFeedData.videos.map(stableVideo)) === JSON.stringify(state.initialRecords);
 
   // Restore healthy provider
   setupMockYouTubeAndFeed(false);
@@ -557,6 +543,35 @@ async function feedRefreshRecover() {
     subsequentBuildOk,
     buildStatus: buildRes.status
   });
+}
+
+async function samePoolFault() {
+  const state = JSON.parse(readFileSync(path.join(caseDir,"seed-feed.json"),"utf8"));
+  const config = JSON.parse(readFileSync(process.env.GRETEL_CONFIG,"utf8"));
+  config.expansion.minFreshVideos = 100; config.expansion.minFreshRatio = 1; config.feed.expansionSeedCount = 2;
+  writeFileSync(process.env.GRETEL_CONFIG,JSON.stringify(config));
+  const pools = compiled("lib/feed/pool-store.ts");
+  const key = pools.createFeedPoolKey({tags:["synthetic chaos"],channels:[],channelSort:"mixed"});
+  const before = pools.listPoolNodes(state.profileId,key);
+  let providerAcknowledged = false, embeddingAcknowledged = false;
+  compiled("lib/feed/recommendations.ts").recommendVideosFromSeeds = async () => {
+    providerAcknowledged = true;
+    writeBarrier("same-pool-candidates",{count:1,poolKey:key});
+    return [video(`partial-candidate-${seed}`)];
+  };
+  const embeddings = compiled("lib/feed/embeddings.ts");
+  const originalProvider = embeddings.getEmbeddingProvider;
+  embeddings.getEmbeddingProvider = () => ({...originalProvider(), embedTexts:async () => {embeddingAcknowledged=true;writeBarrier("same-pool-embedding-failure",{poolKey:key});throw Error("Synthetic embedding failure after candidate response");}});
+  let failed = false;
+  try { await compiled("lib/feed/service.ts").expandFeedPoolForImpressions(state.profileId,["synthetic chaos"],[],"mixed",compiled("lib/feed/observation.ts").createFeedObservation("chaos.same-pool"), {watchedVideoIds:before.map(v=>v.id)}); } catch {failed=true;}
+  const after = pools.listPoolNodes(state.profileId,key);
+  const preserved = JSON.stringify(before) === JSON.stringify(after);
+  embeddings.getEmbeddingProvider = originalProvider;
+  await compiled("lib/feed/service.ts").expandFeedPoolForImpressions(state.profileId,["synthetic chaos"],[],"mixed",compiled("lib/feed/observation.ts").createFeedObservation("chaos.same-pool-recovery"),{watchedVideoIds:before.map(v=>v.id)});
+  const recovered = pools.listPoolNodes(state.profileId,key);
+  const recoveryOk = recovered.some(v=>v.id===`partial-candidate-${seed}`) && before.every(v=>recovered.some(r=>r.id===v.id && r.title===v.title));
+  config.expansion.minFreshRatio = 0; writeFileSync(process.env.GRETEL_CONFIG,JSON.stringify(config));
+  finish({ok:failed && providerAcknowledged && embeddingAcknowledged && preserved && recoveryOk && before.length>0,kind:"same-pool-fault",failed,providerAcknowledged,embeddingAcknowledged,preserved,recoveryOk,before,after,recovered});
 }
 
 function configChaos(mode) {
@@ -796,6 +811,7 @@ async function main() {
   if (operation === "settings-hold") return settingsHold(process.argv[3] || "production");
   if (operation === "settings-verify") return settingsVerify();
   if (operation === "feed-refresh-seed") return feedRefreshSeed();
+  if (operation === "same-pool-fault") return samePoolFault();
   if (operation === "feed-refresh-fault") return feedRefreshFault();
   if (operation === "feed-refresh-recover") return feedRefreshRecover();
   if (operation === "config") return configChaos(process.argv[3] || "malformed-config");
@@ -813,3 +829,5 @@ main().catch((error) => {
   finish({ ok: false, kind: "worker-error", error: error instanceof Error ? `${error.name}: ${error.message}` : String(error).slice(0, 500) });
   process.exitCode = 1;
 });
+
+function stableVideo(v) { return {id:v.id,title:v.title,author:v.author,duration:v.duration,query:v.query}; }

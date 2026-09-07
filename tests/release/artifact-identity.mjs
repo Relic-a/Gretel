@@ -1,84 +1,37 @@
-import { createHash } from "node:crypto";
-import { lstatSync, readdirSync, readFileSync } from "node:fs";
-import path from "node:path";
+import { createHash } from 'node:crypto';
+import { lstatSync, statSync, readdirSync, readFileSync, realpathSync, readlinkSync, existsSync } from 'node:fs';
+import path from 'node:path';
 
-let cachedManifest = null;
-let cachedArtifactPath = null;
-
-/**
- * Computes a deterministic artifact manifest and composite SHA-256 hash
- * covering all bundled chunks and assets in the target directory.
- */
+// No path-only cache: every invocation identifies the current bytes, including
+// materialized symlink contents. Unreadable/escaping/cyclic entries invalidate identity.
 export function getArtifactIdentity(artifactPath) {
-  const resolved = path.resolve(artifactPath);
-  if (cachedArtifactPath === resolved && cachedManifest) {
-    return cachedManifest;
-  }
-
-  const entries = [];
-  const walk = (current, relativePrefix = "") => {
-    let names;
+  const resolved = path.resolve(artifactPath), entries = [], errors = [];
+  if (!existsSync(resolved)) return {path:resolved, present:false, complete:false, errors:['Artifact missing']};
+  const root = realpathSync(resolved);
+  function walk(full, relative = '', ancestors = new Set()) {
     try {
-      names = readdirSync(current);
-    } catch {
-      return;
-    }
-    for (const name of names) {
-      if (name === ".git" || name === "cache" || name === ".cache") continue;
-      const fullPath = path.join(current, name);
-      const relPath = path.join(relativePrefix, name);
-      try {
-        const stat = lstatSync(fullPath);
-        if (stat.isDirectory()) {
-          walk(fullPath, relPath);
-        } else if (stat.isFile()) {
-          const content = readFileSync(fullPath);
-          const hash = createHash("sha256").update(content).digest("hex");
-          entries.push({ path: relPath, size: stat.size, sha256: hash });
-        }
-      } catch {}
-    }
-  };
-
+      const actual = realpathSync(full);
+      if (actual !== root && !actual.startsWith(root + path.sep)) throw Error('Symlink escapes artifact');
+      const lst = lstatSync(full), st = statSync(full);
+      if (lst.isSymbolicLink()) entries.push({path:relative, type:'symlink', size:0, sha256:hash(readlinkSync(full))});
+      if (st.isDirectory()) {
+        if (ancestors.has(actual)) throw Error('Cyclic artifact directory');
+        const next = new Set([...ancestors, actual]);
+        for (const name of readdirSync(full).sort()) walk(path.join(full,name), path.join(relative,name), next);
+      } else if (st.isFile()) entries.push({path:relative, type:'file', size:st.size, sha256:hash(readFileSync(full))});
+      else throw Error('Unsupported artifact entry');
+    } catch(error) { errors.push({path:relative, error:String(error)}); }
+  }
   walk(resolved);
-  entries.sort((a, b) => a.path.localeCompare(b.path));
+  entries.sort((a,b) => a.path.localeCompare(b.path) || a.type.localeCompare(b.type));
+  let version = 'unknown';
+  try { version = JSON.parse(readFileSync(path.join(root,'package.json'))).version || version; } catch {}
+  return {path:resolved, present:entries.length > 0 && errors.length === 0, complete:errors.length === 0, errors, manifestSha256:hash(JSON.stringify(entries)), filesCount:entries.filter(e=>e.type==='file').length, totalBytes:entries.reduce((s,e)=>s+e.size,0), serverSha256:entries.find(e=>e.path==='server.js')?.sha256 || null, version, runtime:{type:'system-node', nodeVersion:process.version, platform:process.platform, arch:process.arch}};
+}
+function hash(value) { return createHash('sha256').update(value).digest('hex'); }
 
-  const manifestHash = createHash("sha256");
-  let totalBytes = 0;
-  for (const entry of entries) {
-    manifestHash.update(`${entry.path}:${entry.sha256}:${entry.size}\n`);
-    totalBytes += entry.size;
-  }
-
-  let serverSha256 = null;
-  const serverEntry = entries.find((e) => e.path === "server.js");
-  if (serverEntry) {
-    serverSha256 = serverEntry.sha256;
-  }
-
-  let packageVersion = "unknown";
-  try {
-    const pkg = JSON.parse(readFileSync(path.join(resolved, "package.json"), "utf8"));
-    if (pkg.version) packageVersion = pkg.version;
-  } catch {}
-
-  const identity = {
-    path: resolved,
-    present: entries.length > 0,
-    manifestSha256: manifestHash.digest("hex"),
-    filesCount: entries.length,
-    totalBytes,
-    serverSha256,
-    version: packageVersion,
-    runtime: {
-      type: "system-node",
-      nodeVersion: process.version,
-      platform: process.platform,
-      arch: process.arch
-    }
-  };
-
-  cachedArtifactPath = resolved;
-  cachedManifest = identity;
-  return identity;
+export function getChaosSourceIdentity(repoRoot) {
+  const roots = ['lib','app','gretel.config.json','package-lock.json','tests/release/chaos/chaos-worker.mjs'];
+  const manifests = roots.filter(name => existsSync(path.join(repoRoot,name))).map(name => ({name,...getArtifactIdentity(path.join(repoRoot,name))}));
+  return {scope:'source-module-workers', present:manifests.every(m=>m.present), manifestSha256:hash(JSON.stringify(manifests.map(m=>({name:m.name,hash:m.manifestSha256})))), roots:manifests};
 }

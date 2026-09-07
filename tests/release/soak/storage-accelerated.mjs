@@ -25,6 +25,7 @@ export async function runAcceleratedStorage({
   profiles = 3,
   outputRoot,
   brokenRotation = false,
+  signal: abortSignal,
   timeoutMs = 180000
 } = {}) {
   const started = Date.now();
@@ -56,23 +57,31 @@ export async function runAcceleratedStorage({
   const child = spawn(process.execPath, workerArgs, {
     cwd: process.cwd(),
     env: childEnv,
+    detached: process.platform !== "win32",
     stdio: ["pipe", "pipe", "pipe"]
   });
 
+  const stop = () => {
+    try { process.kill(process.platform === "win32" ? child.pid : -child.pid, "SIGTERM"); } catch {}
+    setTimeout(() => { try { process.kill(process.platform === "win32" ? child.pid : -child.pid, "SIGKILL"); } catch {} }, 1000).unref();
+  };
+  abortSignal?.addEventListener("abort", stop, {once:true});
+  if (abortSignal?.aborted) stop();
   let stdout = "";
   let stderr = "";
-  child.stdout.on("data", (d) => { stdout += String(d); });
-  child.stderr.on("data", (d) => { stderr += String(d); });
+  child.stdout.on("data", (d) => { stdout = (stdout + String(d)).slice(-2_000_000); });
+  child.stderr.on("data", (d) => { stderr = (stderr + String(d)).slice(-2_000_000); });
 
   let timedOut = false;
   const timer = setTimeout(() => {
     timedOut = true;
-    child.kill("SIGKILL");
+    stop();
   }, timeoutMs);
 
   const exitPromise = new Promise((resolve) => {
     child.on("close", (code, signal) => {
       clearTimeout(timer);
+      abortSignal?.removeEventListener("abort", stop);
       resolve({ code, signal });
     });
   });

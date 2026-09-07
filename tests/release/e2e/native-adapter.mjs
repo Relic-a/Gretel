@@ -11,9 +11,10 @@
  * It never installs a package on the developer host.
  */
 
-import { createHash } from "node:crypto";
+import { runOwned } from "../owned-process.mjs";
+import { createHash, randomUUID } from "node:crypto";
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, existsSync, realpathSync } from "node:fs";
+import { copyFileSync, existsSync, realpathSync, lstatSync } from "node:fs";
 import { lstat, mkdir, mkdtemp, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -33,16 +34,21 @@ const targetOs = args.targetOs || platformName(process.platform);
 const packageFormat = args.packageFormat || inferPackageFormat(args.newArtifact || args.oldArtifact || "");
 const timeoutMs = Number.isSafeInteger(Number(args.timeout)) && Number(args.timeout) > 0 ? Number(args.timeout) : 60_000;
 
-addCase("native.inventory", "Explicit old and new package artifacts are present, non-empty, and identified by hash.", oldArtifact.present && newArtifact.present ? "pass" : "blocked", {
-  reason: oldArtifact.present && newArtifact.present ? undefined : [oldArtifact.reason, newArtifact.reason].filter(Boolean).join(" "),
-  evidence: []
+const formatMatches = packageFormat !== "unknown" && [oldArtifact, newArtifact].every(a => !a.present || inferPackageFormat(a.path) === packageFormat);
+const inventoryEvidence = path.relative(output,path.join(runRoot,"inventory.json"));
+await writeFile(path.join(output,inventoryEvidence),JSON.stringify({oldArtifact,newArtifact,targetOs,packageFormat,declaredContract:args.protocolTest?"protocol-test":args.disposableContract || null},null,2));
+addCase("native.inventory", "Explicit old and new package artifacts are present, non-empty, and identified by hash.", oldArtifact.present && newArtifact.present ? (formatMatches ? "pass" : "fail") : "blocked", {
+  reason: oldArtifact.present && newArtifact.present ? (formatMatches ? undefined : "Artifact extension and declared package format mismatch or unknown format") : [oldArtifact.reason, newArtifact.reason].filter(Boolean).join(" "),
+  evidence: [inventoryEvidence]
 });
 
 const supportedOsList = ["linux", "macos", "windows"];
-const targetMatches = targetOs && supportedOsList.includes(targetOs) && targetOs === platformName(process.platform);
+const declaredBoundary = args.protocolTest || args.disposableContract === "owned-disposable-target-v1";
+
+const targetMatches = declaredBoundary && formatMatches && targetOs && supportedOsList.includes(targetOs) && targetOs === platformName(process.platform);
 addCase("native.target-runner", "The adapter executes only inside an explicitly selected disposable target OS runner.", runner.present && targetMatches ? "pass" : "blocked", {
-  reason: runner.present ? (targetMatches ? undefined : `target OS ${targetOs || "(missing)"} does not match host ${platformName(process.platform)}`) : runner.reason,
-  evidence: []
+  reason: runner.present ? (targetMatches ? undefined : !declaredBoundary ? "Explicit disposable contract or --protocol-test is required" : !formatMatches ? "Artifact package format mismatch" : `target OS ${targetOs || "(missing)"} does not match host ${platformName(process.platform)}`) : runner.reason,
+  evidence: [inventoryEvidence]
 });
 
 const matrix = [
@@ -58,7 +64,7 @@ const matrix = [
   ["native.update-install-failure", "An install failure leaves the old executable launchable."],
   ["native.update-success", "A verified update relaunches the new version with data unchanged."],
   ["native.arch-manual-update", "Arch packages are verified as manual update paths and never claimed automatic."]
-];
+].filter(([id]) => packageFormat === "arch" ? !id.startsWith("native.update-") : id !== "native.arch-manual-update");
 
 const supported = runner.present && targetMatches && oldArtifact.present && newArtifact.present;
 
@@ -83,7 +89,7 @@ if (!supported) {
   await mkdir(targetScratchDir, { recursive: true, mode: 0o700 });
   await mkdir(targetEvidenceDir, { recursive: true, mode: 0o700 });
 
-  const runnerResult = spawnSync(runner.path, [
+  const runnerResult = await runOwned(runner.path, [
     "--run-id", protocolRunId,
     "--scratch-dir", targetScratchDir,
     "--evidence-dir", targetEvidenceDir,
@@ -93,20 +99,28 @@ if (!supported) {
     "--new-artifact", newArtifact.path,
     "--new-hash", newArtifact.sha256,
     "--target-os", targetOs,
-    "--package-format", packageFormat
-  ], { cwd: repoRoot, timeout: timeoutMs, encoding: "utf8" });
+    "--package-format", packageFormat,
+    "--architecture", process.arch,
+    "--qualification", args.protocolTest ? "protocol-test" : "native-package",
+    "--case-ids", matrix.map(([id]) => id).join(",")
+  ], { cwd: targetScratchDir, timeout: timeoutMs, killSignal: "SIGKILL", encoding: "utf8", env: { PATH: process.env.PATH || "/usr/bin:/bin", HOME: targetScratchDir, TMPDIR: targetScratchDir, LANG: "C.UTF-8" } });
 
   let targetReport = null;
   let reportValidationError = "";
 
-  if (runnerResult.error) {
+  if (runnerResult.timedOut || runnerResult.cancelled || runnerResult.survivors.length || runnerResult.leaked.length) {
+    reportValidationError = "Target runner timed out, was cancelled, or left owned descendants.";
+  } else if (runnerResult.error) {
     reportValidationError = runnerResult.error.code === "ETIMEDOUT"
       ? `Target runner timed out after ${timeoutMs}ms.`
-      : `Failed to execute target runner: ${runnerResult.error.message}`;
+      : `Failed to execute target runner: ${String(runnerResult.error)}`;
+  } else if (runnerResult.status !== 0 || runnerResult.signal) {
+    reportValidationError = `Target runner failed: exit=${runnerResult.status} signal=${runnerResult.signal || "none"}.`;
   } else if (!existsSync(targetReportFile)) {
     reportValidationError = `Target runner exited with code ${runnerResult.status} but produced no report at ${targetReportFile}.`;
   } else {
     try {
+      safeEvidence(runRoot, "runner-report.json");
       targetReport = JSON.parse(await readFile(targetReportFile, "utf8"));
     } catch {
       reportValidationError = "Target runner produced malformed JSON report.";
@@ -124,12 +138,24 @@ if (!supported) {
       reportValidationError = `Old artifact hash mismatch in runner report: expected ${oldArtifact.sha256}, got ${targetReport.oldArtifactHash}.`;
     } else if (targetReport.newArtifactHash !== newArtifact.sha256) {
       reportValidationError = `New artifact hash mismatch in runner report: expected ${newArtifact.sha256}, got ${targetReport.newArtifactHash}.`;
+    } else if (targetReport.packageFormat !== packageFormat || targetReport.architecture !== process.arch || targetReport.qualification !== (args.protocolTest ? "protocol-test" : "native-package")) {
+      reportValidationError = "Runner package, architecture or qualification identity mismatch.";
     } else if (!Array.isArray(targetReport.cases)) {
       reportValidationError = "Target runner report missing cases array.";
     }
   }
 
-  const outputEvidenceDir = path.join(output, "evidence");
+  if (targetReport && !reportValidationError) {
+    const ids = targetReport.cases.map(c => c.id);
+    if (new Set(ids).size !== ids.length || ids.length !== matrix.length || ids.some(id => !matrix.some(([expected]) => id === expected))) reportValidationError = "Duplicate, unexpected or missing native cases.";
+    for (const c of targetReport.cases) {
+      if (!["pass", "fail", "blocked", "not_run"].includes(c.status)) reportValidationError = "Invalid case status.";
+      if (!Array.isArray(c.evidence) || (c.status === "pass" && !c.evidence.length)) reportValidationError = "Passing native cases require nonempty evidence.";
+      try { for (const name of c.evidence || []) safeEvidence(targetEvidenceDir, name); }
+      catch (error) { reportValidationError = error.message; }
+    }
+  }
+  const outputEvidenceDir = path.join(runRoot, "evidence");
   await mkdir(outputEvidenceDir, { recursive: true, mode: 0o700 });
 
   for (const [id, criterion] of matrix) {
@@ -149,12 +175,10 @@ if (!supported) {
 
     if (Array.isArray(matchedCase.evidence)) {
       for (const evName of matchedCase.evidence) {
-        const srcPath = path.join(targetEvidenceDir, evName);
-        if (existsSync(srcPath)) {
-          const destName = `${id}.${evName}`;
-          copyFileSync(srcPath, path.join(outputEvidenceDir, destName));
-          caseEvidence.push(path.join("evidence", destName));
-        }
+        const srcPath = safeEvidence(targetEvidenceDir, evName);
+        const destName = `${randomUUID()}.evidence`;
+        copyFileSync(srcPath, path.join(outputEvidenceDir, destName), 1);
+        caseEvidence.push(path.relative(output, path.join(outputEvidenceDir, destName)));
       }
     }
 
@@ -177,13 +201,13 @@ const report = {
   seed: 20260905,
   platform: process.platform,
   architecture: process.arch,
-  mode: "native-package",
+  mode: args.protocolTest ? "protocol-test" : "native-package",
   artifact: { old: oldArtifact, new: newArtifact, targetOs: targetOs || null, packageFormat, runner: runner.present ? args.runner : null },
   thresholds: { startupReadyMs: 30_000, teardownMs: 10_000 },
   cases
 };
 
-await writeFile(path.join(output, "report.json"), `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
+await writeFile(path.join(output, "report.json"), `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600, flag:"wx" });
 console.log(JSON.stringify({ report: path.join(output, "report.json"), runRoot, pass: cases.filter((entry) => entry.status === "pass").length, fail: cases.filter((entry) => entry.status === "fail").length, blocked: cases.filter((entry) => entry.status === "blocked").length }));
 process.exitCode = cases.some((entry) => entry.status === "fail" || (args.strict && ["blocked", "not_run"].includes(entry.status))) ? 1 : 0;
 
@@ -195,7 +219,7 @@ function addCase(id, criterion, status, details = {}) {
     durationMs: details.durationMs || 0,
     evidence: details.evidence || [],
     failureReason: details.reason ?? undefined,
-    scope: "native-package",
+    scope: args.protocolTest ? "protocol-test" : "native-package",
     measurements: {}
   });
 }
@@ -232,12 +256,16 @@ function inferPackageFormat(filename) {
   if (filename.endsWith(".dmg")) return "dmg";
   if (filename.endsWith(".app.tar.gz") || filename.endsWith(".tar.gz")) return "tar.gz";
   if (filename.endsWith(".exe")) return "nsis";
-  return "deb";
+  return "unknown";
 }
 
 async function prepareOutput(requested) {
   const target = path.resolve(requested || await mkdtemp(path.join(os.tmpdir(), "gretel-native-output-")));
   assertSafeScratchPath(target);
+  for (let current=target; current !== path.dirname(current); current=path.dirname(current)) {
+    if (existsSync(current) && lstatSync(current).isSymbolicLink()) throw Error("Output ancestors must not be symlinks");
+  }
+  if (existsSync(path.join(target,"report.json"))) throw Error("Output already contains a report; choose a fresh output directory");
   await mkdir(target, { recursive: true, mode: 0o700 });
   const stats = await lstat(target);
   if (stats.isSymbolicLink()) throw new Error("Output directory must not be a symlink.");
@@ -268,7 +296,9 @@ function parseArgs(argv) {
   const result = {};
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === "--strict") result.strict = true;
+    if (arg === "--protocol-test") result.protocolTest = true;
+    else if (arg === "--disposable-contract") result.disposableContract = argv[++index];
+    else if (arg === "--strict") result.strict = true;
     else if (arg.startsWith("--old-artifact=")) result.oldArtifact = arg.slice(15);
     else if (arg === "--old-artifact") result.oldArtifact = argv[++index];
     else if (arg.startsWith("--new-artifact=")) result.newArtifact = arg.slice(15);
@@ -297,4 +327,16 @@ function gitSha() {
 
 function gitDirty() {
   try { return Boolean(execFileSync("git", ["status", "--porcelain"], { cwd: repoRoot, encoding: "utf8" }).trim()); } catch { return true; }
+}
+
+function safeEvidence(root, name) {
+  if (typeof name !== "string" || !name || path.isAbsolute(name) || name.split(/[\\/]/).includes("..")) throw new Error("Unsafe evidence path.");
+  const source = path.resolve(root, name);
+  const relative = path.relative(realpathSync(root), realpathSync(source));
+  if (!relative || relative.startsWith("..") || path.isAbsolute(relative)) throw new Error("Evidence escapes owned root.");
+  let current = root;
+  for (const part of name.split(/[\\/]/)) { current = path.join(current, part); if (lstatSync(current).isSymbolicLink()) throw new Error("Symlink evidence rejected."); }
+  const stats = lstatSync(source);
+  if (!stats.isFile() || !stats.size) throw new Error("Evidence must be a nonempty regular file.");
+  return source;
 }

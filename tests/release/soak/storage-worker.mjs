@@ -4,7 +4,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import {
-  mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, lstatSync,
+  appendFileSync, mkdirSync, writeFileSync, readFileSync, readdirSync, statSync, lstatSync,
   existsSync, utimesSync, unlinkSync, rmSync
 } from "node:fs";
 import { createRequire } from "node:module";
@@ -20,7 +20,8 @@ function parseArgs(argv) {
     else if (argv[i] === "--profiles") out.profiles = Number(argv[++i]);
     else if (argv[i] === "--output") out.outputRoot = argv[++i];
     else if (argv[i] === "--result-file") out.resultFile = argv[++i];
-    else if (argv[i] === "--simulate-broken-rotation") out.brokenRotation = true;
+    else if (argv[i] === "--simulate-broken-rotation") out.loggerControl = "no-op";
+    else if (argv[i] === "--logger-control") out.loggerControl = argv[++i];
   }
   return out;
 }
@@ -206,43 +207,43 @@ async function main() {
   mkdirSync(logDir, { recursive: true });
   const mainLogFile = runRootObj.logFile;
 
-  if (args.brokenRotation) {
-    // Simulated broken rotation: manually write 6 files to prove failure detection
-    for (let i = 0; i < 6; i++) {
-      writeFileSync(path.join(logDir, i === 0 ? "gretel.log" : `gretel.log.${i}`), Buffer.alloc(1024 * 1024 * 6, 76));
-    }
-  } else {
-    // Drive actual logger:
-    // Logger maxLogFileBytes is 5 MiB (5 * 1024 * 1024 = 5,242,880). Rotated files = 3.
-    // Create initial 5MB chunk in active log, then call logger.logInfo to trigger rotation to .1
-    writeFileSync(mainLogFile, Buffer.alloc(5 * 1024 * 1024, "x"));
-    logger.logInfo("rotation.trigger.1", { msg: "force rotation 1" });
-    await logger.flushLogFileWrites();
-
-    // Fill again and trigger rotation to .2
-    writeFileSync(mainLogFile, Buffer.alloc(5 * 1024 * 1024, "y"));
-    logger.logInfo("rotation.trigger.2", { msg: "force rotation 2" });
-    await logger.flushLogFileWrites();
-
-    // Fill again and trigger rotation to .3
-    writeFileSync(mainLogFile, Buffer.alloc(5 * 1024 * 1024, "z"));
-    logger.logInfo("rotation.trigger.3", { msg: "force rotation 3" });
-    await logger.flushLogFileWrites();
-
-    // Fill again and trigger 4th rotation (should delete oldest .3 and keep only active + 3 rotations)
-    writeFileSync(mainLogFile, Buffer.alloc(5 * 1024 * 1024, "w"));
-    logger.logInfo("rotation.trigger.4", { msg: "force rotation 4" });
-    await logger.flushLogFileWrites();
-
-    // Test failed write resilience: point to directory and ensure queue does not crash
-    const badDir = path.join(logDir, "bad-dir");
-    mkdirSync(badDir, { recursive: true });
-    process.env.GRETEL_LOG_FILE = badDir;
-    logger.logInfo("failure.probe", { expectFail: true });
-    await logger.flushLogFileWrites();
-    process.env.GRETEL_LOG_FILE = mainLogFile;
-    try { rmSync(badDir, { recursive: true, force: true }); } catch {}
+  // Exercise the loaded logger; negative control disables its real write entrypoint.
+  const loggerFs = require_("node:fs/promises");
+  if (args.loggerControl === "no-op") logger.logInfo = () => {};
+  if (args.loggerControl === "drop-writes") loggerFs.appendFile = async () => {};
+  if (args.loggerControl === "no-rename") loggerFs.rename = async () => {};
+  if (args.loggerControl === "wrong-retention") {
+    const rename = loggerFs.rename;
+    loggerFs.rename = async (from, to) => String(from).endsWith(".2") ? undefined : rename(from, to);
   }
+  const writeRecord = (...args) => logger.logInfo(...args);
+  const rotationChecks = [];
+  for (let i = 1; i <= 4; i++) {
+    const marker = `rotation.retained.${i}`;
+    writeRecord(marker, {sequence:i});
+    await logger.flushLogFileWrites();
+    appendFileSync(mainLogFile, "x".repeat(5 * 1024 * 1024));
+    writeRecord(`rotation.trigger.${i}`, { sequence: i });
+    await logger.flushLogFileWrites();
+    const active = existsSync(mainLogFile) ? readFileSync(mainLogFile, "utf8") : "";
+    const rotated = existsSync(`${mainLogFile}.1`) ? readFileSync(`${mainLogFile}.1`, "utf8") : "";
+    rotationChecks.push(active.includes(`rotation.trigger.${i}`) && !active.includes(marker) && rotated.includes(marker));
+  }
+  for (let n = 1; n <= 3; n++) {
+    const file = `${mainLogFile}.${n}`;
+    rotationChecks.push(existsSync(file) && readFileSync(file, "utf8").includes(`rotation.retained.${5 - n}`));
+  }
+  rotationChecks.push(![mainLogFile, ...[1,2,3].map(n => `${mainLogFile}.${n}`)].some(file => existsSync(file) && readFileSync(file, "utf8").includes("rotation.retained.1")));
+  const badDir = path.join(logDir, "bad-dir");
+  mkdirSync(badDir, { recursive: true });
+  process.env.GRETEL_LOG_FILE = badDir;
+  writeRecord("failure.probe", { expectFail: true });
+  await logger.flushLogFileWrites();
+  process.env.GRETEL_LOG_FILE = mainLogFile;
+  writeRecord("rotation.recovery", { recovered: true });
+  await logger.flushLogFileWrites();
+  rotationChecks.push(existsSync(mainLogFile) && readFileSync(mainLogFile, "utf8").includes("rotation.recovery"));
+  rmSync(badDir, { recursive: true });
 
   // --- 6. State snapshots with physical SQLite + WAL + SHM and UTF-8 byte accounting ---
   // Hold WAL uncheckpointed for first snapshot so WAL and SHM exist
@@ -291,7 +292,7 @@ async function main() {
   const logTotal = logFiles.reduce((s, f) => s + statSync(path.join(logDir, f)).size, 0);
   const logMaxRecordOvershoot = 16 * 1024;
   const logOvershoot = Math.max(0, logTotal - 20 * 1024 * 1024);
-  const logRotationOk = logFiles.length <= 4 && logOvershoot <= logMaxRecordOvershoot && !existsSync(path.join(logDir, "gretel.log.4"));
+  const logRotationOk = rotationChecks.every(Boolean) && logFiles.length === 4 && logOvershoot <= logMaxRecordOvershoot && !existsSync(path.join(logDir, "gretel.log.4"));
   cases.push({
     id: "soak-storage-log-bounds",
     criterion: "Log files <=4 and total <=20MiB plus a bounded max-record overshoot per logger rotation policy.",
@@ -434,7 +435,7 @@ async function main() {
   const snapshot = {
     days, profiles, poolSizeCap, poolKeysSeen: poolKeysSeen.size, embeddingModelKeys: modelKeys,
     before, after, durableCounts, durableBaseline, durableAfter,
-    logFiles, logTotalBytes: logTotal, logOvershootBytes: logOvershoot,
+    rotationChecks, logFiles, logTotalBytes: logTotal, logOvershootBytes: logOvershoot,
     disposableBytes, disposableBudgetBytes: disposableBudget,
     staleFilesCount: staleFiles.length, freshFilesCount: freshFiles.length
   };

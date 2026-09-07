@@ -18,8 +18,9 @@
 //   --storage-only     run only the accelerated storage workload
 //   --simulate-broken-rotation test flag for negative rotation control
 
+import { runOwned } from "../owned-process.mjs";
 import { spawn } from "node:child_process";
-import { writeFileSync, mkdirSync, readFileSync, readdirSync, existsSync, unlinkSync } from "node:fs";
+import { copyFileSync, writeFileSync, mkdirSync, readFileSync, readdirSync, existsSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
@@ -64,6 +65,9 @@ const cases = [];
 let soakArtifactMetadata = {};
 let soakChildProcess = null;
 let cancelled = false;
+const storageAbort = new AbortController();
+process.once("SIGINT", () => { void handleCancellation("SIGINT"); });
+process.once("SIGTERM", () => { void handleCancellation("SIGTERM"); });
 
 console.log(`[run-soak-verification] runId=${runId} seed=${seed} output=${outputRoot}`);
 console.log(`  storageDays=${skipStorage ? "skipped" : storageDays} soakDuration=${skipSoak || storageOnly ? "skipped" : soakDuration}s strict=${strict}`);
@@ -76,7 +80,8 @@ if (!skipStorage) {
       days: storageDays,
       profiles: 3,
       outputRoot,
-      brokenRotation
+      brokenRotation,
+      signal: storageAbort.signal
     });
 
     const storageCases = result.cases.map((item) => ({
@@ -149,26 +154,11 @@ if (!skipSoak && !storageOnly && !cancelled) {
   if (strict) soakArgs.push("--strict");
 
   const timeoutMs = (soakDuration + 180) * 1000;
-  const soakExit = await new Promise((resolve) => {
-    let timedOut = false;
-    const timer = setTimeout(() => {
-      timedOut = true;
-      if (soakChildProcess) {
-        try { soakChildProcess.kill("SIGKILL"); } catch {}
-      }
-    }, timeoutMs);
+  const owned = await runOwned(process.execPath, soakArgs, {cwd:process.cwd(), env:{PATH:process.env.PATH || "/usr/bin:/bin", HOME:outputRoot, LANG:"C.UTF-8", GRETEL_VERIFICATION_TOKEN:runId}, timeout:timeoutMs, signal:storageAbort.signal});
+  const soakExit = {...owned, code:owned.status};
+  writeFileSync(path.join(soakOutDir,"process.json"),JSON.stringify(owned,null,2));
+  if (owned.survivors.length || owned.leaked.length || owned.cancelled) cases.push(caseResult("soak-owned-lifecycle", "All owned descendants exit", "fail", 0, [], "Cancelled or leftover descendant processes detected"));
 
-    soakChildProcess = spawn(process.execPath, soakArgs, {
-      cwd: process.cwd(),
-      stdio: "inherit"
-    });
-
-    soakChildProcess.on("close", (code, signal) => {
-      clearTimeout(timer);
-      soakChildProcess = null;
-      resolve({ code, signal, timedOut });
-    });
-  });
 
   const soakReportPath = path.join(soakOutDir, "report.json");
   let soakReport = null;
@@ -205,7 +195,7 @@ if (!skipSoak && !storageOnly && !cancelled) {
       "fail", 0, [],
       `Soak CLI timed out after ${timeoutMs}ms`
     ));
-  } else if (soakExit.code !== 0 || soakExit.signal !== null) {
+  } else if (soakExit.signal !== null || (soakExit.code !== 0 && !(soakExit.code === 1 && soakReport?.cases?.some(c => ["fail","blocked","not_run"].includes(c.status))))) {
     cases.push(caseResult(
       "soak-soak-runner",
       "Soak CLI runs without error.",
@@ -215,6 +205,11 @@ if (!skipSoak && !storageOnly && !cancelled) {
   }
 
   if (soakReport) {
+    const ids = (soakReport.cases || []).map(c => c.id);
+    const expectedArtifact = getArtifactIdentity(serverRootArg || path.join(process.cwd(),".next/standalone"));
+    if (soakReport.schemaVersion !== 1 || soakReport.layer !== "soak" || soakReport.executionToken !== runId || soakReport.artifact?.manifestSha256 !== expectedArtifact.manifestSha256 || new Set(ids).size !== ids.length || (soakReport.cases || []).some(c => !["pass","fail","blocked","not_run"].includes(c.status))) {
+      cases.push(caseResult("soak-report-schema", "Current report matches execution, artifact and valid case schema", "fail", 0, [], "Wall report execution/artifact/schema identity mismatch"));
+    }
     // Validate required case inventory
     const requiredCaseIds = [
       "soak-server-start",
@@ -250,10 +245,7 @@ if (!skipSoak && !storageOnly && !cancelled) {
       mkdirSync(targetLogsDir, { recursive: true });
       for (const name of readdirSync(subLogsDir)) {
         try {
-          writeFileSync(
-            path.join(targetLogsDir, name),
-            readFileSync(path.join(subLogsDir, name))
-          );
+          copyFileSync(path.join(subLogsDir, name), path.join(targetLogsDir, name));
         } catch {}
       }
     }
@@ -280,6 +272,7 @@ if (!skipSoak && !storageOnly && !cancelled) {
 }
 
 // --- Final report ---
+if (cancelled) cases.push(caseResult("soak-cancelled", "Requested work completes", "fail", 0, [], "Cancelled; verification is incomplete"));
 const report = newReport(
   runId,
   storageOnly ? "storage" : (soakDuration <= 120 ? "quick-smoke" : "soak"),
@@ -302,7 +295,7 @@ const report = newReport(
       reportPath: path.join(outputRoot, "report.json"),
       storageDir: "storage/",
       logsDir: "logs/",
-      ...getArtifactIdentity(path.join(process.cwd(), ".next/standalone")),
+      ...getArtifactIdentity(serverRootArg || path.join(process.cwd(), ".next/standalone")),
       ...soakArtifactMetadata,
       packageVersion: soakArtifactMetadata.packageVersion || readPackageVersion()
     }
@@ -339,6 +332,7 @@ if (strict && anyBad) {
 async function handleCancellation(signal) {
   if (cancelled) return;
   cancelled = true;
+  storageAbort.abort();
   console.log(`\n[run-soak-verification] Received ${signal}; stopping children...`);
   if (soakChildProcess) {
     try {
@@ -350,6 +344,3 @@ async function handleCancellation(signal) {
   }
   process.exitCode = signal === "SIGINT" ? 130 : 143;
 }
-
-process.once("SIGINT", () => { void handleCancellation("SIGINT"); });
-process.once("SIGTERM", () => { void handleCancellation("SIGTERM"); });

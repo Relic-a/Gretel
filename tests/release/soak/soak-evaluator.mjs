@@ -23,8 +23,8 @@ export function getCpuClockTicksPerSecond() {
         return cachedClockTicks;
       }
     } catch {}
-    // Fallback standard for Linux USER_HZ
-    cachedClockTicks = 100;
+    // Measurement failure must not be represented as a measured value.
+    cachedClockTicks = null;
     return cachedClockTicks;
   }
 
@@ -62,12 +62,9 @@ export function evaluateIdleCpu(samples, options = {}) {
     );
   }
 
-  // Filter valid idle samples
-  const idleSamples = (samples || []).filter((s) => {
-    return (s.op === "idle" || s.phase === "idle") &&
-      Number.isFinite(s.elapsedMs) &&
-      Number.isFinite(s.cpuTicks);
-  });
+  const coverage = validateCoverage(samples, {...options, idle: true, cpu: true});
+  if (coverage) return caseResult("soak-idle-cpu", "Sustained measured idle CPU", coverage.status, 0, ["logs/metrics.jsonl"], coverage.reason);
+  const idleSamples = samples || [];
 
   if (idleSamples.length < minSamples) {
     return caseResult(
@@ -97,12 +94,12 @@ export function evaluateIdleCpu(samples, options = {}) {
     const currPid = current.serverPid ?? current.pid;
     const prevPid = previous.serverPid ?? previous.pid;
     if (currPid && prevPid && currPid !== prevPid) {
-      continue;
+      return caseResult("soak-idle-cpu", "Continuous process generation", "blocked", 0, ["logs/metrics.jsonl"], "Process restarted inside idle window");
     }
     const currGen = current.serverGeneration ?? current.generation;
     const prevGen = previous.serverGeneration ?? previous.generation;
     if (currGen !== undefined && prevGen !== undefined && currGen !== prevGen) {
-      continue;
+      return caseResult("soak-idle-cpu", "Continuous process generation", "blocked", 0, ["logs/metrics.jsonl"], "Process generation changed inside idle window");
     }
 
     const dt = (current.elapsedMs - previous.elapsedMs) / 1000;
@@ -110,8 +107,7 @@ export function evaluateIdleCpu(samples, options = {}) {
 
     const dTicks = current.cpuTicks - previous.cpuTicks;
     if (dTicks < 0) {
-      // Process restart or counter reset occurred without PID change
-      continue;
+      return caseResult("soak-idle-cpu", "Monotonic measured CPU", "blocked", 0, ["logs/metrics.jsonl"], "CPU counter reset");
     }
 
     const cpuPct = (dTicks / clockTicks) / dt * 100;
@@ -129,7 +125,7 @@ export function evaluateIdleCpu(samples, options = {}) {
     );
   }
 
-  const mean = cpuPercents.reduce((sum, v) => sum + v, 0) / cpuPercents.length;
+  const mean = (idleSamples.at(-1).cpuTicks - idleSamples[0].cpuTicks) / clockTicks / (spanMs / 1000) * 100;
   const p95 = percentile(cpuPercents, 0.95);
   const ok = mean <= maxMean && p95 <= maxP95;
 
@@ -152,6 +148,10 @@ export function evaluateIdleRssStability(firstPostWarmupIdleSamples, finalIdleSa
   const allowanceMiB = options.allowanceMiB ?? 64;
   const allowancePct = options.allowancePct ?? 0.20;
 
+  for (const window of [firstPostWarmupIdleSamples, finalIdleSamples]) {
+    const coverage = validateCoverage(window, {...options, idle: true, rss: true});
+    if (coverage) return caseResult("soak-idle-rss-stability", "Complete measured idle RSS windows", coverage.status, 0, ["logs/metrics.jsonl"], coverage.reason);
+  }
   const validFirst = (firstPostWarmupIdleSamples || []).filter((s) => Number.isFinite(s.rssMb) && s.rssMb > 0);
   const validFinal = (finalIdleSamples || []).filter((s) => Number.isFinite(s.rssMb) && s.rssMb > 0);
 
@@ -176,6 +176,7 @@ export function evaluateIdleRssStability(firstPostWarmupIdleSamples, finalIdleSa
     );
   }
 
+  if (validFinal[0].elapsedMs < validFirst.at(-1).elapsedMs) return caseResult("soak-idle-rss-stability", "Separate first and final idle windows", "not_run", 0, ["logs/metrics.jsonl"], "Idle comparison windows overlap");
   const firstMedian = median(validFirst.map((s) => s.rssMb));
   const finalMedian = median(validFinal.map((s) => s.rssMb));
   const allowance = Math.max(allowanceMiB, firstMedian * allowancePct);
@@ -200,6 +201,8 @@ export function evaluateRssTrend(samples, options = {}) {
   const minWindows = options.minWindows ?? 12;
   const maxSlope = options.maxSlopeMiBPerHour ?? 1.0;
 
+  const coverage = validateCoverage(samples, {...options, rss: true});
+  if (coverage) return caseResult("soak-rss-trend", "Complete measured RSS trend", coverage.status, 0, ["logs/metrics.jsonl"], coverage.reason);
   const validSamples = (samples || []).filter((s) => Number.isFinite(s.elapsedMs) && Number.isFinite(s.rssMb));
 
   if (validSamples.length < 10) {
@@ -261,7 +264,12 @@ export function selectWindow(samples, durationMs, side) {
   if (!samples || !samples.length) return [];
   const first = side === "start" ? samples[0].elapsedMs : samples[samples.length - 1].elapsedMs - durationMs;
   const last = first + durationMs;
-  return samples.filter((sample) => sample.elapsedMs >= first && sample.elapsedMs <= last);
+  // Include bracketing observations; ordinary timer jitter need not hit exact boundaries.
+  let start = samples.findLastIndex(sample => sample.elapsedMs <= first);
+  let end = samples.findIndex(sample => sample.elapsedMs >= last);
+  if (start < 0) start = 0;
+  if (end < 0) end = samples.length - 1;
+  return samples.slice(start, end + 1);
 }
 
 export function linearSlope(samples) {
@@ -290,4 +298,37 @@ export function percentile(values, fraction) {
   const sorted = [...values].sort((a, b) => a - b);
   const index = Math.min(sorted.length - 1, Math.max(0, Math.floor(sorted.length * fraction)));
   return sorted[index];
+}
+
+export function validateCoverage(samples, options = {}) {
+  if (!samples?.length) return {status: "not_run", reason: "No measurement samples"};
+  const gap = options.maxSamplingGapMs ?? 30_000;
+  for (let i = 0; i < samples.length; i++) {
+    const s = samples[i], previous = samples[i - 1];
+    if (s.truncated || s.measurementError || s.coverageLost || !Number.isFinite(s.elapsedMs) || (options.cpu && (!Number.isFinite(s.cpuTicks) || s.cpuTicks < 0 || !Number.isFinite(s.rssMb) || s.rssMb <= 0)) || (options.rss && (!Number.isFinite(s.rssMb) || s.rssMb <= 0))) return {status: "blocked", reason: "Missing, invalid or truncated process measurement"};
+    if (options.idle && (!(s.op === "idle" || s.phase === "idle") || !s.phaseId || (previous && s.phaseId !== previous.phaseId))) return {status: "not_run", reason: "Samples do not prove one continuous idle phase"};
+    if (previous && (s.elapsedMs <= previous.elapsedMs || s.elapsedMs - previous.elapsedMs > gap)) return {status: "blocked", reason: "Invalid timestamp or excessive sampling gap"};
+    if (options.cpu && previous && s.processIdentity !== previous.processIdentity) return {status: "blocked", reason: "Process tree generation changed"};
+  }
+  return null;
+}
+
+export async function runIdlePhase({ durationMs, intervalMs, phaseId, now = Date.now, sleep = ms => new Promise(r => setTimeout(r, ms)), sample, cancelled = () => false }) {
+  const start = now(), end = start + durationMs;
+  sample({phase: "idle", op: "idle", phaseId, phaseStart: start, phaseEnd: end});
+  while (!cancelled() && now() < end) {
+    await sleep(Math.min(intervalMs, end - now()));
+    if (!cancelled()) sample({phase: "idle", op: "idle", phaseId, phaseStart: start, phaseEnd: end});
+  }
+}
+
+export function selectIdleWindows(samples, warmupMs = 600000, durationMs = 600000) {
+  const phases = new Map();
+  for (const sample of samples) {
+    if (!sample.phaseId || sample.elapsedMs < warmupMs) continue;
+    if (!phases.has(sample.phaseId)) phases.set(sample.phaseId, []);
+    phases.get(sample.phaseId).push(sample);
+  }
+  const complete = [...phases.values()].filter(window => window.at(-1).elapsedMs - window[0].elapsedMs >= durationMs);
+  return {first:complete.length ? selectWindow(complete[0],durationMs,"start") : [], last:complete.length ? selectWindow(complete.at(-1),durationMs,"end") : []};
 }

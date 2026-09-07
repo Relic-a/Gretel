@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { categorizeCase } from "../case-category.mjs";
 
 /**
  * Gretel release E2E verifier.
@@ -286,24 +287,24 @@ async function runProductionServerCases() {
   });
 
   await caseRun("e2e.auth", "The local API token protects handlers when one is configured.", async () => {
-    const response = await fetch(`${context.baseUrl}/api/profiles`);
+    const response = await boundedFetch(`${context.baseUrl}/api/profiles`);
     assert(response.status === 401, `unauthenticated profiles status was ${response.status}`);
     return { scope: "production-server", measurements: { unauthenticatedStatus: response.status }, evidence: [] };
   });
 
   await caseRun("e2e.static-assets", "Production HTML, JavaScript, CSS, and bundled fonts load successfully.", async () => {
-    const response = await fetch(`${context.baseUrl}/?token=${encodeURIComponent(token)}`);
+    const response = await boundedFetch(`${context.baseUrl}/?token=${encodeURIComponent(token)}`);
     assert(response.status === 200, `home status was ${response.status}`);
     const html = await response.text();
     const assets = [...html.matchAll(/(?:src|href)="(\/_next\/[^"#?]+)/g)].map((match) => match[1]);
     const css = assets.filter((asset) => asset.endsWith(".css"));
     const scripts = assets.filter((asset) => asset.endsWith(".js"));
-    const cssText = await Promise.all(css.map(async (asset) => (await fetch(`${context.baseUrl}${asset}`)).text()));
+    const cssText = await Promise.all(css.map(async (asset) => (await boundedFetch(`${context.baseUrl}${asset}`)).text()));
     const fonts = [...cssText.join("\n").matchAll(/url\((['"]?)(\/_next\/[^)'"\s]+\.(?:woff2?|ttf))\1\)/g)].map((match) => match[2]);
     const unique = [...new Set([...assets, ...fonts])];
     const statuses = [];
     for (const asset of unique) {
-      const result = await fetch(`${context.baseUrl}${asset}`);
+      const result = await boundedFetch(`${context.baseUrl}${asset}`);
       statuses.push({ asset, status: result.status });
       assert(result.status === 200, `${asset} returned ${result.status}`);
     }
@@ -350,7 +351,7 @@ async function runProductionServerCases() {
   await caseRun("e2e.fault-handling", "Missing pools and invalid authentication produce explicit failure responses rather than passing as empty feeds.", async () => {
     const missing = context.seeded.profiles.alpha.id;
     const profile = await jsonRequest("/api/profiles", { method: "POST", body: { name: "No pool", tags: ["missing pool"], channels: [] } });
-    const response = await fetch(`${context.baseUrl}/api/feed`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ profileId: profile.profileId, tags: ["missing pool"], channels: [] }) });
+    const response = await boundedFetch(`${context.baseUrl}/api/feed`, { method: "POST", headers: authHeaders(), body: JSON.stringify({ profileId: profile.profileId, tags: ["missing pool"], channels: [] }) });
     const body = await response.json();
     assert(response.status === 404, `missing-pool status was ${response.status}`);
     assert(body.code === "FEED_POOL_MISSING", `missing-pool code was ${body.code}`);
@@ -984,6 +985,12 @@ async function caseRun(id, criterion, work) {
   const started = Date.now();
   try {
     const value = await work();
+    if (!value?.evidence?.length) {
+      const evidence = `evidence/${id}.assertions.json`;
+      await writeFile(path.join(outputRoot, evidence), JSON.stringify(redact({id, criterion, durationMs:Date.now()-started, assertions:"completed", measurements:value?.measurements || {}}),null,2));
+      addCase(id, criterion, "pass", {durationMs:Date.now()-started, ...value, evidence:[evidence]});
+      return;
+    }
     addCase(id, criterion, "pass", { durationMs: Date.now() - started, ...value });
   } catch (error) {
     addCase(id, criterion, "fail", { durationMs: Date.now() - started, reason: error instanceof Error ? error.message : String(error), scope: "production-server", evidence: [] });
@@ -1008,6 +1015,7 @@ function addCase(id, criterion, status, details = {}) {
 async function writeReport(layer, artifact) {
   const report = {
     schemaVersion: 1,
+    executionToken: process.env.GRETEL_VERIFICATION_TOKEN || null,
     layer,
     runId: path.basename(runRoot),
     startedAt: runStartedAt,
@@ -1020,7 +1028,7 @@ async function writeReport(layer, artifact) {
     mode: layer === "self-test" ? "self-test" : mode,
     artifact: artifact || artifactMetadata(),
     thresholds: { startupReadyMs: startupLimitMs },
-    cases: results
+    cases: results.map(categorizeCase)
   };
   await writeFile(path.join(outputRoot, "report.json"), `${JSON.stringify(report, null, 2)}\n`, { mode: 0o600 });
 }
@@ -1070,7 +1078,7 @@ async function waitReady(baseUrl, timeoutMs) {
   let lastError = "not attempted";
   while (Date.now() < deadline) {
     try {
-      const response = await fetch(`${baseUrl}/api/config`, { headers: authHeaders(), signal: AbortSignal.timeout(1_000) });
+      const response = await boundedFetch(`${baseUrl}/api/config`, { headers: authHeaders(), signal: AbortSignal.timeout(1_000) });
       if (response.status === 200) {
         await response.arrayBuffer();
         return;
@@ -1085,7 +1093,7 @@ async function waitReady(baseUrl, timeoutMs) {
 }
 
 async function http(route, init = {}) {
-  return fetch(`${context.baseUrl}${route}`, { ...init, headers: { ...authHeaders(), ...(init.headers || {}) } });
+  return boundedFetch(`${context.baseUrl}${route}`, { ...init, headers: { ...authHeaders(), ...(init.headers || {}) } });
 }
 
 async function jsonRequest(route, init = {}) {
@@ -1098,7 +1106,7 @@ async function jsonRequestAt(baseUrl, route, init = {}) {
     headers["content-type"] = "application/json";
     init = { ...init, body: JSON.stringify(init.body) };
   }
-  const response = await fetch(`${baseUrl}${route}`, { ...init, headers });
+  const response = await boundedFetch(`${baseUrl}${route}`, { ...init, headers });
   const body = await response.json();
   if (!response.ok) throw new Error(`${route} returned ${response.status}: ${body.error || JSON.stringify(body)}`);
   return body;
@@ -1129,7 +1137,7 @@ async function launchChromium(userDataDir) {
   let target;
   while (Date.now() < deadline) {
     try {
-      const targets = await (await fetch(`http://127.0.0.1:${port}/json/list`)).json();
+      const targets = await (await boundedFetch(`http://127.0.0.1:${port}/json/list`)).json();
       target = targets.find((entry) => entry.type === "page");
       if (target?.webSocketDebuggerUrl) break;
     } catch {}
@@ -1180,6 +1188,7 @@ class CdpSession {
       const pending = this.pending.get(message.id);
       if (!pending) return;
       this.pending.delete(message.id);
+      clearTimeout(pending.timer);
       if (message.error) pending.reject(new Error(message.error.message));
       else pending.resolve(message.result);
     });
@@ -1187,9 +1196,11 @@ class CdpSession {
 
   ready() {
     return new Promise((resolve, reject) => {
-      if (this.socket.readyState === WebSocket.OPEN) resolve();
+      const timer = setTimeout(() => reject(new Error("CDP connection timed out")),15000);
+      const opened = () => {clearTimeout(timer);resolve();};
+      if (this.socket.readyState === WebSocket.OPEN) opened();
       else {
-        this.socket.addEventListener("open", resolve, { once: true });
+        this.socket.addEventListener("open", opened, { once: true });
         this.socket.addEventListener("error", () => reject(new Error("CDP WebSocket failed")), { once: true });
       }
     });
@@ -1198,7 +1209,10 @@ class CdpSession {
   command(method, params = {}) {
     const id = this.nextId++;
     this.socket.send(JSON.stringify({ id, method, params }));
-    return new Promise((resolve, reject) => this.pending.set(id, { resolve, reject }));
+    return new Promise((resolve, reject) => {
+      const timer = setTimeout(() => {this.pending.delete(id);reject(new Error(`CDP ${method} timed out`));},15000);
+      this.pending.set(id, { resolve, reject, timer });
+    });
   }
 
   async navigate(url) {
@@ -1441,3 +1455,5 @@ try {
   console.error(`E2E runner failed: ${reason}`);
   process.exitCode = 1;
 }
+
+function boundedFetch(url, init = {}) { return fetch(url, {...init, signal:init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(15000)]) : AbortSignal.timeout(15000)}); }
