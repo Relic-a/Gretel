@@ -589,12 +589,15 @@ async function main() {
   const workloadPassed = totalWorkloadCycles > 0 &&
     completedWorkloadOps.browse > 0 &&
     completedWorkloadOps.nonEmptyBrowse > 0 &&
-    completedWorkloadOps.watch > 0;
+    completedWorkloadOps.watch > 0 &&
+    completedWorkloadOps.impressions > 0 &&
+    completedWorkloadOps.switchProfile > 0;
   cases.push(caseResult(
     "soak-completed-operations",
     "Recorded completed post-setup HTTP operations during soak (browse/watch/impressions with nonempty feed).",
     workloadPassed ? "pass" : "fail", 0, ["logs/metrics.jsonl"],
-    workloadPassed ? null : `Insufficient workload cycles: total=${totalWorkloadCycles}, browse=${completedWorkloadOps.browse}, nonEmptyBrowse=${completedWorkloadOps.nonEmptyBrowse}, watch=${completedWorkloadOps.watch}`
+    workloadPassed ? null : `Insufficient workload cycles: total=${totalWorkloadCycles}, browse=${completedWorkloadOps.browse}, nonEmptyBrowse=${completedWorkloadOps.nonEmptyBrowse}, watch=${completedWorkloadOps.watch}`,
+    {...completedWorkloadOps, totalWorkloadCycles}
   ));
 
   // Concurrency and task drain gate

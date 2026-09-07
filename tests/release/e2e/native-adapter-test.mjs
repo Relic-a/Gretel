@@ -36,3 +36,16 @@ console.log(`Native controls: ${outcomes.length} passed; evidence ${scratch}`);
  const report=JSON.parse(readFileSync(path.join(output,'report.json')));assert(report.cases.some(c=>c.status==='fail'));
  console.log('Native cancellation after passing JSON correctly fails.');
 }
+
+for (const phase of ['active-request','report-partial']) {
+ const {spawn}=await import('node:child_process');const {readdirSync}=await import('node:fs');
+ const runner=path.join(scratch,`${phase}.mjs`);copyFileSync(path.join(root,'fixtures/native-protocol-control.mjs'),runner);chmodSync(runner,0o700);
+ const output=path.join(scratch,phase);
+ const child=spawn(process.execPath,[path.join(root,'native-adapter.mjs'),'--protocol-test','--strict','--old-artifact',path.join(scratch,'old.deb'),'--new-artifact',path.join(scratch,'new.deb'),'--runner',runner,'--timeout','5000','--output',output],{stdio:'ignore'});
+ const completed=new Promise(r=>child.on('close',r));let ready=false,port;
+ for(let i=0;i<100;i++){try{const run=readdirSync(output).find(n=>n.startsWith('native-run-'));if(phase==='active-request'){port=JSON.parse(readFileSync(path.join(output,run,'runner-scratch','active.json'))).port;ready=true;}else ready=readFileSync(path.join(output,run,'runner-report.json'),'utf8')==='{"schemaVersion":';}catch{}if(ready)break;await new Promise(r=>setTimeout(r,20));}
+ child.kill('SIGTERM');assert.equal(await completed,1);assert(ready,phase);
+ const report=JSON.parse(readFileSync(path.join(output,'report.json')));assert(report.cases.some(c=>c.status==='fail'));
+ if(port){let listening=false;try{await fetch(`http://127.0.0.1:${port}`,{signal:AbortSignal.timeout(500)});listening=true;}catch{}assert(!listening,'Owned active HTTP fixture survived');}
+}
+console.log('Native active-request and partial-report cancellation controls passed.');
