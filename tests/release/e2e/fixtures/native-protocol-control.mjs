@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import {spawn} from 'node:child_process';
 import { writeFileSync, symlinkSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 const a = Object.fromEntries(process.argv.slice(2).reduce((r, v, i, all) => i % 2 ? r : [...r, [v.slice(2), all[i + 1]]], []));
@@ -24,5 +25,6 @@ if (mode === 'traversal') { writeFileSync(path.join(a['scratch-dir'], 'sentinel'
 if (mode === 'symlink') { symlinkSync(path.join(a['evidence-dir'], 'proof.txt'), path.join(a['evidence-dir'], 'link')); report.cases[0].evidence = ['link']; }
 if (mode !== 'no-report') writeFileSync(a['report-file'], mode === 'malformed' ? '{' : JSON.stringify(report));
 if (mode === 'timeout') await new Promise(() => setInterval(() => {}, 1000));
+if (mode === 'orphan') {spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'}).unref();}
 if (mode === 'signal') process.kill(process.pid, 'SIGTERM');
 process.exit(mode === 'exit23' || mode === 'no-report' ? 23 : 0);

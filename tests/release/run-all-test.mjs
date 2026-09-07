@@ -5,9 +5,9 @@ import {tmpdir} from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 const root=path.dirname(fileURLToPath(import.meta.url)), scratch=mkdtempSync(path.join(tmpdir(),'gretel-unified-controls-'));
-const artifact=path.join(scratch,'custom-artifact');mkdirSync(artifact);writeFileSync(path.join(artifact,'server.js'),'// custom artifact');
+const artifact=path.join(scratch,'custom-artifact');mkdirSync(artifact);writeFileSync(path.join(artifact,'server.js'),'process.stdout.write("custom artifact executed\\n")');
 const outcomes=[];
-for(const mode of ['healthy','no-report','exit23','signal','timeout','malformed','stale','missing','duplicate','status','evidence','absent-evidence','artifact','reported-fail','skipped']) {
+for(const mode of ['healthy','orphan','no-report','exit23','signal','timeout','malformed','stale','missing','duplicate','status','evidence','absent-evidence','artifact','reported-fail','skipped']) {
  const fixture=path.join(scratch,`${mode}.mjs`);copyFileSync(path.join(root,'fixtures/layer-control.mjs'),fixture);
  const output=path.join(scratch,mode);mkdirSync(output);
  writeFileSync(path.join(output,'report.json'),JSON.stringify({cases:[{id:'stale-pass',status:'pass'}]}));

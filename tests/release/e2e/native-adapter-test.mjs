@@ -9,7 +9,7 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const scratch = mkdtempSync(path.join(tmpdir(), 'gretel-native-controls-'));
 for (const name of ['old.deb', 'new.deb']) writeFileSync(path.join(scratch, name), name);
 const outcomes = [];
-for (const mode of ['healthy','exit23','no-report','signal','timeout','malformed','stale','hash','package','architecture','platform','duplicate','missing','unexpected','status','reported-fail','absent-evidence','missing-file','traversal','symlink','empty-file','directory','format-config']) {
+for (const mode of ['healthy','orphan','exit23','no-report','signal','timeout','malformed','stale','hash','package','architecture','platform','duplicate','missing','unexpected','status','reported-fail','absent-evidence','missing-file','traversal','symlink','empty-file','directory','format-config']) {
   const runner = path.join(scratch, `${mode}.mjs`);
   copyFileSync(path.join(root, 'fixtures/native-protocol-control.mjs'), runner); chmodSync(runner, 0o700);
   const output = path.join(scratch, mode);

@@ -1,15 +1,17 @@
 import {spawn} from 'node:child_process';
 import {readFileSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
 
 function identity(pid) {
- try {const fields=readFileSync(`/proc/${pid}/stat`,'utf8').slice(readFileSync(`/proc/${pid}/stat`,'utf8').lastIndexOf(') ')+2).split(' ');return {pid,start:fields[19],state:fields[0]};} catch {return null;}
+ try {const raw=readFileSync(`/proc/${pid}/stat`,'utf8');const fields=raw.slice(raw.lastIndexOf(') ')+2).split(' ');return {pid,start:fields[19],state:fields[0]};} catch {return null;}
 }
 function alive(record) {const current=identity(record.pid);return current && current.start===record.start && !['Z','X'].includes(current.state);}
 
 // Own only the spawned process and observed descendants, identified by PID plus
 // kernel start time. Never signal by executable name or an unrelated process group.
 export async function runOwned(command,args,{cwd,env,timeout=600000,graceMs=1000,signal,stdin='ignore',onSpawn}={}) {
- const child=spawn(command,args,{cwd,env,detached:process.platform!=='win32',stdio:[stdin,'pipe','pipe']});
+ const supervised = process.platform === "linux";
+ const child=spawn(supervised ? "python3" : command, supervised ? [fileURLToPath(new URL("./owned-supervisor.py",import.meta.url)),command,...args] : args,{cwd,env,detached:process.platform!=='win32',stdio:[stdin,'pipe','pipe']});
  const records=new Map();let stdout='',stderr='',timedOut=false,cancelled=false,error=null;
  const discover=()=>{
   const queue=[child.pid],seen=new Set();

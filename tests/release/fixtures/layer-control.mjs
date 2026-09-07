@@ -1,3 +1,4 @@
+import {spawn} from 'node:child_process';
 import {writeFileSync, readFileSync} from 'node:fs';
 import {execFileSync} from 'node:child_process';
 import path from 'node:path';
@@ -7,6 +8,7 @@ for(let i=2;i<process.argv.length;i++) if (process.argv[i].startsWith('--') && !
 const mode = path.basename(process.argv[1]).replace('.mjs','');
 const artifact = JSON.parse(a.identity);
 if(a.layer !== 'chaos') {
+  if(execFileSync(process.execPath,[path.join(a.artifact,'server.js')],{encoding:'utf8',timeout:2000}).trim() !== 'custom artifact executed') throw Error('Selected artifact was not executed');
   if(a.artifact !== artifact.path || !readFileSync(path.join(a.artifact,'server.js'),'utf8').includes('custom artifact')) throw Error('Custom artifact not propagated');
 }
 writeFileSync(path.join(a.output,'proof.txt'), 'Observed harmless layer execution; custom artifact path verified.');
@@ -21,5 +23,6 @@ if(mode==='absent-evidence') report.cases[0].evidence=[];
 if(mode==='reported-fail') report.cases[0].status='fail';
 if(mode!=='no-report') writeFileSync(path.join(a.output,'report.json'),mode==='malformed'?'{':JSON.stringify(report));
 if(mode==='timeout') await new Promise(()=>setInterval(()=>{},1000));
+if(mode==='orphan'){spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{detached:true,stdio:'ignore'}).unref();}
 if(mode==='signal') process.kill(process.pid,'SIGTERM');
 process.exit(['exit23','no-report'].includes(mode)?23:mode==='reported-fail'?1:0);
