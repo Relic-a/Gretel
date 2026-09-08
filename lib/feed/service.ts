@@ -1,4 +1,5 @@
 import { createQueries } from "./input";
+import { orderHomeVideos } from "./ordering";
 import {
   addPoolNodes,
   createFeedPoolKey,
@@ -172,7 +173,13 @@ export async function serveFeedPage(
     interactions,
     config
   });
-  const videos = hydrateChannelAvatars(candidates.videos).slice(0, config.feed.maxVideos);
+  const poolById = new Map(poolVideos.map((video) => [video.id, video]));
+  const previousVideos = [...session.servedVideoIds].slice(-3)
+    .flatMap((id) => poolById.has(id) ? [poolById.get(id)!] : []);
+  const videos = orderHomeVideos(
+    hydrateChannelAvatars(candidates.videos).slice(0, config.feed.maxVideos),
+    previousVideos
+  );
 
   for (const video of videos) {
     session.servedVideoIds.add(video.id);
@@ -582,7 +589,9 @@ async function createFeedOnce(
         watchedVideoIds
       );
   const poolRecommendations = hydrateChannelAvatars(readyPreview.videos).slice(0, config.feed.maxVideos);
-  const videos = hydrateChannelAvatars([...fastLaneVideos, ...poolRecommendations]).slice(0, config.feed.maxVideos);
+  const videos = orderHomeVideos(
+    hydrateChannelAvatars([...fastLaneVideos, ...poolRecommendations]).slice(0, config.feed.maxVideos)
+  );
 
   await retainReadyQueueEmbeddings(profileId, videos, observation, options.expectedProfileUpdatedAt);
   ensureProfileCurrent(profileId, options.expectedProfileUpdatedAt);

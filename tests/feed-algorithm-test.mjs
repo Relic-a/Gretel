@@ -383,8 +383,8 @@ test("serving excludes client-visible videos before ranking the next page", asyn
       excludeVideoIds: firstFeed.videos.map((node) => node.id)
     });
 
-    assert.deepEqual(firstFeed.videos.map((node) => node.id), ["root-alpha-0", "root-alpha-1"]);
-    assert.deepEqual(nextFeed.videos.map((node) => node.id), ["root-alpha-2", "root-alpha-3"]);
+    assert.deepEqual(firstFeed.videos.map((node) => node.id).sort(), ["root-alpha-0", "root-alpha-1"]);
+    assert.deepEqual(nextFeed.videos.map((node) => node.id).sort(), ["root-alpha-2", "root-alpha-3"]);
     assert.equal(nextFeed.pool.health.excludedClientVideos, 2);
   } finally {
     modules.profileStore.deleteProfile(profile.id);
@@ -1282,12 +1282,66 @@ test("subscription fast lane is served up to cap, never pooled, and never used a
       .map((node) => node.id);
 
     assert.equal(servedFastLaneIds.length, 2);
-    assert.deepEqual(servedFastLaneIds, ["fast-2", "fast-3"]);
+    assert.deepEqual(servedFastLaneIds.sort(), ["fast-2", "fast-3"]);
     assert.equal(servedFastLaneIds.some((id) => poolIds.has(id)), false);
     assert.equal(infoSeeds.some((id) => servedFastLaneIds.includes(id)), false);
   } finally {
     modules.profileStore.deleteProfile(profile.id);
   }
+});
+
+test("Home ordering varies while retaining results and favoring higher ranks", () => {
+  const { orderHomeVideos } = require(path.join(buildDir, "lib", "feed", "ordering.js"));
+  const ranked = Array.from({ length: 24 }, (_, index) => ({
+    ...video(`rank-${index}`), author: `channel-${index}`
+  }));
+  const originalIds = ranked.map((item) => item.id);
+  const firstCounts = Array(24).fill(0);
+  const orders = new Set();
+  let seed = 12345;
+  const random = () => {
+    seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+    return seed / 4294967296;
+  };
+  for (let run = 0; run < 1000; run += 1) {
+    const ordered = orderHomeVideos(ranked, [], random);
+    assert.deepEqual(ordered.map((item) => item.id).sort(), [...originalIds].sort());
+    firstCounts[ranked.indexOf(ordered[0])] += 1;
+    orders.add(ordered.map((item) => item.id).join(","));
+  }
+  assert.ok(orders.size > 900, "refreshes should produce varied orders");
+  assert.ok(firstCounts[0] > firstCounts[1] && firstCounts[1] > firstCounts[2]);
+  assert.ok(firstCounts.slice(0, 3).reduce((a, b) => a + b, 0) > 750);
+  assert.equal(firstCounts.slice(8).reduce((a, b) => a + b, 0), 0);
+  assert.deepEqual(ranked.map((item) => item.id), originalIds, "do not mutate existing cards");
+  assert.deepEqual(orderHomeVideos([]), []);
+  assert.deepEqual(orderHomeVideos([ranked[0]]), [ranked[0]]);
+});
+
+test("Home ordering discourages channel and topic clusters, including across pages", () => {
+  const { orderHomeVideos } = require(path.join(buildDir, "lib", "feed", "ordering.js"));
+  const ranked = Array.from({ length: 16 }, (_, index) => ({
+    ...video(`cluster-${index}`),
+    author: index < 8 ? "Creator A" : "Creator B",
+    matchedTopic: index < 8 ? "alpha" : "beta"
+  }));
+  let repetitions = 0;
+  for (let run = 0; run < 100; run += 1) {
+    let seed = run + 1;
+    const ordered = orderHomeVideos(ranked, [], () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      return seed / 4294967296;
+    });
+    repetitions += ordered.slice(1).filter((item, index) => item.author === ordered[index].author).length;
+  }
+  assert.ok(repetitions / 100 < 11, "reduce the 14 adjacent repeats in score-only order");
+
+  const pair = [ranked[0], ranked[8]];
+  assert.equal(orderHomeVideos(pair, [], () => 0.5)[0].id, pair[0].id);
+  assert.equal(orderHomeVideos(pair, [ranked[1]], () => 0.5)[0].id, pair[1].id);
+  const sameChannel = pair.map((item) => ({ ...item, author: "Same creator" }));
+  assert.equal(orderHomeVideos(sameChannel, [sameChannel[0]], () => 0.5)[0].id, pair[1].id,
+    "topic variety should work even within one channel");
 });
 
 function compileModules() {

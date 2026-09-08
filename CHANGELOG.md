@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.5.5 — 2026-09-07
+
+### Home recommendations
+
+- Vary Home ordering while keeping higher-scoring recommendations favored.
+- Reduce repeated channel and topic clusters, including when loading another page.
+- Blend subscription picks into the feed instead of placing them in fixed opening slots.
+- Preserve the highest-scoring page selection and keep already displayed cards stable.
+
 ## 0.5.4 — 2026-09-07
 
 ### In-app updates
