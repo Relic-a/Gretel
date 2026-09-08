@@ -7,6 +7,7 @@
     "urls": ["http://127.0.0.1:*"]
   },
   "permissions": [
+    "allow-update-install-mode",
     "core:default",
     "core:window:allow-close",
     "core:window:allow-is-maximized",

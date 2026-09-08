@@ -1,0 +1,11 @@
+{
+  "permission": [
+    {
+      "identifier": "allow-update-install-mode",
+      "description": "Allow Gretel's local server UI to detect the supported update installation mode.",
+      "commands": {
+        "allow": ["update_install_mode"]
+      }
+    }
+  ]
+}

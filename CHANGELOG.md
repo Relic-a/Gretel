@@ -2,6 +2,10 @@
 
 ## 0.5.4 — 2026-09-07
 
+### In-app updates
+
+- Grant the packaged local-server UI permission to detect the installation type, fixing update checks that stopped with an ACL error before contacting GitHub.
+
 ### Reliability and privacy
 
 - Save settings atomically so an interrupted write preserves the previous settings.
