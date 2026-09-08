@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.4 — 2026-09-07
+
+### Reliability and privacy
+
+- Save settings atomically so an interrupted write preserves the previous settings.
+- Skip symbolic links during cache cleanup and expire unused feed state after 30 days while retaining history, saved videos, likes, and active personalization.
+- Redact credentials from logs and persisted diagnostics.
+- Reject invalid embedding vectors and handle extreme finite values safely.
+- Share identical in-flight feed builds and allow failed builds to retry.
+
+### Release verification
+
+- Add end-to-end, fault-injection, and storage verification with explicit reporting for checks that require additional environments or extended runs.
+
 ## 0.5.3 — 2026-09-04
 
 ### In-app updates
