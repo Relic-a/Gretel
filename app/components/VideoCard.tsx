@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from "react";
 
 import type { FeedVideo } from "../types";
+import type { CardFeedbackAction } from "./VideoActions";
 import { observeCardIntersection } from "./shared-intersection-observer";
 import { VideoActions } from "./VideoActions";
 import { formatPublished, handleThumbnailError, thumbnailFor } from "./video-utils";
@@ -15,6 +16,8 @@ type VideoCardProps = {
   onSelectVideo: (video: FeedVideo) => void;
   onSaveVideo: (video: FeedVideo) => void;
   onLikeVideo: (video: FeedVideo) => void;
+  onFeedback?: (action: CardFeedbackAction, video: FeedVideo) => void;
+  feedbackPendingAction?: CardFeedbackAction | null;
   onImpression?: (video: FeedVideo) => void;
   onAddChannel: (channel: string) => void;
   onRemoveChannel: (channel: string) => void;
@@ -67,8 +70,10 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
             video={props.video}
             saved={props.saved}
             liked={props.liked}
+            pendingAction={props.feedbackPendingAction}
             onSaveVideo={props.onSaveVideo}
             onLikeVideo={props.onLikeVideo}
+            onFeedback={props.onFeedback}
           />
         </div>
         <div className="channel-line">

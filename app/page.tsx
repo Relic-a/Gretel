@@ -1,12 +1,20 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BellOff, EyeOff, LoaderCircle, ThumbsDown, X } from "lucide-react";
 
+import type { CardFeedbackAction } from "./components/VideoActions";
 import { ProfileModal } from "./components/ProfileModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { TopBar } from "./components/TopBar";
 import { FeedView } from "./components/FeedView";
 import { WatchView } from "./components/WatchView";
+import {
+  buildFeedbackPayload,
+  channelMatchesVideo,
+  feedbackTargetIds,
+  feedbackToastCopy
+} from "./components/feedback-client";
 import { authedHeaders, normalize } from "./components/video-utils";
 import { fetchStartupFeed } from "../lib/feed/startup-request";
 import type {
@@ -105,6 +113,18 @@ export default function Home() {
   const [settings, setSettings] = useState<UserSettings>({});
   const [settingsError, setSettingsError] = useState("");
   const [savingSettings, setSavingSettings] = useState(false);
+  const [feedbackPending, setFeedbackPending] = useState<{ action: CardFeedbackAction; videoId: string } | null>(null);
+  const [feedbackNotice, setFeedbackNotice] = useState<{
+    kind: "removed" | "muted" | "error";
+    title: string;
+    detail: string;
+    action?: CardFeedbackAction;
+    video?: FeedVideo;
+    removedIds?: string[];
+    key: number;
+  } | null>(null);
+  const feedbackNoticeTimerRef = useRef<number | null>(null);
+  const feedbackSnapshotRef = useRef<{ videos: FeedVideo[]; search: FeedVideo[] | null; active: FeedVideo | null } | null>(null);
   const videoRef = useRef<HTMLIFrameElement | null>(null);
   const pendingVideoIdRef = useRef<string | null>(null);
   const pendingVideoRestoreInFlightRef = useRef<string | null>(null);
@@ -1146,6 +1166,125 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function dismissFeedbackNotice() {
+    if (feedbackNoticeTimerRef.current !== null) {
+      window.clearTimeout(feedbackNoticeTimerRef.current);
+      feedbackNoticeTimerRef.current = null;
+    }
+    setFeedbackNotice(null);
+  }
+
+  function showFeedbackNotice(notice: NonNullable<typeof feedbackNotice>) {
+    if (feedbackNoticeTimerRef.current !== null) {
+      window.clearTimeout(feedbackNoticeTimerRef.current);
+    }
+    setFeedbackNotice(notice);
+    feedbackNoticeTimerRef.current = window.setTimeout(() => {
+      setFeedbackNotice(null);
+      feedbackNoticeTimerRef.current = null;
+    }, notice.kind === "error" ? 8000 : 7000);
+  }
+
+  async function submitContentFeedback(action: CardFeedbackAction, video: FeedVideo) {
+    if (!profileId || feedbackPending) {
+      return;
+    }
+
+    const targetPool = searchResults ?? homeVideos;
+    const removedIds = feedbackTargetIds(action, video, targetPool);
+    const visibleIds = new Set(removedIds.length > 0 ? removedIds : [video.id]);
+    const isWatchTarget = activeVideo?.id === video.id;
+    const wasWatchingMutedChannel = isWatchTarget && action === "muteChannel";
+
+    // Optimistic removal: cards vanish immediately and the watch view steps aside.
+    feedbackSnapshotRef.current = {
+      videos: feed?.videos ?? [],
+      search: searchResults,
+      active: activeVideo
+    };
+    if (removedIds.length > 0) {
+      const removed = new Set(removedIds);
+      setFeed((current) =>
+        current ? { ...current, videos: current.videos.filter((item) => !removed.has(item.id)) } : current
+      );
+      setSearchResults((current) =>
+        current ? current.filter((item) => !removed.has(item.id)) : current
+      );
+    }
+    if (wasWatchingMutedChannel) {
+      const nextUp = sideVideos.find((item) => !channelMatchesVideo(item, video)) || null;
+      setActiveVideo(nextUp);
+      if (nextUp) {
+        writeRoute(section, nextUp.id);
+      } else {
+        writeRoute(section);
+      }
+    } else if (isWatchTarget && action !== "muteChannel") {
+      // Keep playback open for single-video feedback; only recommendations change.
+    }
+
+    setFeedbackPending({ action, videoId: video.id });
+    setError("");
+
+    try {
+      const response = await authedFetch("/api/feedback", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(buildFeedbackPayload(profileId, action, video))
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) {
+        throw new Error(typeof data.error === "string" && data.error ? data.error : "Could not save feedback.");
+      }
+
+      const copy = feedbackToastCopy(action, video, visibleIds.size);
+      showFeedbackNotice({
+        kind: action === "muteChannel" ? "muted" : "removed",
+        title: copy.title,
+        detail: copy.detail,
+        action,
+        video,
+        removedIds: [...visibleIds],
+        key: Date.now()
+      });
+
+      // Refresh feed state so the pool refills behind the optimistic removal.
+      if (searchResults !== null) {
+        const query = (searchedQuery || searchQuery).trim();
+        if (query) {
+          await searchForVideos(query);
+        }
+      } else if (section === "home") {
+        await requestFeed({ resetFeed: true, buildIfMissing: true });
+      }
+    } catch (caught) {
+      // Recovery: restore the exact pre-feedback view and surface a retry.
+      const snapshot = feedbackSnapshotRef.current;
+      if (snapshot) {
+        setFeed((current) => (current ? { ...current, videos: snapshot.videos } : current));
+        setSearchResults(snapshot.search);
+        if (activeVideo?.id !== snapshot.active?.id) {
+          setActiveVideo(snapshot.active);
+          if (snapshot.active) {
+            writeRoute(section, snapshot.active.id);
+          }
+        }
+      }
+      const message = caught instanceof Error ? caught.message : "Could not save feedback.";
+      showFeedbackNotice({
+        kind: "error",
+        title: "Feedback not saved",
+        detail: `${message} Your feed was restored — try again.`,
+        action,
+        video,
+        key: Date.now()
+      });
+    } finally {
+      feedbackSnapshotRef.current = null;
+      setFeedbackPending(null);
+    }
+  }
+
   return (
     <main className="app-shell">
       <TopBar
@@ -1218,6 +1357,58 @@ export default function Home() {
         }}
       />
 
+      {feedbackNotice && (
+        <div
+          className={`feedback-toast ${feedbackNotice.kind}`}
+          role={feedbackNotice.kind === "error" ? "alert" : "status"}
+          aria-live="polite"
+        >
+          <span className="feedback-toast-icon" aria-hidden="true">
+            {feedbackNotice.kind === "error" ? (
+              <X size={17} />
+            ) : feedbackNotice.action === "notInterested" ? (
+              <ThumbsDown size={17} />
+            ) : feedbackNotice.action === "hideVideo" ? (
+              <EyeOff size={17} />
+            ) : feedbackNotice.action === "muteChannel" ? (
+              <BellOff size={17} />
+            ) : (
+              <BellOff size={17} />
+            )}
+          </span>
+          <div className="feedback-toast-copy">
+            <strong>{feedbackNotice.title}</strong>
+            <span>{feedbackNotice.detail}</span>
+          </div>
+          {feedbackNotice.kind === "error" && feedbackNotice.action && feedbackNotice.video ? (
+            <button
+              type="button"
+              className="feedback-toast-retry"
+              onClick={() => {
+                const retry = feedbackNotice.video;
+                const retryAction = feedbackNotice.action;
+                dismissFeedbackNotice();
+                if (retry && retryAction) {
+                  void submitContentFeedback(retryAction, retry);
+                }
+              }}
+            >
+              Try again
+            </button>
+          ) : null}
+          <button type="button" className="feedback-toast-dismiss" onClick={dismissFeedbackNotice} aria-label="Dismiss feedback notice">
+            <X size={15} aria-hidden="true" />
+          </button>
+        </div>
+      )}
+
+      {feedbackPending && (
+        <p className="feedback-pending sr-only" role="status" aria-live="polite">
+          <LoaderCircle size={14} aria-hidden="true" className="spinner" />
+          Saving feedback…
+        </p>
+      )}
+
       {activeVideo && (
         <WatchView
           key={activeVideo.id}
@@ -1230,10 +1421,12 @@ export default function Home() {
           savedVideoIds={savedVideoIds}
           likedVideoIds={likedVideoIds}
           profileId={profileId}
+          feedbackPendingAction={feedbackPending?.videoId === activeVideo.id ? feedbackPending.action : null}
           onSelectVideo={openVideo}
           onLoadMoreSideVideos={() => requestFeed()}
           onSaveVideo={saveVideo}
           onLikeVideo={likeVideo}
+          onFeedback={submitContentFeedback}
           onAddChannel={addChannel}
           onRemoveChannel={removeChannel}
           onPlaybackStateChange={(playing) => {
@@ -1272,6 +1465,9 @@ export default function Home() {
           onSelectVideo={openVideo}
           onSaveVideo={saveVideo}
           onLikeVideo={likeVideo}
+          onFeedback={searchResults !== null || section === "home" ? submitContentFeedback : undefined}
+          feedbackPendingVideoId={feedbackPending?.videoId ?? null}
+          feedbackPendingAction={feedbackPending?.action ?? null}
           onVideoImpression={section === "home" ? recordVideoImpression : undefined}
           onAddChannel={addChannel}
           onRemoveChannel={removeChannel}
