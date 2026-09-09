@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { BellOff, Bookmark, EyeOff, LoaderCircle, ThumbsDown, X } from "lucide-react";
+import { BellOff, EyeOff, LoaderCircle, ThumbsDown, X } from "lucide-react";
 
 import type { CardFeedbackAction } from "./components/VideoActions";
 import { ProfileModal } from "./components/ProfileModal";
@@ -131,8 +131,6 @@ export default function Home() {
     removedIds?: string[];
     key: number;
   } | null>(null);
-  const [saveNotice, setSaveNotice] = useState<{ video: FeedVideo; key: number } | null>(null);
-  const saveNoticeTimerRef = useRef<number | null>(null);
   const feedbackNoticeTimerRef = useRef<number | null>(null);
   const feedbackSnapshotRef = useRef<{ videos: FeedVideo[]; search: FeedVideo[] | null; active: FeedVideo | null } | null>(null);
   const [savedFilter, setSavedFilter] = useState<SavedFilter>({ folderId: null, tagId: null, query: "" });
@@ -842,10 +840,14 @@ export default function Home() {
     try {
       const body = await savedCollections.toggleSave(video, alreadySaved);
       syncSavedCollectionsSnapshot(body);
-      // Saving is one click. The organize dialog is offered as an optional
-      // follow-up in the toast instead of blocking every save.
       if (!alreadySaved) {
-        showSaveNotice(video);
+        const savedItem = body.items?.find((item) => item.video.id === video.id);
+        setSaveDialog({
+          videoId: video.id,
+          folderIds: savedItem?.folders.map((folder) => folder.id) || [],
+          tagIds: savedItem?.tags.map((tag) => tag.id) || [],
+          note: savedItem?.note || ""
+        });
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not save this video.");
@@ -1202,32 +1204,6 @@ export default function Home() {
     setFeedbackNotice(null);
   }
 
-  function showSaveNotice(video: FeedVideo) {
-    if (saveNoticeTimerRef.current !== null) {
-      window.clearTimeout(saveNoticeTimerRef.current);
-    }
-    setSaveNotice({ video, key: Date.now() });
-    saveNoticeTimerRef.current = window.setTimeout(() => {
-      setSaveNotice(null);
-      saveNoticeTimerRef.current = null;
-    }, 7000);
-  }
-
-  function openOrganizeDialog(video: FeedVideo) {
-    if (saveNoticeTimerRef.current !== null) {
-      window.clearTimeout(saveNoticeTimerRef.current);
-      saveNoticeTimerRef.current = null;
-    }
-    setSaveNotice(null);
-    const savedItem = savedItems.find((item) => item.video.id === video.id);
-    setSaveDialog({
-      videoId: video.id,
-      folderIds: savedItem?.folders.map((folder) => folder.id) || [],
-      tagIds: savedItem?.tags.map((tag) => tag.id) || [],
-      note: savedItem?.note || ""
-    });
-  }
-
   function showFeedbackNotice(notice: NonNullable<typeof feedbackNotice>) {
     if (feedbackNoticeTimerRef.current !== null) {
       window.clearTimeout(feedbackNoticeTimerRef.current);
@@ -1465,39 +1441,6 @@ export default function Home() {
           setShowSettings(true);
         }}
       />
-
-      {saveNotice && !saveDialog && (
-        <div className="feedback-toast saved" role="status" aria-live="polite">
-          <span className="feedback-toast-icon" aria-hidden="true">
-            <Bookmark size={17} />
-          </span>
-          <div className="feedback-toast-copy">
-            <strong>Saved</strong>
-            <span>“{saveNotice.video.title}” is in your saved library.</span>
-          </div>
-          <button
-            type="button"
-            className="feedback-toast-retry"
-            onClick={() => openOrganizeDialog(saveNotice.video)}
-          >
-            Organize
-          </button>
-          <button
-            type="button"
-            className="feedback-toast-dismiss"
-            onClick={() => {
-              if (saveNoticeTimerRef.current !== null) {
-                window.clearTimeout(saveNoticeTimerRef.current);
-                saveNoticeTimerRef.current = null;
-              }
-              setSaveNotice(null);
-            }}
-            aria-label="Dismiss save notice"
-          >
-            <X size={15} aria-hidden="true" />
-          </button>
-        </div>
-      )}
 
       {feedbackNotice && (
         <div
