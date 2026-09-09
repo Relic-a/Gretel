@@ -90,3 +90,27 @@ export type UserSettings = {
   openRouterModel?: string;
   developerAnalytics?: boolean;
 };
+
+export type SavedCollection = {
+  id: string;
+  name: string;
+  createdAt: number;
+  updatedAt: number;
+};
+
+export type SavedItem = {
+  video: FeedVideo;
+  savedAt: number;
+  updatedAt: number;
+  note: string;
+  folders: SavedCollection[];
+  tags: SavedCollection[];
+};
+
+export type SavedCollectionsResponse = {
+  items: SavedItem[];
+  videos: FeedVideo[];
+  savedVideoIds: string[];
+  folders: SavedCollection[];
+  tags: SavedCollection[];
+};

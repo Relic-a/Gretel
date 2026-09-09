@@ -6,6 +6,8 @@ import { ProfileModal } from "./components/ProfileModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { TopBar } from "./components/TopBar";
 import { FeedView } from "./components/FeedView";
+import { SavedWorkspace, type SavedFilter } from "./components/SavedWorkspace";
+import { useSavedCollections, type SavedCollectionsResult } from "./components/use-saved-collections";
 import { WatchView } from "./components/WatchView";
 import { authedHeaders, normalize } from "./components/video-utils";
 import { fetchStartupFeed } from "../lib/feed/startup-request";
@@ -15,6 +17,7 @@ import type {
   FeedVideo,
   Profile,
   PublicGretelConfig,
+  SavedCollectionsResponse,
   UserSettings
 } from "./types";
 
@@ -70,6 +73,10 @@ export default function Home() {
   const [section, setSection] = useState<Section>("home");
   const [savedVideos, setSavedVideos] = useState<FeedVideo[]>([]);
   const [historyVideos, setHistoryVideos] = useState<FeedVideo[]>([]);
+  const savedCollections = useSavedCollections(profileId, authedFetch);
+  const savedItems = savedCollections.state.items;
+  const savedFolders = savedCollections.state.folders;
+  const savedTags = savedCollections.state.tags;
   const [savedVideoIds, setSavedVideoIds] = useState<Set<string>>(new Set());
   const [likedVideoIds, setLikedVideoIds] = useState<Set<string>>(new Set());
   const [activeVideo, setActiveVideo] = useState<FeedVideo | null>(null);
@@ -105,6 +112,7 @@ export default function Home() {
   const [settings, setSettings] = useState<UserSettings>({});
   const [settingsError, setSettingsError] = useState("");
   const [savingSettings, setSavingSettings] = useState(false);
+  const [savedFilter, setSavedFilter] = useState<SavedFilter>({ folderId: null, tagId: null, query: "" });
   const videoRef = useRef<HTMLIFrameElement | null>(null);
   const pendingVideoIdRef = useRef<string | null>(null);
   const pendingVideoRestoreInFlightRef = useRef<string | null>(null);
@@ -720,6 +728,11 @@ export default function Home() {
     await requestFeed({ resetFeed: true });
   }
 
+  function syncSavedCollectionsSnapshot(body: SavedCollectionsResult) {
+    setSavedVideos(body.videos || []);
+    setSavedVideoIds(new Set(body.savedVideoIds || []));
+  }
+
   async function openSaved() {
     resetSearchRequest();
     setError("");
@@ -729,9 +742,13 @@ export default function Home() {
     setActiveVideo(null);
     writeRoute("saved");
     try {
-      await loadSavedVideos(profileId);
+      const body = await savedCollections.refresh(profileId);
+      if (body) {
+        syncSavedCollectionsSnapshot(body);
+      }
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Could not load saved videos.");
+      const message = caught instanceof Error ? caught.message : "Could not load saved videos.";
+      setError(message);
     }
   }
 
@@ -755,15 +772,10 @@ export default function Home() {
       return;
     }
 
-    const response = await authedFetch(`/api/saved-videos?profileId=${encodeURIComponent(nextProfileId)}`);
-    const data = await response.json();
-
-    if (!response.ok) {
-      throw new Error(data.error || "Could not load saved videos.");
+    const body = await savedCollections.refresh(nextProfileId);
+    if (body) {
+      syncSavedCollectionsSnapshot(body);
     }
-
-    setSavedVideos(data.videos || []);
-    setSavedVideoIds(new Set(data.savedVideoIds || []));
   }
 
   async function loadLikedVideos(nextProfileId = profileId) {
@@ -801,25 +813,22 @@ export default function Home() {
       return;
     }
 
-    const response = await authedFetch("/api/saved-videos", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        profileId,
-        video,
-        videoId: video.id,
-        action: savedVideoIds.has(video.id) ? "unsave" : "save"
-      })
-    });
-    const data = await response.json();
-
-    if (!response.ok) {
-      setError(data.error || "Could not save this video.");
-      return;
+    try {
+      const body = await savedCollections.toggleSave(video, savedVideoIds.has(video.id));
+      syncSavedCollectionsSnapshot(body);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Could not save this video.");
     }
+  }
 
-    setSavedVideos(data.videos || []);
-    setSavedVideoIds(new Set(data.savedVideoIds || []));
+  async function updateSavedItem(videoId: string, update: { note?: string; folderIds?: string[]; tagIds?: string[] }) {
+    const body = await savedCollections.mutate({ action: "update-item", payload: { videoId, ...update } });
+    syncSavedCollectionsSnapshot(body);
+  }
+
+  async function savedCollectionMutation(action: string, payload: Record<string, unknown> = {}) {
+    const body = await savedCollections.mutate({ action, payload });
+    syncSavedCollectionsSnapshot(body);
   }
 
   async function likeVideo(video: FeedVideo) {
@@ -1245,14 +1254,40 @@ export default function Home() {
 
       {error && !manageProfiles && !needsProfile && <p className="error page-error">{error}</p>}
 
-      {booted && !searching && (visibleVideos.length > 0 || (loading && section === "home")) && !activeVideo && (
+      {booted && section === "saved" && !activeVideo && searchResults === null && (
+        <SavedWorkspace
+          items={savedItems}
+          folders={savedFolders}
+          tags={savedTags}
+          savedVideoIds={savedVideoIds}
+          loading={savedCollections.state.loading && savedItems.length === 0}
+          refreshing={savedCollections.state.loading && savedItems.length > 0}
+          error={savedCollections.state.error}
+          filter={savedFilter}
+          onFilterChange={setSavedFilter}
+          onSelectVideo={openVideo}
+          onToggleSave={saveVideo}
+          onUpdateItem={updateSavedItem}
+          onCreateFolder={(name) => savedCollectionMutation("create-folder", { name })}
+          onRenameFolder={(folderId, name) => savedCollectionMutation("rename-folder", { folderId, name })}
+          onDeleteFolder={(folderId) => savedCollectionMutation("delete-folder", { folderId })}
+          onCreateTag={(name) => savedCollectionMutation("create-tag", { name })}
+          onRenameTag={(tagId, name) => savedCollectionMutation("rename-tag", { tagId, name })}
+          onDeleteTag={(tagId) => savedCollectionMutation("delete-tag", { tagId })}
+          onRetry={() => {
+            void loadSavedVideos(profileId).catch((caught) =>
+              setError(caught instanceof Error ? caught.message : "Could not load saved videos.")
+            );
+          }}
+        />
+      )}
+
+      {booted && !searching && searchResults === null && section !== "saved" && (visibleVideos.length > 0 || (loading && section === "home")) && !activeVideo && (
         <FeedView
-          title={searchResults !== null ? `Search results for “${searchedQuery || searchQuery.trim()}”` : section === "saved" ? "Saved" : section === "history" ? "History" : ""}
+          title={searchResults !== null ? `Search results for “${searchedQuery || searchQuery.trim()}”` : section === "history" ? "History" : ""}
           subtitle={
             searchResults !== null
               ? "Results are filtered against this profile’s interests."
-              : section === "saved"
-              ? "Videos you saved for later."
               : section === "history"
               ? "Videos that crossed your watch threshold."
               : ""
@@ -1278,8 +1313,8 @@ export default function Home() {
         />
       )}
 
-      {booted && !searching && section !== "home" && visibleVideos.length === 0 && !activeVideo && (
-        <p className="empty-state">{section === "saved" ? "No saved videos yet." : "No watched videos yet."}</p>
+      {booted && !searching && searchResults === null && section === "history" && visibleVideos.length === 0 && !activeVideo && (
+        <p className="empty-state">No watched videos yet.</p>
       )}
 
       {booted && searchResults !== null && searchResults.length === 0 && !searching && !activeVideo && (
