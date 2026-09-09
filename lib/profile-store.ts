@@ -6,6 +6,11 @@ import { startCacheCleanup } from "./cache-cleanup";
 import { getGretelConfig } from "./feed/config";
 import { hydrateChannelAvatar } from "./feed/channel-avatar-cache";
 import type { VideoInteraction } from "./feed/engagement";
+import {
+  normalizeFeedbackKey,
+  type ContentFeedbackState,
+  type FeedbackAction
+} from "./feed/feedback";
 import type { FeedNodeId, FeedVideo } from "./feed/types";
 import { forgetYoutubeClient } from "./feed/youtube-client";
 import { getDataDir } from "./data-dir";
@@ -32,6 +37,7 @@ let db: Database.Database | null = null;
 let likedVideoTableReady = false;
 let videoImpressionsTableReady = false;
 let videoInteractionTableReady = false;
+let contentFeedbackTableReady = false;
 const activeProfileOperations = new Map<string, number>();
 const destructiveProfileOperations = new Set<string>();
 
@@ -145,6 +151,20 @@ export function getDatabase() {
         PRIMARY KEY (profile_id, video_id),
         FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS content_feedback (
+        profile_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        target_type TEXT NOT NULL,
+        target_key TEXT NOT NULL,
+        video_id TEXT,
+        channel_id TEXT,
+        channel_key TEXT,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        PRIMARY KEY (profile_id, action, target_type, target_key),
+        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+      );
     `);
     ensureProfileColumn("tags_json", "TEXT NOT NULL DEFAULT '[]'");
     ensureProfileColumn("channels_json", "TEXT NOT NULL DEFAULT '[]'");
@@ -215,6 +235,7 @@ export function deleteProfile(profileId: string) {
     runTransaction(() => {
       deleteFeedAlgorithmRows(profileId);
       database.prepare("DELETE FROM video_interactions WHERE profile_id = ?").run(profileId);
+      database.prepare("DELETE FROM content_feedback WHERE profile_id = ?").run(profileId);
       database.prepare("DELETE FROM video_impressions WHERE profile_id = ?").run(profileId);
       database.prepare("DELETE FROM profiles WHERE id = ?").run(profileId);
     });
@@ -236,6 +257,7 @@ export function resetProfile(profileId: string) {
       database.prepare("DELETE FROM saved_videos WHERE profile_id = ?").run(profileId);
       database.prepare("DELETE FROM liked_videos WHERE profile_id = ?").run(profileId);
       database.prepare("DELETE FROM video_interactions WHERE profile_id = ?").run(profileId);
+      database.prepare("DELETE FROM content_feedback WHERE profile_id = ?").run(profileId);
       database.prepare("DELETE FROM video_impressions WHERE profile_id = ?").run(profileId);
       deleteFeedAlgorithmRows(profileId);
       database.prepare("DELETE FROM feed_pool_state WHERE profile_id = ?").run(profileId);
@@ -420,6 +442,107 @@ export function getVideoInteractions(profileId: string) {
   }
 
   return interactions;
+}
+
+export type ContentFeedbackInput = {
+  action: FeedbackAction;
+  videoId?: string;
+  channelId?: string;
+  channelKey?: string;
+  channelName?: string;
+};
+
+export function getContentFeedback(profileId: string): ContentFeedbackState {
+  ensureContentFeedbackTable();
+
+  const rows = getDatabase()
+    .prepare(
+      `SELECT action, video_id, channel_id, channel_key
+       FROM content_feedback
+       WHERE profile_id = ?`
+    )
+    .all(profileId) as Array<{
+      action: string;
+      video_id: string | null;
+      channel_id: string | null;
+      channel_key: string | null;
+    }>;
+
+  const notInterestedVideoIds = new Set<string>();
+  const hiddenVideoIds = new Set<string>();
+  const mutedChannelIds = new Set<string>();
+  const mutedChannelKeys = new Set<string>();
+
+  for (const row of rows) {
+    if (row.action === "notInterested" && row.video_id) {
+      notInterestedVideoIds.add(row.video_id);
+    } else if (row.action === "hideVideo" && row.video_id) {
+      hiddenVideoIds.add(row.video_id);
+    } else if (row.action === "muteChannel") {
+      const channelId = normalizeFeedbackKey(row.channel_id || undefined);
+      const channelKey = normalizeFeedbackKey(row.channel_key || undefined);
+      if (channelId) mutedChannelIds.add(channelId);
+      if (channelKey) mutedChannelKeys.add(channelKey);
+    }
+  }
+
+  return {
+    notInterestedVideoIds,
+    hiddenVideoIds,
+    mutedChannelIds,
+    mutedChannelKeys
+  };
+}
+
+export function applyContentFeedback(profileId: string, input: ContentFeedbackInput) {
+  ensureProfileWritable(profileId);
+  ensureContentFeedbackTable();
+
+  if (!getProfile(profileId)) {
+    return false;
+  }
+
+  const videoId = input.videoId?.trim() || "";
+  const channelId = input.channelId?.trim() || "";
+  const channelKey = normalizeFeedbackKey(input.channelKey || input.channelName);
+  const isVideoAction = input.action === "notInterested" || input.action === "hideVideo";
+  const targetType = isVideoAction ? "video" : "channel";
+  const targetKey = isVideoAction
+    ? videoId
+    : channelId
+      ? `id:${normalizeFeedbackKey(channelId)}`
+      : `key:${channelKey}`;
+
+  if ((isVideoAction && !videoId) || (!isVideoAction && !channelId && !channelKey)) {
+    return false;
+  }
+
+  const now = Date.now();
+  getDatabase()
+    .prepare(
+      `INSERT INTO content_feedback (
+        profile_id, action, target_type, target_key, video_id, channel_id,
+        channel_key, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(profile_id, action, target_type, target_key) DO UPDATE SET
+        video_id = excluded.video_id,
+        channel_id = excluded.channel_id,
+        channel_key = excluded.channel_key,
+        updated_at = excluded.updated_at`
+    )
+    .run(
+      profileId,
+      input.action,
+      targetType,
+      targetKey,
+      videoId || null,
+      channelId || null,
+      channelKey || null,
+      now,
+      now
+    );
+  getDatabase().prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(now, profileId);
+  return true;
 }
 
 export function listHistoryVideos(profileId: string) {
@@ -613,6 +736,29 @@ function ensureVideoInteractionTable() {
     );
   `);
   videoInteractionTableReady = true;
+}
+
+function ensureContentFeedbackTable() {
+  if (contentFeedbackTableReady) {
+    return;
+  }
+
+  getDatabase().exec(`
+    CREATE TABLE IF NOT EXISTS content_feedback (
+      profile_id TEXT NOT NULL,
+      action TEXT NOT NULL,
+      target_type TEXT NOT NULL,
+      target_key TEXT NOT NULL,
+      video_id TEXT,
+      channel_id TEXT,
+      channel_key TEXT,
+      created_at INTEGER NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (profile_id, action, target_type, target_key),
+      FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+    );
+  `);
+  contentFeedbackTableReady = true;
 }
 
 function runTransaction(work: () => void) {

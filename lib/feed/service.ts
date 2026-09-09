@@ -18,6 +18,7 @@ import {
   getCachedTranscriptIntroduction
 } from "./transcription";
 import { applyEngagement } from "./engagement";
+import { filterFeedbackVideos, isFeedbackExcluded, type ContentFeedbackState } from "./feedback";
 import {
   createCandidatePoolFeed,
   describePoolHealth,
@@ -34,6 +35,7 @@ import { getYoutubeClient } from "./youtube-client";
 import {
   beginProfileOperation,
   getProfile,
+  getContentFeedback,
   getVideoImpressionCounts,
   getVideoInteractions,
   getWatchedVideoIds
@@ -128,6 +130,7 @@ export async function serveFeedPage(
 
   const session = getOrCreateServingSession(options.sessionId, profileId, poolKey, options.servedVideoIds);
   const watchedVideoIds = new Set(options.watchedVideoIds || []);
+  const feedback = getContentFeedback(profileId);
   const interactions = getVideoInteractions(profileId);
   let poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
   recordScoringObservation(observation, profileId, poolVideos, "serving");
@@ -136,6 +139,7 @@ export async function serveFeedPage(
     watchedVideoIds,
     excludeVideoIds: session.servedVideoIds,
     interactions,
+    feedback,
     config
   });
   const isLoadMoreRequest = Boolean(options.sessionId) || session.servedVideoIds.size > 0;
@@ -152,6 +156,7 @@ export async function serveFeedPage(
         watchedVideoIds,
         excludeVideoIds: session.servedVideoIds,
         interactions,
+        feedback,
         config
       });
     } catch (expansionError) {
@@ -171,6 +176,7 @@ export async function serveFeedPage(
     watchedVideoIds,
     excludeVideoIds: session.servedVideoIds,
     interactions,
+    feedback,
     config
   });
   const poolById = new Map(poolVideos.map((video) => [video.id, video]));
@@ -193,6 +199,7 @@ export async function serveFeedPage(
     watchedVideoIds,
     excludeVideoIds: session.servedVideoIds,
     interactions,
+    feedback,
     config
   });
 
@@ -408,7 +415,10 @@ export async function searchProfileVideoPage(
             output: { resolvedVideos: resolvedVideos.length }
           });
 
-          const finalResult = hydrateChannelAvatars(resolvedVideos);
+          const finalResult = filterFeedbackVideos(
+            hydrateChannelAvatars(resolvedVideos),
+            getContentFeedback(profileId)
+          );
 
           return { videos: finalResult, reliable };
         } finally {
@@ -427,7 +437,10 @@ export async function searchProfileVideoPage(
   cached.timestamp = Date.now();
   const index = cursor?.page ?? 0;
   const result = await cached.pager.getPage(index);
-  return { videos: result.videos, cursor: result.hasMore ? { session: cached.id, page: index + 1 } : null };
+  return {
+    videos: filterFeedbackVideos(result.videos, getContentFeedback(profileId)),
+    cursor: result.hasMore ? { session: cached.id, page: index + 1 } : null
+  };
 }
 
 const feedBuilds = new Map<string, ReturnType<typeof createFeedOnce>>();
@@ -472,6 +485,7 @@ async function createFeedOnce(
   const poolKey = createFeedPoolKey({ tags: queries, channels, channelSort });
   const watchedVideoIds = new Set(options.watchedVideoIds || []);
   const excludeVideoIds = new Set(options.excludeVideoIds || []);
+  const feedback = getContentFeedback(profileId);
   const initialization: PoolInitialization = options.readOnlyPool
     ? { initialized: false, channelCandidates: [] }
     : await initializePoolOnce(
@@ -494,6 +508,7 @@ async function createFeedOnce(
     watchedVideoIds,
     excludeVideoIds,
     interactions: getVideoInteractions(profileId),
+    feedback,
     config
   });
   let poolHealth = describePoolHealth({
@@ -501,6 +516,7 @@ async function createFeedOnce(
     watchedVideoIds,
     excludeVideoIds,
     interactions: getVideoInteractions(profileId),
+    feedback,
     config
   });
   const expandedPool = await runInitialExpansionCycles(
@@ -522,6 +538,7 @@ async function createFeedOnce(
       watchedVideoIds,
       excludeVideoIds,
       interactions: getVideoInteractions(profileId),
+      feedback,
       config
     });
     poolHealth = describePoolHealth({
@@ -529,6 +546,7 @@ async function createFeedOnce(
       watchedVideoIds,
       excludeVideoIds,
       interactions: getVideoInteractions(profileId),
+      feedback,
       config
     });
   }
@@ -555,6 +573,7 @@ async function createFeedOnce(
       watchedVideoIds,
       excludeVideoIds,
       interactions: getVideoInteractions(profileId),
+      feedback,
       config
     });
     poolHealth = describePoolHealth({
@@ -562,6 +581,7 @@ async function createFeedOnce(
       watchedVideoIds,
       excludeVideoIds,
       interactions: getVideoInteractions(profileId),
+      feedback,
       config
     });
   }
@@ -579,14 +599,16 @@ async function createFeedOnce(
         initialization.channelCandidates,
         profileId,
         watchedVideoIds,
-        config
+        config,
+        feedback
       )
     : await getSubscriptionFastLaneVideos(
         channels,
         channelSort,
         observation,
         profileId,
-        watchedVideoIds
+        watchedVideoIds,
+        feedback
       );
   const poolRecommendations = hydrateChannelAvatars(readyPreview.videos).slice(0, config.feed.maxVideos);
   const videos = orderHomeVideos(
@@ -660,6 +682,7 @@ export async function expandFeedPoolForImpressions(
   const poolKey = createFeedPoolKey({ tags: queries, channels, channelSort });
   const poolState = getFeedPoolState(profileId, poolKey);
   const watchedVideoIds = new Set(options.watchedVideoIds || []);
+  const feedback = getContentFeedback(profileId);
 
   if (!poolState) {
     observation.operations.push({
@@ -679,6 +702,7 @@ export async function expandFeedPoolForImpressions(
     watchedVideoIds,
     excludeVideoIds: new Set(),
     interactions: getVideoInteractions(profileId),
+    feedback,
     config
   });
 
@@ -971,10 +995,12 @@ async function runInitialExpansionCycles(
   let anyExpanded = false;
   let currentPool = poolVideos;
   const interactions = getVideoInteractions(profileId);
+  const feedback = getContentFeedback(profileId);
   const seeds = selectExpansionSeeds({
     videos: currentPool,
     interactions,
     config,
+    feedback,
     seedCount: config.expansion.initialExpansionSeedCount
   });
 
@@ -1036,9 +1062,16 @@ async function expandPool(
   }
 
   const interactions = getVideoInteractions(profileId);
+  const feedback = getContentFeedback(profileId);
   const centroid = getCentroid(profileId, poolKey)?.current || [];
   const scoredPool = poolVideos.map((video) => applyEngagement(video, interactions, config));
-  const seeds = selectExpansionSeeds({ videos: scoredPool, interactions, config, seedCount: options.seedCount });
+  const seeds = selectExpansionSeeds({
+    videos: scoredPool,
+    interactions,
+    config,
+    feedback,
+    seedCount: options.seedCount
+  });
   let admittedVideos = 0;
 
   if (seeds.length === 0) {
@@ -1170,7 +1203,8 @@ async function getSubscriptionFastLaneVideos(
   channelSort: ChannelSort,
   observation: FeedObservation,
   profileId: string,
-  watchedVideoIds: Set<string>
+  watchedVideoIds: Set<string>,
+  feedback: ContentFeedbackState = getContentFeedback(profileId)
 ) {
   const config = getGretelConfig();
 
@@ -1180,19 +1214,21 @@ async function getSubscriptionFastLaneVideos(
 
   const videos = await fetchChannelVideos(channels, channelSort, observation, profileId);
 
-  return selectSubscriptionFastLaneVideos(videos, profileId, watchedVideoIds, config);
+  return selectSubscriptionFastLaneVideos(videos, profileId, watchedVideoIds, config, feedback);
 }
 
 function selectSubscriptionFastLaneVideos(
   videos: FeedVideo[],
   profileId: string,
   watchedVideoIds: Set<string>,
-  config: ReturnType<typeof getGretelConfig>
+  config: ReturnType<typeof getGretelConfig>,
+  feedback: ContentFeedbackState = getContentFeedback(profileId)
 ) {
   const impressionCounts = getVideoImpressionCounts(profileId);
 
   return videos
     .filter((video) => !watchedVideoIds.has(video.id))
+    .filter((video) => !isFeedbackExcluded(video, feedback))
     .map((video, index) => {
       const impressionCount = impressionCounts.get(video.id) || 0;
       const baseScore = videos.length - index;

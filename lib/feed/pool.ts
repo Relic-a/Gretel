@@ -1,5 +1,6 @@
 import { applyEngagement, type VideoInteraction } from "./engagement";
 import type { GretelConfig } from "./config-defaults";
+import { isFeedbackExcluded, type ContentFeedbackState } from "./feedback";
 import type { FeedNodeSummary, FeedVideo } from "./types";
 import { cosineSimilarity } from "./vector-math";
 
@@ -26,6 +27,7 @@ export function createCandidatePoolFeed(input: {
   watchedVideoIds: Set<string>;
   excludeVideoIds?: Set<string>;
   interactions: Map<string, VideoInteraction>;
+  feedback?: ContentFeedbackState;
   config: GretelConfig;
 }) {
   const interactionCount = input.interactions.size;
@@ -33,6 +35,7 @@ export function createCandidatePoolFeed(input: {
   const allPoolVideos = [...input.rootVideos, ...input.channelVideos, ...input.relatedVideos]
     .map((video) => applyEngagement(video, input.interactions, input.config));
   const poolVideos = allPoolVideos
+    .filter((video) => !input.feedback || !isFeedbackExcluded(video, input.feedback))
     .filter((video) => isEligibleForServing(video, input.watchedVideoIds, input.interactions, input.config))
     .filter((video) => !input.excludeVideoIds?.has(video.id))
     .sort((left, right) =>
@@ -55,9 +58,11 @@ export function describePoolHealth(input: {
   watchedVideoIds: Set<string>;
   excludeVideoIds: Set<string>;
   interactions: Map<string, VideoInteraction>;
+  feedback?: ContentFeedbackState;
   config: GretelConfig;
 }): PoolHealth {
   const eligibleVideos = input.videos.filter((video) =>
+    (!input.feedback || !isFeedbackExcluded(video, input.feedback)) &&
     isEligibleForServing(video, input.watchedVideoIds, input.interactions, input.config)
   );
   const excludedClientVideos = eligibleVideos.filter((video) => input.excludeVideoIds.has(video.id)).length;
@@ -86,12 +91,14 @@ export function selectExpansionSeeds(input: {
   videos: FeedVideo[];
   interactions: Map<string, VideoInteraction>;
   config: GretelConfig;
+  feedback?: ContentFeedbackState;
   seedCount?: number;
 }) {
   const isColdStart = input.interactions.size < input.config.feed.coldStartInteractionThreshold;
   const count = input.seedCount ?? input.config.feed.expansionSeedCount;
 
   return [...input.videos]
+    .filter((video) => !input.feedback || !isFeedbackExcluded(video, input.feedback))
     .sort((left, right) => {
       if (isColdStart) {
         return (right.similarityScore || 0) - (left.similarityScore || 0);
