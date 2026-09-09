@@ -5,6 +5,7 @@ import { normalize } from "./video-utils";
 import { TagEditor } from "./TagEditor";
 import { FeedBuildProgress } from "./FeedBuildProgress";
 import { useDialogFocus } from "./use-dialog-focus";
+import { usePopoverDismissal } from "./use-popover-dismissal";
 
 type StepId = "name" | "topics" | "channels" | "key";
 
@@ -73,9 +74,12 @@ export function ProfileModal(props: ProfileModalProps) {
   }, [props.needsOpenRouterKey]);
   const [step, setStep] = useState(0);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const [channelResultsOpen, setChannelResultsOpen] = useState(true);
   const channelInputRef = useRef<HTMLInputElement>(null);
+  const channelEditorRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   useDialogFocus(dialogRef, props.feedOpen, props.onClose);
+  usePopoverDismissal(channelEditorRef, () => setChannelResultsOpen(false), channelResultsOpen);
 
   useEffect(() => {
     setStep((current) => Math.min(current, steps.length - 1));
@@ -173,7 +177,12 @@ export function ProfileModal(props: ProfileModalProps) {
       : "Next";
 
   return (
-    <div className="modal-backdrop">
+    <div
+      className="modal-backdrop"
+      onPointerDown={(event) => {
+        if (props.feedOpen && event.target === event.currentTarget) props.onClose();
+      }}
+    >
       <section
         ref={dialogRef}
         className="profile-modal"
@@ -276,9 +285,11 @@ export function ProfileModal(props: ProfileModalProps) {
                   removeValue={props.onRemoveChannel}
                   placeholder="Search channel"
                   inputRef={channelInputRef}
+                  containerRef={channelEditorRef}
+                  onFocus={() => setChannelResultsOpen(true)}
                   onKeyDown={handleChannelKeyDown}
                   dropdown={
-                    props.channelDraft.trim().length >= 2 ? (
+                    channelResultsOpen && props.channelDraft.trim().length >= 2 ? (
                       <div className="channel-results-popup" role="listbox" aria-label="Channel search results">
                         {props.channelResults.length > 0 ? (
                           props.channelResults.map((channel, index) => {

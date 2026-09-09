@@ -19,7 +19,12 @@ export function SettingsModal(props: SettingsModalProps) {
   useDialogFocus(dialogRef, true, props.onClose);
 
   return (
-    <div className="modal-backdrop">
+    <div
+      className="modal-backdrop"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) props.onClose();
+      }}
+    >
       <section
         ref={dialogRef}
         className="profile-modal settings-modal"

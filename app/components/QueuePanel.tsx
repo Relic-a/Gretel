@@ -1,10 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { GripVertical, ListVideo, Loader2, MoreHorizontal, Play, RotateCcw, Trash2, X } from "lucide-react";
 import type { FeedVideo } from "../types";
 import type { QueueSnapshot } from "./use-playback-queue";
 import { handleThumbnailError, thumbnailFor } from "./video-utils";
+import { usePopoverDismissal } from "./use-popover-dismissal";
 
 type QueuePanelProps = { snapshot: QueueSnapshot | null; loading: boolean; mutating: boolean; error: string; activeVideoId: string; onSelectVideo: (video: FeedVideo) => void; onMove: (videoId: string, toIndex: number) => void; onRemove: (videoId: string) => void; onClear: () => void; onToggleAutoplay: (enabled: boolean) => void; onRetry: () => void; onClose?: () => void };
 
@@ -13,11 +14,14 @@ export function QueuePanel(props: QueuePanelProps) {
   const autoplay = props.snapshot?.autoplayEnabled !== false;
   const currentId = props.snapshot?.currentVideoId ?? null;
   const [draggedId, setDraggedId] = useState<string | null>(null);
+  const optionsRef = useRef<HTMLDetailsElement | null>(null);
+  function closeOptions() { if (optionsRef.current?.open) optionsRef.current.open = false; }
+  usePopoverDismissal(optionsRef, closeOptions);
   function reorderTo(videoId: string, targetId: string) { const from = items.findIndex((video) => video.id === videoId); const to = items.findIndex((video) => video.id === targetId); if (from !== -1 && to !== -1 && from !== to) props.onMove(videoId, to); setDraggedId(null); }
   return <section className="queue-panel queue-drawer" aria-label="Playback queue">
     <div className="queue-head"><div className="queue-title"><h2>Queue</h2><span className="queue-count">{items.length} {items.length === 1 ? "video" : "videos"}</span></div><div className="queue-head-controls">
       <label className="toggle-control queue-autoplay" title="Play the next queued video automatically"><input type="checkbox" checked={autoplay} disabled={!props.snapshot || props.mutating} onChange={(event) => props.onToggleAutoplay(event.target.checked)} aria-label="Autoplay next queued video" /><span className="toggle-track" aria-hidden="true"><span className="toggle-knob" /></span><span className="queue-autoplay-label">Autoplay</span></label>
-      {items.length > 0 && <details className="queue-more"><summary aria-label="Queue options"><MoreHorizontal size={18} /></summary><div><button type="button" disabled={props.mutating} onClick={props.onClear}><Trash2 size={15} /> Clear queue</button></div></details>}
+      {items.length > 0 && <details ref={optionsRef} className="queue-more"><summary aria-label="Queue options"><MoreHorizontal size={18} /></summary><div className="queue-options"><button type="button" disabled={props.mutating} onClick={() => { props.onClear(); closeOptions(); }}><Trash2 size={15} /> Clear queue</button></div></details>}
       {props.onClose && <button type="button" className="queue-close" aria-label="Close queue" onClick={props.onClose}><X size={18} /></button>}
     </div></div>
     {props.loading && !props.snapshot && <div className="queue-state" aria-live="polite"><Loader2 size={18} className="spinner" /> Loading your queue…</div>}

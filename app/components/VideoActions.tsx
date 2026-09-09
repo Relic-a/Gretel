@@ -2,6 +2,7 @@ import { useRef } from "react";
 import { BellOff, EyeOff, LoaderCircle, MoreVertical, ThumbsDown } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import type { FeedVideo } from "../types";
+import { usePopoverDismissal } from "./use-popover-dismissal";
 
 export type CardFeedbackAction = "notInterested" | "hideVideo" | "muteChannel";
 
@@ -35,6 +36,8 @@ export function VideoActions(props: VideoActionsProps) {
       details.open = false;
     }
   }
+
+  usePopoverDismissal(detailsRef, closeMenu);
 
   function handleFeedback(action: CardFeedbackAction) {
     if (busy) {

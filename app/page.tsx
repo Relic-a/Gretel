@@ -139,12 +139,36 @@ export default function Home() {
   const [savedFilter, setSavedFilter] = useState<SavedFilter>({ folderId: null, tagId: null, query: "" });
   const [saveDialog, setSaveDialog] = useState<OrganizeDraft | null>(null);
   const [queueOpen, setQueueOpen] = useState(false);
+  const queueDrawerRef = useRef<HTMLElement | null>(null);
   const [queueNotice, setQueueNotice] = useState(false);
   useEffect(() => {
     if (!queueNotice) return;
     const timer = window.setTimeout(() => setQueueNotice(false), 5000);
     return () => window.clearTimeout(timer);
   }, [queueNotice]);
+  useEffect(() => {
+    function dismissOpenDetails(event: PointerEvent) {
+      const target = event.target as Node;
+      document.querySelectorAll<HTMLDetailsElement>("details[open]").forEach((details) => {
+        if (!details.contains(target)) details.open = false;
+      });
+    }
+    document.addEventListener("pointerdown", dismissOpenDetails);
+    return () => {
+      document.removeEventListener("pointerdown", dismissOpenDetails);
+    };
+  }, []);
+  useEffect(() => {
+    if (!queueOpen) return;
+    function dismissQueueWhenOutside(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (queueDrawerRef.current?.contains(target) || target.closest("[data-queue-trigger]")) return;
+      setQueueOpen(false);
+    }
+    document.addEventListener("pointerdown", dismissQueueWhenOutside);
+    return () => document.removeEventListener("pointerdown", dismissQueueWhenOutside);
+  }, [queueOpen]);
   const videoRef = useRef<HTMLIFrameElement | null>(null);
   const pendingVideoIdRef = useRef<string | null>(null);
   const pendingVideoRestoreInFlightRef = useRef<string | null>(null);
@@ -1423,6 +1447,7 @@ export default function Home() {
         onSearch={submitSearch}
         onRefresh={() => void refreshVideos()}
         onToggleProfileMenu={() => setShowProfileMenu(!showProfileMenu)}
+        onCloseProfileMenu={() => setShowProfileMenu(false)}
         onSelectProfile={(nextProfileId) => {
           resetSearchRequest();
           feedRequestIdRef.current += 1;
@@ -1481,7 +1506,7 @@ export default function Home() {
       />
 
       {queueOpen && (
-        <aside id="global-queue" className="global-queue" aria-label="Queue drawer">
+        <aside ref={queueDrawerRef} id="global-queue" className="global-queue" aria-label="Queue drawer">
           <QueuePanel
             snapshot={queue.snapshot}
             loading={queue.loading}

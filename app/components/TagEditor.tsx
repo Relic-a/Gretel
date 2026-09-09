@@ -10,12 +10,14 @@ export type TagEditorProps = {
   suggestions?: string[];
   dropdown?: React.ReactNode;
   onKeyDown?: (event: React.KeyboardEvent<HTMLInputElement>) => void;
+  onFocus?: () => void;
   inputRef?: React.Ref<HTMLInputElement>;
+  containerRef?: React.Ref<HTMLDivElement>;
 };
 
 export function TagEditor(props: TagEditorProps) {
   return (
-    <div className="tag-editor">
+    <div ref={props.containerRef} className="tag-editor">
       <span className="tag-label">{props.label}</span>
       {props.helperText && <small className="tag-help">{props.helperText}</small>}
       <div className="tag-input-container">
@@ -42,6 +44,7 @@ export function TagEditor(props: TagEditorProps) {
                 props.addValue(props.draft);
               }
             }}
+            onFocus={props.onFocus}
             onBlur={() => {
               if (!props.dropdown) {
                 props.addValue(props.draft);
