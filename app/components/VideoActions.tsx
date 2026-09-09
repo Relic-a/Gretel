@@ -1,6 +1,5 @@
 import { useRef, useState } from "react";
 import { BellOff, Bookmark, EyeOff, Heart, ListPlus, ListVideo, LoaderCircle, MoreVertical, ThumbsDown } from "lucide-react";
-
 import type { KeyboardEvent } from "react";
 import type { FeedVideo } from "../types";
 
@@ -64,27 +63,27 @@ export function VideoActions(props: VideoActionsProps) {
   }
 
   return (
-    <details
-      className={classes}
-      ref={detailsRef}
-      onKeyDown={handleKeyDown}
-      onToggle={(event) => {
-        if (!(event.currentTarget as HTMLDetailsElement).open) {
-          setConfirmingMute(false);
-        }
-      }}
-    >
+    <>
+      <details
+        className={classes}
+        ref={detailsRef}
+        onKeyDown={handleKeyDown}
+        onToggle={(event) => {
+          if (!(event.currentTarget as HTMLDetailsElement).open) {
+            setConfirmingMute(false);
+          }
+        }}
+      >
       <summary aria-label={`Video actions for ${props.video.title}`}>
         <MoreVertical aria-hidden="true" size={18} />
       </summary>
       <div className="actions-popover" role="menu" aria-label={`Actions for ${props.video.title}`}>
         <button type="button" role="menuitem" onClick={() => { props.onLikeVideo(props.video); closeMenu(); }}>
           <Heart aria-hidden="true" size={16} fill={props.liked ? "currentColor" : "none"} />
-          {props.liked ? "Liked" : "Like"}
-        </button>
-        <button type="button" role="menuitem" onClick={() => { props.onSaveVideo(props.video); closeMenu(); }}>
-          <Bookmark aria-hidden="true" size={16} fill={props.saved ? "currentColor" : "none"} />
-          {props.saved ? "Saved" : "Save"}
+          <span>
+            {props.liked ? "Liked" : "Like"}
+            <small>{props.liked ? "Removed from your likes" : "More like this"}</small>
+          </span>
         </button>
         {props.onEnqueueVideo && (
           <button type="button" role="menuitem" onClick={() => { props.onEnqueueVideo?.(props.video); closeMenu(); }}>
@@ -93,7 +92,10 @@ export function VideoActions(props: VideoActionsProps) {
             ) : (
               <ListPlus aria-hidden="true" size={16} />
             )}
-            {props.queued ? "Queued" : "Queue"}
+            <span>
+              {props.queued ? "Queued" : "Queue"}
+              <small>Watch it after this one</small>
+            </span>
           </button>
         )}
         {props.onFeedback && (
@@ -166,5 +168,6 @@ export function VideoActions(props: VideoActionsProps) {
         )}
       </div>
     </details>
+    </>
   );
 }

@@ -556,6 +556,64 @@ button:disabled {
   font-weight: 800;
 }
 
+/* One-tap Save / Queue buttons, revealed over the thumbnail on hover or
+   keyboard focus. Keeps the ⋮ menu for the less common tuning actions. */
+.card-quick-actions {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 0.15s ease, transform 0.15s ease;
+}
+
+.video-card:hover .card-quick-actions,
+.video-card:focus-within .card-quick-actions,
+.card-quick-actions:focus-within {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.quick-action {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: rgb(8 10 20 / 0.82);
+  color: #fff;
+  cursor: pointer;
+  transition: background-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
+}
+
+.quick-action:hover {
+  background: rgb(20 24 40 / 0.95);
+  transform: scale(1.06);
+}
+
+.quick-action:focus-visible {
+  outline: 2px solid var(--color-brand-strong);
+  outline-offset: 2px;
+}
+
+.quick-action.saved,
+.quick-action.queued {
+  color: var(--color-brand-strong);
+  background: rgb(8 10 20 / 0.92);
+}
+
+@media (max-width: 820px) {
+  /* Touch has no hover: keep the quick actions permanently visible. */
+  .card-quick-actions {
+    opacity: 1;
+    transform: none;
+  }
+}
+
 .video-meta {
   display: flex;
   flex-direction: column;
@@ -792,6 +850,16 @@ button:disabled {
 
 .feedback-toast.error {
   border-color: var(--color-danger);
+}
+
+.feedback-toast.saved {
+  border-color: var(--color-brand);
+}
+
+.feedback-toast.saved .feedback-toast-retry {
+  border-color: var(--color-brand);
+  background: var(--color-brand-soft);
+  color: var(--color-brand-strong);
 }
 
 .feedback-toast-icon {
@@ -3794,6 +3862,24 @@ button.saved-chip.small {
   display: flex;
   align-items: center;
   gap: 4px;
+  /* Reorder controls stay out of the way until the row matters. */
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.queue-item:hover .queue-item-controls,
+.queue-item:focus-within .queue-item-controls {
+  opacity: 1;
+}
+
+.queue-remove {
+  display: grid;
+}
+
+@media (hover: none) {
+  .queue-item-controls {
+    opacity: 1;
+  }
 }
 
 .queue-icon-button {
