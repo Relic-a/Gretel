@@ -172,17 +172,17 @@ export function QueuePanel(props: QueuePanelProps) {
                     >
                       <ArrowDown aria-hidden="true" size={15} />
                     </button>
-                    <button
-                      type="button"
-                      className="queue-icon-button danger"
-                      disabled={busy}
-                      onClick={() => props.onRemove(video.id)}
-                      aria-label={`Remove ${video.title} from the queue`}
-                      title="Remove"
-                    >
-                      <X aria-hidden="true" size={15} />
-                    </button>
                   </span>
+                  <button
+                    type="button"
+                    className="queue-icon-button danger queue-remove"
+                    disabled={busy}
+                    onClick={() => props.onRemove(video.id)}
+                    aria-label={`Remove ${video.title} from the queue`}
+                    title="Remove"
+                  >
+                    <X aria-hidden="true" size={15} />
+                  </button>
                 </li>
               );
             })}
