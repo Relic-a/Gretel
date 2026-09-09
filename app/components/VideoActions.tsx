@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { BellOff, Bookmark, EyeOff, Heart, LoaderCircle, MoreVertical, ThumbsDown } from "lucide-react";
+import { BellOff, Bookmark, EyeOff, Heart, ListPlus, ListVideo, LoaderCircle, MoreVertical, ThumbsDown } from "lucide-react";
 
 import type { KeyboardEvent } from "react";
 import type { FeedVideo } from "../types";
@@ -10,11 +10,13 @@ type VideoActionsProps = {
   video: FeedVideo;
   saved: boolean;
   liked: boolean;
+  queued?: boolean;
   className?: string;
   pendingAction?: CardFeedbackAction | null;
   onSaveVideo: (video: FeedVideo) => void;
   onLikeVideo: (video: FeedVideo) => void;
   onFeedback?: (action: CardFeedbackAction, video: FeedVideo) => void;
+  onEnqueueVideo?: (video: FeedVideo) => void;
 };
 
 const feedbackLabels: Record<CardFeedbackAction, string> = {
@@ -84,6 +86,16 @@ export function VideoActions(props: VideoActionsProps) {
           <Bookmark aria-hidden="true" size={16} fill={props.saved ? "currentColor" : "none"} />
           {props.saved ? "Saved" : "Save"}
         </button>
+        {props.onEnqueueVideo && (
+          <button type="button" role="menuitem" onClick={() => { props.onEnqueueVideo?.(props.video); closeMenu(); }}>
+            {props.queued ? (
+              <ListVideo aria-hidden="true" size={16} />
+            ) : (
+              <ListPlus aria-hidden="true" size={16} />
+            )}
+            {props.queued ? "Queued" : "Queue"}
+          </button>
+        )}
         {props.onFeedback && (
           <>
             <div className="actions-separator" role="separator" aria-hidden="true" />

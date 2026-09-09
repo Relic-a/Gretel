@@ -165,6 +165,15 @@ export function getDatabase() {
         PRIMARY KEY (profile_id, action, target_type, target_key),
         FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
       );
+
+      CREATE TABLE IF NOT EXISTS playback_queues (
+        profile_id TEXT PRIMARY KEY,
+        items_json TEXT NOT NULL DEFAULT '[]',
+        current_video_id TEXT,
+        autoplay_enabled INTEGER NOT NULL DEFAULT 1,
+        updated_at INTEGER NOT NULL,
+        FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+      );
     `);
     ensureProfileColumn("tags_json", "TEXT NOT NULL DEFAULT '[]'");
     ensureProfileColumn("channels_json", "TEXT NOT NULL DEFAULT '[]'");
@@ -259,6 +268,7 @@ export function resetProfile(profileId: string) {
       database.prepare("DELETE FROM video_interactions WHERE profile_id = ?").run(profileId);
       database.prepare("DELETE FROM content_feedback WHERE profile_id = ?").run(profileId);
       database.prepare("DELETE FROM video_impressions WHERE profile_id = ?").run(profileId);
+      database.prepare("DELETE FROM playback_queues WHERE profile_id = ?").run(profileId);
       deleteFeedAlgorithmRows(profileId);
       database.prepare("DELETE FROM feed_pool_state WHERE profile_id = ?").run(profileId);
       database.prepare("DELETE FROM feed_pool_nodes WHERE profile_id = ?").run(profileId);

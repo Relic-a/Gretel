@@ -14,6 +14,7 @@ type FeedViewProps = {
   subscriptions: Set<string>;
   savedVideoIds: Set<string>;
   likedVideoIds: Set<string>;
+  queuedVideoIds?: Set<string>;
   loading: boolean;
   isBuilding?: boolean;
   canAskForMore: boolean;
@@ -28,6 +29,7 @@ type FeedViewProps = {
   onFeedback?: (action: CardFeedbackAction, video: FeedVideo) => void;
   feedbackPendingVideoId?: string | null;
   feedbackPendingAction?: CardFeedbackAction | null;
+  onEnqueueVideo?: (video: FeedVideo) => void;
   onVideoImpression?: (video: FeedVideo) => void;
   onAddChannel: (channel: string) => void;
   onRemoveChannel: (channel: string) => void;
@@ -125,6 +127,7 @@ export function FeedView(props: FeedViewProps) {
               video={video}
               saved={props.savedVideoIds.has(video.id)}
               liked={props.likedVideoIds.has(video.id)}
+              queued={props.queuedVideoIds?.has(video.id) === true}
               showSubscribe={false}
               subscribed={subscribed}
               onSelectVideo={props.onSelectVideo}
@@ -134,6 +137,7 @@ export function FeedView(props: FeedViewProps) {
               feedbackPendingAction={
                 props.feedbackPendingVideoId === video.id ? props.feedbackPendingAction ?? null : null
               }
+              onEnqueueVideo={props.onEnqueueVideo}
               onImpression={props.onVideoImpression}
               onAddChannel={props.onAddChannel}
               onRemoveChannel={props.onRemoveChannel}

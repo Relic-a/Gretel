@@ -15,6 +15,7 @@ import {
   feedbackTargetIds,
   feedbackToastCopy
 } from "./components/feedback-client";
+import { usePlaybackQueue } from "./components/use-playback-queue";
 import { authedHeaders, normalize } from "./components/video-utils";
 import { fetchStartupFeed } from "../lib/feed/startup-request";
 import type {
@@ -1160,10 +1161,18 @@ export default function Home() {
     setChannels(channels.filter((channel) => normalize(channel) !== normalize(value)));
   }
 
+  const queue = usePlaybackQueue(profileId);
+  const queuedVideoIds = useMemo(
+    () => new Set((queue.snapshot?.items || []).map((video) => video.id)),
+    [queue.snapshot]
+  );
+
   function openVideo(video: FeedVideo) {
     setActiveVideo(video);
     writeRoute(section, video.id);
     window.scrollTo({ top: 0, behavior: "smooth" });
+    // Keep the queue cursor in sync when the user jumps to a queued video.
+    void queue.setCurrentIfQueued(video.id);
   }
 
   function dismissFeedbackNotice() {
@@ -1284,6 +1293,61 @@ export default function Home() {
       setFeedbackPending(null);
     }
   }
+
+  const handleEnqueueVideo = useCallback(
+    (video: FeedVideo) => {
+      void queue.enqueue(video);
+    },
+    [queue]
+  );
+
+  const handlePlayNextQueued = useCallback(async () => {
+    const transition = await queue.advanceNext();
+    if (transition?.kind === "advanced" && transition.video) {
+      setActiveVideo(transition.video);
+      writeRoute(section, transition.video.id);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [queue, section]);
+
+  /** Resolve a YouTube ENDED event: autoplay advances, otherwise playback stays stopped. */
+  const handlePlayerEnded = useCallback(async () => {
+    const transition = await queue.resolveEnded();
+    if (transition?.kind === "advanced" && transition.video) {
+      setActiveVideo(transition.video);
+      writeRoute(section, transition.video.id);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  }, [queue, section]);
+
+  const handleToggleQueueAutoplay = useCallback(
+    (enabled: boolean) => {
+      void queue.setAutoplay(enabled);
+    },
+    [queue]
+  );
+
+  const handleMoveQueuedVideo = useCallback(
+    (videoId: string, toIndex: number) => {
+      void queue.move(videoId, toIndex);
+    },
+    [queue]
+  );
+
+  const handleRemoveQueuedVideo = useCallback(
+    (videoId: string) => {
+      void queue.remove(videoId);
+    },
+    [queue]
+  );
+
+  const handleClearQueue = useCallback(() => {
+    void queue.clear();
+  }, [queue]);
+
+  const handleQueueRetry = useCallback(() => {
+    void queue.refresh();
+  }, [queue]);
 
   return (
     <main className="app-shell">
@@ -1433,6 +1497,19 @@ export default function Home() {
             isPlayingRef.current = playing;
           }}
           onTimeUpdate={handleWatchTimeUpdate}
+          queueSnapshot={queue.snapshot}
+          queueLoading={queue.loading}
+          queueMutating={queue.mutating}
+          queueError={queue.error}
+          queuedVideoIds={queuedVideoIds}
+          onEnqueueVideo={handleEnqueueVideo}
+          onPlayNextQueued={handlePlayNextQueued}
+          onMoveQueuedVideo={handleMoveQueuedVideo}
+          onRemoveQueuedVideo={handleRemoveQueuedVideo}
+          onClearQueue={handleClearQueue}
+          onToggleQueueAutoplay={handleToggleQueueAutoplay}
+          onQueueRetry={handleQueueRetry}
+          onVideoEnded={handlePlayerEnded}
         />
       )}
 
@@ -1454,6 +1531,7 @@ export default function Home() {
           subscriptions={subscriptions}
           savedVideoIds={savedVideoIds}
           likedVideoIds={likedVideoIds}
+          queuedVideoIds={queuedVideoIds}
           loading={searchResults !== null ? loadingSearchMore : loading}
           isBuilding={isBuilding}
           canAskForMore={searchResults !== null ? Boolean(searchCursor) : canAskForMore}
@@ -1468,6 +1546,7 @@ export default function Home() {
           onFeedback={searchResults !== null || section === "home" ? submitContentFeedback : undefined}
           feedbackPendingVideoId={feedbackPending?.videoId ?? null}
           feedbackPendingAction={feedbackPending?.action ?? null}
+          onEnqueueVideo={handleEnqueueVideo}
           onVideoImpression={section === "home" ? recordVideoImpression : undefined}
           onAddChannel={addChannel}
           onRemoveChannel={removeChannel}
