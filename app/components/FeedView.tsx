@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from "react";
 import { LoaderCircle } from "lucide-react";
 
 import type { FeedVideo } from "../types";
+import type { CardFeedbackAction } from "./VideoActions";
 import { normalize } from "./video-utils";
 import { VideoCard } from "./VideoCard";
 import { FeedBuildProgress } from "./FeedBuildProgress";
@@ -24,6 +25,9 @@ type FeedViewProps = {
   onSelectVideo: (video: FeedVideo) => void;
   onSaveVideo: (video: FeedVideo) => void;
   onLikeVideo: (video: FeedVideo) => void;
+  onFeedback?: (action: CardFeedbackAction, video: FeedVideo) => void;
+  feedbackPendingVideoId?: string | null;
+  feedbackPendingAction?: CardFeedbackAction | null;
   onVideoImpression?: (video: FeedVideo) => void;
   onAddChannel: (channel: string) => void;
   onRemoveChannel: (channel: string) => void;
@@ -126,6 +130,10 @@ export function FeedView(props: FeedViewProps) {
               onSelectVideo={props.onSelectVideo}
               onSaveVideo={props.onSaveVideo}
               onLikeVideo={props.onLikeVideo}
+              onFeedback={props.onFeedback}
+              feedbackPendingAction={
+                props.feedbackPendingVideoId === video.id ? props.feedbackPendingAction ?? null : null
+              }
               onImpression={props.onVideoImpression}
               onAddChannel={props.onAddChannel}
               onRemoveChannel={props.onRemoveChannel}

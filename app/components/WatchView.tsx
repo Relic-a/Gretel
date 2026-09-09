@@ -1,13 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  BellOff,
   Bookmark,
   CircleAlert,
   ExternalLink,
+  EyeOff,
   Heart,
+  LoaderCircle,
   MessageCircle,
+  MoreVertical,
   ChevronDown,
   Loader2,
   Pin,
+  ThumbsDown,
 } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -98,11 +103,15 @@ type WatchViewProps = {
   onLoadMoreSideVideos: () => void;
   onSaveVideo: (video: FeedVideo) => void;
   onLikeVideo: (video: FeedVideo) => void;
+  onFeedback?: (action: WatchFeedbackAction, video: FeedVideo) => void;
+  feedbackPendingAction?: WatchFeedbackAction | null;
   onAddChannel: (channel: string) => void;
   onRemoveChannel: (channel: string) => void;
   onPlaybackStateChange?: (playing: boolean) => void;
   onTimeUpdate?: (currentTime: number, duration: number) => void;
 };
+
+export type WatchFeedbackAction = "notInterested" | "hideVideo" | "muteChannel";
 
 type YtComment = {
   author: string;
@@ -527,6 +536,71 @@ export function WatchView(props: WatchViewProps) {
             >
               <Bookmark aria-hidden="true" size={19} fill={saved ? "currentColor" : "none"} />
             </button>
+            {props.onFeedback && (
+              <details className="video-actions watch-feedback-menu">
+                <summary aria-label={`Give feedback on ${props.activeVideo.title}`}>
+                  <MoreVertical aria-hidden="true" size={19} />
+                </summary>
+                <div className="actions-popover" role="menu" aria-label={`Feedback for ${props.activeVideo.title}`}>
+                  <p className="actions-label" aria-hidden="true">Tune recommendations</p>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={props.feedbackPendingAction != null}
+                    aria-label={`Not interested: show fewer videos like ${props.activeVideo.title}`}
+                    title="Show fewer videos like this"
+                    onClick={() => props.onFeedback?.("notInterested", props.activeVideo)}
+                  >
+                    {props.feedbackPendingAction === "notInterested" ? (
+                      <LoaderCircle aria-hidden="true" size={16} className="spinner" />
+                    ) : (
+                      <ThumbsDown aria-hidden="true" size={16} />
+                    )}
+                    <span>
+                      Not interested
+                      <small>Fewer like this</small>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={props.feedbackPendingAction != null}
+                    aria-label={`Hide this video: remove ${props.activeVideo.title} from feeds now`}
+                    title="Removes this video from feeds now"
+                    onClick={() => props.onFeedback?.("hideVideo", props.activeVideo)}
+                  >
+                    {props.feedbackPendingAction === "hideVideo" ? (
+                      <LoaderCircle aria-hidden="true" size={16} className="spinner" />
+                    ) : (
+                      <EyeOff aria-hidden="true" size={16} />
+                    )}
+                    <span>
+                      Hide this video
+                      <small>Removes it now</small>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    role="menuitem"
+                    disabled={props.feedbackPendingAction != null}
+                    className="actions-danger"
+                    aria-label={`Mute channel: hide every video from ${props.activeVideo.author}`}
+                    title={`Hides every video from ${props.activeVideo.author}`}
+                    onClick={() => props.onFeedback?.("muteChannel", props.activeVideo)}
+                  >
+                    {props.feedbackPendingAction === "muteChannel" ? (
+                      <LoaderCircle aria-hidden="true" size={16} className="spinner" />
+                    ) : (
+                      <BellOff aria-hidden="true" size={16} />
+                    )}
+                    <span>
+                      Mute {props.activeVideo.author}
+                      <small>Hides all their videos</small>
+                    </span>
+                  </button>
+                </div>
+              </details>
+            )}
           </div>
 
           {/* Video description */}
@@ -630,17 +704,41 @@ export function WatchView(props: WatchViewProps) {
           <label className="toggle"><span>Autoplay</span><input type="checkbox" defaultChecked /></label>
         </div>
         {visibleSideVideos.map((video) => (
-          <button type="button" className="side-video" key={video.id} onClick={() => props.onSelectVideo(video)}>
-            <span className="side-thumb">
-              <img src={thumbnailFor(video)} loading="lazy" alt="" onError={(e) => handleThumbnailError(e, video.id)} />
-              {video.duration && <span className="duration-pill">{video.duration}</span>}
-            </span>
-            <span className="side-copy">
-              <strong>{video.title}</strong>
-              <small>{video.author}</small>
-              <small>{formatPublished(video)}</small>
-            </span>
-          </button>
+          <div className="side-video-row" key={video.id}>
+            <button type="button" className="side-video" onClick={() => props.onSelectVideo(video)} aria-label={`Play ${video.title} by ${video.author}`}>
+              <span className="side-thumb">
+                <img src={thumbnailFor(video)} loading="lazy" alt="" onError={(e) => handleThumbnailError(e, video.id)} />
+                {video.duration && <span className="duration-pill">{video.duration}</span>}
+              </span>
+              <span className="side-copy">
+                <strong>{video.title}</strong>
+                <small>{video.author}</small>
+                <small>{formatPublished(video)}</small>
+              </span>
+            </button>
+            {props.onFeedback && (
+              <details className="video-actions side-feedback-menu">
+                <summary aria-label={`Recommendations feedback for ${video.title}`}>
+                  <MoreVertical aria-hidden="true" size={16} />
+                </summary>
+                <div className="actions-popover" role="menu" aria-label={`Feedback for ${video.title}`}>
+                  <p className="actions-label" aria-hidden="true">Tune recommendations</p>
+                  <button type="button" role="menuitem" disabled={props.feedbackPendingAction != null} title="Show fewer videos like this" onClick={() => props.onFeedback?.("notInterested", video)}>
+                    <ThumbsDown aria-hidden="true" size={16} />
+                    <span>Not interested<small>Fewer like this</small></span>
+                  </button>
+                  <button type="button" role="menuitem" disabled={props.feedbackPendingAction != null} title="Removes this video from feeds now" onClick={() => props.onFeedback?.("hideVideo", video)}>
+                    <EyeOff aria-hidden="true" size={16} />
+                    <span>Hide this video<small>Removes it now</small></span>
+                  </button>
+                  <button type="button" role="menuitem" disabled={props.feedbackPendingAction != null} className="actions-danger" title={`Hides every video from ${video.author}`} onClick={() => props.onFeedback?.("muteChannel", video)}>
+                    <BellOff aria-hidden="true" size={16} />
+                    <span>Mute {video.author}<small>Hides all their videos</small></span>
+                  </button>
+                </div>
+              </details>
+            )}
+          </div>
         ))}
         <div ref={sideSentinelRef} className="side-sentinel">
           {props.loadingFeed && (
