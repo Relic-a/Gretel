@@ -9,12 +9,14 @@ type VideoCardProps = {
   video: FeedVideo;
   saved: boolean;
   liked: boolean;
+  queued?: boolean;
   showSubscribe: boolean;
   subscribed?: boolean;
   compact?: boolean;
   onSelectVideo: (video: FeedVideo) => void;
   onSaveVideo: (video: FeedVideo) => void;
   onLikeVideo: (video: FeedVideo) => void;
+  onEnqueueVideo?: (video: FeedVideo) => void;
   onImpression?: (video: FeedVideo) => void;
   onAddChannel: (channel: string) => void;
   onRemoveChannel: (channel: string) => void;
@@ -67,8 +69,10 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
             video={props.video}
             saved={props.saved}
             liked={props.liked}
+            queued={props.queued}
             onSaveVideo={props.onSaveVideo}
             onLikeVideo={props.onLikeVideo}
+            onEnqueueVideo={props.onEnqueueVideo}
           />
         </div>
         <div className="channel-line">

@@ -4,6 +4,8 @@ import {
   CircleAlert,
   ExternalLink,
   Heart,
+  ListPlus,
+  ListVideo,
   MessageCircle,
   ChevronDown,
   Loader2,
@@ -13,6 +15,8 @@ import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import type { FeedVideo } from "../types";
+import { QueuePanel } from "./QueuePanel";
+import type { QueueSnapshot } from "./use-playback-queue";
 import { formatPublished, handleThumbnailError, normalize, thumbnailFor, authedHeaders } from "./video-utils";
 import {
   describeYouTubePlayerError,
@@ -102,6 +106,19 @@ type WatchViewProps = {
   onRemoveChannel: (channel: string) => void;
   onPlaybackStateChange?: (playing: boolean) => void;
   onTimeUpdate?: (currentTime: number, duration: number) => void;
+  queueSnapshot: QueueSnapshot | null;
+  queueLoading: boolean;
+  queueMutating: boolean;
+  queueError: string;
+  queuedVideoIds: Set<string>;
+  onEnqueueVideo: (video: FeedVideo) => void;
+  onPlayNextQueued: () => void;
+  onMoveQueuedVideo: (videoId: string, toIndex: number) => void;
+  onRemoveQueuedVideo: (videoId: string) => void;
+  onClearQueue: () => void;
+  onToggleQueueAutoplay: (enabled: boolean) => void;
+  onQueueRetry: () => void;
+  onVideoEnded?: () => void;
 };
 
 type YtComment = {
@@ -221,6 +238,7 @@ export function WatchView(props: WatchViewProps) {
                 try {
                   event.target.stopVideo();
                 } catch {}
+                props.onVideoEnded?.();
                 return;
               }
               const isPlaying = (event.data === window.YT?.PlayerState.PLAYING);
@@ -625,22 +643,54 @@ export function WatchView(props: WatchViewProps) {
         </div>
       </div>
       <div className="side-list">
+        <QueuePanel
+          snapshot={props.queueSnapshot}
+          loading={props.queueLoading}
+          mutating={props.queueMutating}
+          error={props.queueError}
+          activeVideoId={props.activeVideo.id}
+          onSelectVideo={props.onSelectVideo}
+          onPlayNext={props.onPlayNextQueued}
+          onMove={props.onMoveQueuedVideo}
+          onRemove={props.onRemoveQueuedVideo}
+          onClear={props.onClearQueue}
+          onToggleAutoplay={props.onToggleQueueAutoplay}
+          onRetry={props.onQueueRetry}
+        />
         <div className="side-head">
           <h2>Up next</h2>
-          <label className="toggle"><span>Autoplay</span><input type="checkbox" defaultChecked /></label>
+          <span className="side-count" aria-live="polite">
+            {visibleSideVideos.length} videos
+          </span>
         </div>
         {visibleSideVideos.map((video) => (
-          <button type="button" className="side-video" key={video.id} onClick={() => props.onSelectVideo(video)}>
-            <span className="side-thumb">
-              <img src={thumbnailFor(video)} loading="lazy" alt="" onError={(e) => handleThumbnailError(e, video.id)} />
-              {video.duration && <span className="duration-pill">{video.duration}</span>}
-            </span>
-            <span className="side-copy">
-              <strong>{video.title}</strong>
-              <small>{video.author}</small>
-              <small>{formatPublished(video)}</small>
-            </span>
-          </button>
+          <div className="side-video-row" key={video.id}>
+            <button type="button" className="side-video" onClick={() => props.onSelectVideo(video)}>
+              <span className="side-thumb">
+                <img src={thumbnailFor(video)} loading="lazy" alt="" onError={(e) => handleThumbnailError(e, video.id)} />
+                {video.duration && <span className="duration-pill">{video.duration}</span>}
+                {props.queuedVideoIds.has(video.id) && (
+                  <span className="queued-pill" title="In your queue">
+                    <ListVideo aria-hidden="true" size={12} />
+                  </span>
+                )}
+              </span>
+              <span className="side-copy">
+                <strong>{video.title}</strong>
+                <small>{video.author}</small>
+                <small>{formatPublished(video)}</small>
+              </span>
+            </button>
+            <button
+              type="button"
+              className={props.queuedVideoIds.has(video.id) ? "queue-icon-button queued" : "queue-icon-button"}
+              onClick={() => props.onEnqueueVideo(video)}
+              aria-label={props.queuedVideoIds.has(video.id) ? `${video.title} is queued` : `Queue ${video.title}`}
+              title={props.queuedVideoIds.has(video.id) ? "Already queued" : "Add to queue"}
+            >
+              <ListPlus aria-hidden="true" size={16} />
+            </button>
+          </div>
         ))}
         <div ref={sideSentinelRef} className="side-sentinel">
           {props.loadingFeed && (

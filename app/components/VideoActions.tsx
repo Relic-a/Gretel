@@ -1,4 +1,4 @@
-import { Bookmark, Heart, MoreVertical } from "lucide-react";
+import { Bookmark, Heart, ListPlus, ListVideo, MoreVertical } from "lucide-react";
 
 import type { FeedVideo } from "../types";
 
@@ -6,9 +6,11 @@ type VideoActionsProps = {
   video: FeedVideo;
   saved: boolean;
   liked: boolean;
+  queued?: boolean;
   className?: string;
   onSaveVideo: (video: FeedVideo) => void;
   onLikeVideo: (video: FeedVideo) => void;
+  onEnqueueVideo?: (video: FeedVideo) => void;
 };
 
 export function VideoActions(props: VideoActionsProps) {
@@ -28,6 +30,16 @@ export function VideoActions(props: VideoActionsProps) {
           <Bookmark aria-hidden="true" size={16} fill={props.saved ? "currentColor" : "none"} />
           {props.saved ? "Saved" : "Save"}
         </button>
+        {props.onEnqueueVideo && (
+          <button type="button" onClick={() => props.onEnqueueVideo?.(props.video)}>
+            {props.queued ? (
+              <ListVideo aria-hidden="true" size={16} />
+            ) : (
+              <ListPlus aria-hidden="true" size={16} />
+            )}
+            {props.queued ? "Queued" : "Queue"}
+          </button>
+        )}
       </div>
     </details>
   );
