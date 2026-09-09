@@ -20,8 +20,6 @@ import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import type { FeedVideo } from "../types";
-import { QueuePanel } from "./QueuePanel";
-import type { QueueSnapshot } from "./use-playback-queue";
 import { formatPublished, handleThumbnailError, normalize, thumbnailFor, authedHeaders } from "./video-utils";
 import {
   describeYouTubePlayerError,
@@ -113,18 +111,8 @@ type WatchViewProps = {
   onRemoveChannel: (channel: string) => void;
   onPlaybackStateChange?: (playing: boolean) => void;
   onTimeUpdate?: (currentTime: number, duration: number) => void;
-  queueSnapshot: QueueSnapshot | null;
-  queueLoading: boolean;
-  queueMutating: boolean;
-  queueError: string;
   queuedVideoIds: Set<string>;
   onEnqueueVideo: (video: FeedVideo) => void;
-  onPlayNextQueued: () => void;
-  onMoveQueuedVideo: (videoId: string, toIndex: number) => void;
-  onRemoveQueuedVideo: (videoId: string) => void;
-  onClearQueue: () => void;
-  onToggleQueueAutoplay: (enabled: boolean) => void;
-  onQueueRetry: () => void;
   onVideoEnded?: () => void;
 };
 
@@ -554,13 +542,15 @@ export function WatchView(props: WatchViewProps) {
             >
               <Bookmark aria-hidden="true" size={19} fill={saved ? "currentColor" : "none"} />
             </button>
+            <button type="button" className="action-button icon-only" onClick={() => props.onEnqueueVideo(props.activeVideo)} aria-label="Add video to queue" title="Add to queue">
+              <ListPlus aria-hidden="true" size={19} />
+            </button>
             {props.onFeedback && (
               <details className="video-actions watch-feedback-menu">
                 <summary aria-label={`Give feedback on ${props.activeVideo.title}`}>
                   <MoreVertical aria-hidden="true" size={19} />
                 </summary>
                 <div className="actions-popover" role="menu" aria-label={`Feedback for ${props.activeVideo.title}`}>
-                  <p className="actions-label" aria-hidden="true">Tune recommendations</p>
                   <button
                     type="button"
                     role="menuitem"
@@ -574,10 +564,7 @@ export function WatchView(props: WatchViewProps) {
                     ) : (
                       <ThumbsDown aria-hidden="true" size={16} />
                     )}
-                    <span>
-                      Not interested
-                      <small>Fewer like this</small>
-                    </span>
+                    <span>Not interested</span>
                   </button>
                   <button
                     type="button"
@@ -592,10 +579,7 @@ export function WatchView(props: WatchViewProps) {
                     ) : (
                       <EyeOff aria-hidden="true" size={16} />
                     )}
-                    <span>
-                      Hide this video
-                      <small>Removes it now</small>
-                    </span>
+                    <span>Hide from feed</span>
                   </button>
                   <button
                     type="button"
@@ -604,17 +588,14 @@ export function WatchView(props: WatchViewProps) {
                     className="actions-danger"
                     aria-label={`Mute channel: hide every video from ${props.activeVideo.author}`}
                     title={`Hides every video from ${props.activeVideo.author}`}
-                    onClick={() => props.onFeedback?.("muteChannel", props.activeVideo)}
+                    onClick={() => window.confirm(`Don't recommend videos from ${props.activeVideo.author}?`) && props.onFeedback?.("muteChannel", props.activeVideo)}
                   >
                     {props.feedbackPendingAction === "muteChannel" ? (
                       <LoaderCircle aria-hidden="true" size={16} className="spinner" />
                     ) : (
                       <BellOff aria-hidden="true" size={16} />
                     )}
-                    <span>
-                      Mute {props.activeVideo.author}
-                      <small>Hides all their videos</small>
-                    </span>
+                    <span>Don't recommend channel</span>
                   </button>
                 </div>
               </details>
@@ -717,22 +698,8 @@ export function WatchView(props: WatchViewProps) {
         </div>
       </div>
       <div className="side-list">
-        <QueuePanel
-          snapshot={props.queueSnapshot}
-          loading={props.queueLoading}
-          mutating={props.queueMutating}
-          error={props.queueError}
-          activeVideoId={props.activeVideo.id}
-          onSelectVideo={props.onSelectVideo}
-          onPlayNext={props.onPlayNextQueued}
-          onMove={props.onMoveQueuedVideo}
-          onRemove={props.onRemoveQueuedVideo}
-          onClear={props.onClearQueue}
-          onToggleAutoplay={props.onToggleQueueAutoplay}
-          onRetry={props.onQueueRetry}
-        />
         <div className="side-head">
-          <h2>Up next</h2>
+          <h2>Recommended</h2>
           <span className="side-count" aria-live="polite">
             {visibleSideVideos.length} videos
           </span>
@@ -770,18 +737,17 @@ export function WatchView(props: WatchViewProps) {
                   <MoreVertical aria-hidden="true" size={16} />
                 </summary>
                 <div className="actions-popover" role="menu" aria-label={`Feedback for ${video.title}`}>
-                  <p className="actions-label" aria-hidden="true">Tune recommendations</p>
                   <button type="button" role="menuitem" disabled={props.feedbackPendingAction != null} title="Show fewer videos like this" onClick={() => props.onFeedback?.("notInterested", video)}>
                     <ThumbsDown aria-hidden="true" size={16} />
-                    <span>Not interested<small>Fewer like this</small></span>
+                    <span>Not interested</span>
                   </button>
                   <button type="button" role="menuitem" disabled={props.feedbackPendingAction != null} title="Removes this video from feeds now" onClick={() => props.onFeedback?.("hideVideo", video)}>
                     <EyeOff aria-hidden="true" size={16} />
-                    <span>Hide this video<small>Removes it now</small></span>
+                    <span>Hide from feed</span>
                   </button>
-                  <button type="button" role="menuitem" disabled={props.feedbackPendingAction != null} className="actions-danger" title={`Hides every video from ${video.author}`} onClick={() => props.onFeedback?.("muteChannel", video)}>
+                  <button type="button" role="menuitem" disabled={props.feedbackPendingAction != null} className="actions-danger" title={`Don't recommend videos from ${video.author}`} onClick={() => window.confirm(`Don't recommend videos from ${video.author}?`) && props.onFeedback?.("muteChannel", video)}>
                     <BellOff aria-hidden="true" size={16} />
-                    <span>Mute {video.author}<small>Hides all their videos</small></span>
+                    <span>Don't recommend channel</span>
                   </button>
                 </div>
               </details>

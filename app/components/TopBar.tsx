@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Activity, Bookmark, ChevronDown, History, Home, Loader2, RefreshCw, Search, Settings } from "lucide-react";
+import { Activity, Bookmark, ChevronDown, History, Home, ListVideo, Loader2, RefreshCw, Search, Settings } from "lucide-react";
 
 import type { Profile } from "../types";
 
@@ -22,6 +22,9 @@ type TopBarProps = {
   onSelectProfile: (profileId: string) => void;
   onManageProfiles: () => void;
   onOpenSettings: () => void;
+  queueCount: number;
+  queueOpen: boolean;
+  onToggleQueue: () => void;
 };
 
 export function TopBar(props: TopBarProps) {
@@ -70,6 +73,9 @@ export function TopBar(props: TopBarProps) {
         />
       </form>
       <div className="topbar-actions">
+        <button type="button" className={props.queueOpen ? "queue-topbar-button active" : "queue-topbar-button"} onClick={props.onToggleQueue} aria-expanded={props.queueOpen} aria-controls="global-queue" title="Open queue">
+          <ListVideo aria-hidden="true" size={18} /> <span className="queue-topbar-label">Queue</span>{props.queueCount > 0 && <span className="queue-topbar-count">{props.queueCount}</span>}
+        </button>
         <button
           type="button"
           className="settings-button refresh-button"

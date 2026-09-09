@@ -11,6 +11,7 @@ import { FeedView } from "./components/FeedView";
 import { OrganizeDialog, SavedWorkspace, type OrganizeDraft, type SavedFilter } from "./components/SavedWorkspace";
 import { useSavedCollections, type SavedCollectionsResult } from "./components/use-saved-collections";
 import { WatchView } from "./components/WatchView";
+import { QueuePanel } from "./components/QueuePanel";
 import {
   buildFeedbackPayload,
   channelMatchesVideo,
@@ -137,6 +138,13 @@ export default function Home() {
   const feedbackSnapshotRef = useRef<{ videos: FeedVideo[]; search: FeedVideo[] | null; active: FeedVideo | null } | null>(null);
   const [savedFilter, setSavedFilter] = useState<SavedFilter>({ folderId: null, tagId: null, query: "" });
   const [saveDialog, setSaveDialog] = useState<OrganizeDraft | null>(null);
+  const [queueOpen, setQueueOpen] = useState(false);
+  const [queueNotice, setQueueNotice] = useState(false);
+  useEffect(() => {
+    if (!queueNotice) return;
+    const timer = window.setTimeout(() => setQueueNotice(false), 5000);
+    return () => window.clearTimeout(timer);
+  }, [queueNotice]);
   const videoRef = useRef<HTMLIFrameElement | null>(null);
   const pendingVideoIdRef = useRef<string | null>(null);
   const pendingVideoRestoreInFlightRef = useRef<string | null>(null);
@@ -1341,7 +1349,10 @@ export default function Home() {
 
   const handleEnqueueVideo = useCallback(
     (video: FeedVideo) => {
+      const wasEmpty = (queue.snapshot?.items.length ?? 0) === 0;
       void queue.enqueue(video);
+      if (wasEmpty) setQueueOpen(true);
+      else setQueueNotice(true);
     },
     [queue]
   );
@@ -1464,7 +1475,33 @@ export default function Home() {
           setShowProfileMenu(false);
           setShowSettings(true);
         }}
+        queueCount={queue.snapshot?.items.length ?? 0}
+        queueOpen={queueOpen}
+        onToggleQueue={() => setQueueOpen((open) => !open)}
       />
+
+      {queueOpen && (
+        <aside id="global-queue" className="global-queue" aria-label="Queue drawer">
+          <QueuePanel
+            snapshot={queue.snapshot}
+            loading={queue.loading}
+            mutating={queue.mutating}
+            error={queue.error}
+            activeVideoId={activeVideo?.id || ""}
+            onSelectVideo={openVideo}
+            onMove={handleMoveQueuedVideo}
+            onRemove={handleRemoveQueuedVideo}
+            onClear={handleClearQueue}
+            onToggleAutoplay={handleToggleQueueAutoplay}
+            onRetry={handleQueueRetry}
+            onClose={() => setQueueOpen(false)}
+          />
+        </aside>
+      )}
+
+      {queueNotice && !queueOpen && (
+        <div className="feedback-toast queued" role="status" aria-live="polite"><div className="feedback-toast-copy"><strong>Added to queue</strong></div><button className="feedback-toast-retry" onClick={() => { setQueueNotice(false); setQueueOpen(true); }}>View queue</button><button className="feedback-toast-dismiss" aria-label="Dismiss queue notice" onClick={() => setQueueNotice(false)}><X size={15} /></button></div>
+      )}
 
       {saveNotice && !saveDialog && (
         <div className="feedback-toast saved" role="status" aria-live="polite">
@@ -1575,18 +1612,8 @@ export default function Home() {
             isPlayingRef.current = playing;
           }}
           onTimeUpdate={handleWatchTimeUpdate}
-          queueSnapshot={queue.snapshot}
-          queueLoading={queue.loading}
-          queueMutating={queue.mutating}
-          queueError={queue.error}
           queuedVideoIds={queuedVideoIds}
           onEnqueueVideo={handleEnqueueVideo}
-          onPlayNextQueued={handlePlayNextQueued}
-          onMoveQueuedVideo={handleMoveQueuedVideo}
-          onRemoveQueuedVideo={handleRemoveQueuedVideo}
-          onClearQueue={handleClearQueue}
-          onToggleQueueAutoplay={handleToggleQueueAutoplay}
-          onQueueRetry={handleQueueRetry}
           onVideoEnded={handlePlayerEnded}
         />
       )}
