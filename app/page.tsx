@@ -8,7 +8,7 @@ import { ProfileModal } from "./components/ProfileModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { TopBar } from "./components/TopBar";
 import { FeedView } from "./components/FeedView";
-import { SavedWorkspace, type SavedFilter } from "./components/SavedWorkspace";
+import { OrganizeDialog, SavedWorkspace, type OrganizeDraft, type SavedFilter } from "./components/SavedWorkspace";
 import { useSavedCollections, type SavedCollectionsResult } from "./components/use-saved-collections";
 import { WatchView } from "./components/WatchView";
 import {
@@ -134,6 +134,7 @@ export default function Home() {
   const feedbackNoticeTimerRef = useRef<number | null>(null);
   const feedbackSnapshotRef = useRef<{ videos: FeedVideo[]; search: FeedVideo[] | null; active: FeedVideo | null } | null>(null);
   const [savedFilter, setSavedFilter] = useState<SavedFilter>({ folderId: null, tagId: null, query: "" });
+  const [saveDialog, setSaveDialog] = useState<OrganizeDraft | null>(null);
   const videoRef = useRef<HTMLIFrameElement | null>(null);
   const pendingVideoIdRef = useRef<string | null>(null);
   const pendingVideoRestoreInFlightRef = useRef<string | null>(null);
@@ -834,9 +835,20 @@ export default function Home() {
       return;
     }
 
+    const alreadySaved = savedVideoIds.has(video.id);
+
     try {
-      const body = await savedCollections.toggleSave(video, savedVideoIds.has(video.id));
+      const body = await savedCollections.toggleSave(video, alreadySaved);
       syncSavedCollectionsSnapshot(body);
+      if (!alreadySaved) {
+        const savedItem = body.items?.find((item) => item.video.id === video.id);
+        setSaveDialog({
+          videoId: video.id,
+          folderIds: savedItem?.folders.map((folder) => folder.id) || [],
+          tagIds: savedItem?.tags.map((tag) => tag.id) || [],
+          note: savedItem?.note || ""
+        });
+      }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Could not save this video.");
     }
@@ -1548,6 +1560,23 @@ export default function Home() {
             void loadSavedVideos(profileId).catch((caught) =>
               setError(caught instanceof Error ? caught.message : "Could not load saved videos.")
             );
+          }}
+        />
+      )}
+
+      {saveDialog && (
+        <OrganizeDialog
+          draft={saveDialog}
+          folders={savedFolders}
+          tags={savedTags}
+          title="Save to a collection"
+          submitLabel="Done"
+          onClose={() => setSaveDialog(null)}
+          onCreateFolder={(name) => savedCollectionMutation("create-folder", { name })}
+          onCreateTag={(name) => savedCollectionMutation("create-tag", { name })}
+          onSave={async (folderIds, tagIds, note) => {
+            await updateSavedItem(saveDialog.videoId, { folderIds, tagIds, note });
+            setSaveDialog(null);
           }}
         />
       )}

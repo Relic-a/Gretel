@@ -47,10 +47,11 @@ type SavedWorkspaceProps = {
   onRetry: () => void;
 };
 
-type OrganizeDraft = {
+export type OrganizeDraft = {
   videoId: string;
   folderIds: string[];
   tagIds: string[];
+  note?: string;
 };
 
 export function SavedWorkspace(props: SavedWorkspaceProps) {
@@ -246,7 +247,8 @@ export function SavedWorkspace(props: SavedWorkspaceProps) {
                     setOrganizing({
                       videoId: item.video.id,
                       folderIds: item.folders.map((folder) => folder.id),
-                      tagIds: item.tags.map((tag) => tag.id)
+                      tagIds: item.tags.map((tag) => tag.id),
+                      note: item.note
                     })
                   }
                   onPickFolder={(folderId) =>
@@ -286,9 +288,9 @@ export function SavedWorkspace(props: SavedWorkspaceProps) {
           onClose={() => setOrganizing(null)}
           onCreateFolder={props.onCreateFolder}
           onCreateTag={props.onCreateTag}
-          onSave={(folderIds, tagIds) =>
+          onSave={(folderIds, tagIds, note) =>
             runMutation(organizing.videoId, async () => {
-              await props.onUpdateItem(organizing.videoId, { folderIds, tagIds });
+              await props.onUpdateItem(organizing.videoId, { folderIds, tagIds, note });
               setOrganizing(null);
             })
           }
@@ -752,19 +754,22 @@ function SavedCard(props: {
   );
 }
 
-function OrganizeDialog(props: {
+export function OrganizeDialog(props: {
   draft: OrganizeDraft;
   folders: SavedCollection[];
   tags: SavedCollection[];
   onClose: () => void;
   onCreateFolder: (name: string) => Promise<void>;
   onCreateTag: (name: string) => Promise<void>;
-  onSave: (folderIds: string[], tagIds: string[]) => void;
+  onSave: (folderIds: string[], tagIds: string[], note: string) => void | Promise<void>;
+  title?: string;
+  submitLabel?: string;
 }) {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   useDialogFocus(dialogRef, true, props.onClose);
   const [folderIds, setFolderIds] = useState<string[]>(props.draft.folderIds);
   const [tagIds, setTagIds] = useState<string[]>(props.draft.tagIds);
+  const [note, setNote] = useState(props.draft.note || "");
   const [folderDraft, setFolderDraft] = useState("");
   const [tagDraft, setTagDraft] = useState("");
   const [busy, setBusy] = useState(false);
@@ -794,6 +799,18 @@ function OrganizeDialog(props: {
     }
   }
 
+  async function saveDraft() {
+    setBusy(true);
+    setDialogError("");
+    try {
+      await props.onSave(folderIds, tagIds, note);
+    } catch (caught) {
+      setDialogError(caught instanceof Error ? caught.message : "Could not update this saved video.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // Folders/tags refresh underneath this dialog after inline creation; selection
   // state intentionally stays local until the user confirms with Save.
   return (
@@ -808,7 +825,10 @@ function OrganizeDialog(props: {
         onClick={(event) => event.stopPropagation()}
       >
         <div className="modal-head">
-          <h1>Organize</h1>
+          <div>
+            <h1>{props.title || "Organize"}</h1>
+            {props.title && <p className="saved-dialog-copy">Choose where this video should live. It starts in Watch Later.</p>}
+          </div>
           <button type="button" className="icon-button" aria-label="Close organize dialog" onClick={props.onClose}>
             <X aria-hidden="true" size={17} />
           </button>
@@ -885,6 +905,16 @@ function OrganizeDialog(props: {
             </form>
           </div>
         </div>
+        <label className="saved-dialog-note">
+          <span>Note <small>optional</small></span>
+          <textarea
+            rows={3}
+            maxLength={5000}
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="Add a thought, timestamp, or follow-up…"
+          />
+        </label>
         {dialogError && (
           <p className="error" role="alert">
             {dialogError}
@@ -894,11 +924,11 @@ function OrganizeDialog(props: {
           <span className="wizard-count">
             {folderIds.length} folders · {tagIds.length} tags
           </span>
-          <button type="button" className="secondary-button" onClick={props.onClose}>
+          <button type="button" className="secondary-button" onClick={props.onClose} disabled={busy}>
             Cancel
           </button>
-          <button type="button" className="wizard-next" onClick={() => props.onSave(folderIds, tagIds)}>
-            Save
+          <button type="button" className="wizard-next" onClick={() => void saveDraft()} disabled={busy}>
+            {busy ? "Saving…" : props.submitLabel || "Save"}
           </button>
         </div>
       </div>

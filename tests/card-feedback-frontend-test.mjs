@@ -61,6 +61,33 @@ test("feed, cards, and watch view wire optimistic feedback through", () => {
   );
 });
 
+test("card feedback popovers are not clipped by card paint containment", () => {
+  const styles = read("app/styles.css");
+  const openRule = styles.match(/\.video-card:has\(\.video-actions\[open\]\)\s*\{([^}]*)\}/);
+  assert.ok(openRule, "open-card rule must exist to lift the popover above sibling cards");
+  assert.match(openRule[1], /content-visibility:\s*visible/, "open card must drop paint containment or the popover gets clipped");
+  assert.match(openRule[1], /overflow:\s*visible/, "open card must allow overflow for the popover");
+});
+
+function depthAt(css, index) {
+  let depth = 0;
+  for (let i = 0; i < index; i += 1) {
+    if (css[i] === "{") depth += 1;
+    else if (css[i] === "}") depth -= 1;
+  }
+  return depth;
+}
+
+test("queue panel styles live at the top level, not inside a mobile media query", () => {
+  const styles = read("app/styles.css");
+  for (const selector of [".queue-panel {", ".queue-item {", ".queue-thumb {", ".queue-item-controls {", ".queue-icon-button {", ".side-video-row {"]) {
+    const index = styles.indexOf(selector);
+    assert.ok(index !== -1, `${selector} must exist in styles`);
+    const depth = depthAt(styles, index);
+    assert.equal(depth, 0, `${selector} must be a top-level rule (media-query nesting breaks desktop layout), found depth ${depth}`);
+  }
+});
+
 test("feedback helpers preserve saved/history scope and use canonical actions", () => {
   const helper = read("app/components/feedback-client.ts");
   assert.match(helper, /notInterested/, "helper must include notInterested");
