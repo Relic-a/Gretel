@@ -9,6 +9,13 @@ import type { VideoInteraction } from "./feed/engagement";
 import type { FeedNodeId, FeedVideo } from "./feed/types";
 import { forgetYoutubeClient } from "./feed/youtube-client";
 import { getDataDir } from "./data-dir";
+import {
+  clearSavedCollectionsForProfile,
+  initializeSavedCollectionSchema,
+  listSavedItems,
+  removeSavedItem,
+  saveSavedItem
+} from "./saved-collections";
 
 export type GretelProfile = {
   id: string;
@@ -148,6 +155,7 @@ export function getDatabase() {
     `);
     ensureProfileColumn("tags_json", "TEXT NOT NULL DEFAULT '[]'");
     ensureProfileColumn("channels_json", "TEXT NOT NULL DEFAULT '[]'");
+    initializeSavedCollectionSchema(db);
     db.pragma("wal_checkpoint(PASSIVE)");
     startCacheCleanup();
   }
@@ -193,6 +201,8 @@ export function createProfile(name: string, tags: string[] = [], channels: strin
       profile.updatedAt
     );
 
+  initializeSavedCollectionSchema(getDatabase());
+
   return profile;
 }
 
@@ -234,6 +244,7 @@ export function resetProfile(profileId: string) {
     runTransaction(() => {
       database.prepare("DELETE FROM watched_videos WHERE profile_id = ?").run(profileId);
       database.prepare("DELETE FROM saved_videos WHERE profile_id = ?").run(profileId);
+      clearSavedCollectionsForProfile(database, profileId);
       database.prepare("DELETE FROM liked_videos WHERE profile_id = ?").run(profileId);
       database.prepare("DELETE FROM video_interactions WHERE profile_id = ?").run(profileId);
       database.prepare("DELETE FROM video_impressions WHERE profile_id = ?").run(profileId);
@@ -436,22 +447,7 @@ export function listHistoryVideos(profileId: string) {
 }
 
 export function listSavedVideos(profileId: string) {
-  const rows = getDatabase()
-    .prepare(
-      `SELECT video_json
-       FROM saved_videos
-       WHERE profile_id = ?
-       ORDER BY saved_at DESC`
-    )
-    .all(profileId) as Array<{ video_json: string }>;
-
-  return rows.flatMap((row) => {
-    try {
-      return [JSON.parse(row.video_json) as FeedVideo];
-    } catch {
-      return [];
-    }
-  });
+  return listSavedItems(getDatabase(), profileId).map((item) => item.video);
 }
 
 export function getSavedVideoIds(profileId: string) {
@@ -478,7 +474,8 @@ export function saveVideo(profileId: string, video: FeedVideo) {
   }
 
   const savedAt = Date.now();
-  getDatabase()
+  const database = getDatabase();
+  database
     .prepare(
       `INSERT INTO saved_videos (profile_id, video_id, video_json, saved_at)
        VALUES (?, ?, ?, ?)
@@ -488,7 +485,9 @@ export function saveVideo(profileId: string, video: FeedVideo) {
     )
     .run(profileId, video.id, JSON.stringify(video), savedAt);
 
-  getDatabase().prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(savedAt, profileId);
+  saveSavedItem(database, profileId, video, {}, savedAt);
+
+  database.prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(savedAt, profileId);
   return true;
 }
 
@@ -526,10 +525,12 @@ export function unlikeVideo(profileId: string, videoId: string) {
 
 export function unsaveVideo(profileId: string, videoId: string) {
   ensureProfileWritable(profileId);
-  getDatabase()
+  const database = getDatabase();
+  database
     .prepare("DELETE FROM saved_videos WHERE profile_id = ? AND video_id = ?")
     .run(profileId, videoId);
-  getDatabase().prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(Date.now(), profileId);
+  removeSavedItem(database, profileId, videoId);
+  database.prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(Date.now(), profileId);
 }
 
 export function recordVideoInteraction(profileId: string, videoId: string, interaction: { clicked?: boolean; ignoreCount?: number }) {
