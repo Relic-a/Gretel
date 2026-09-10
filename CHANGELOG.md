@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.6.0 — 2026-09-10
+
+### Saved collections
+
+- Save videos into collections with folders, tags, search, and per-item notes.
+- Migrate legacy saved videos into Watch Later without losing metadata.
+- Browse and reorganize saves in a dedicated workspace instead of a flat list.
+
+### Playback queue and autoplay
+
+- Add a persistent playback queue with an up-next panel that survives restarts.
+- Control autoplay and reorder, remove, or jump to queued videos during playback.
+
+### Card and watch feedback
+
+- Add recommendation feedback controls on video cards and in the watch view.
+- Keep the existing optimistic recovery path when a feedback request fails.
+
+### Interface
+
+- Simplify the save, queue, and feedback flow, and keep card actions menus and popovers dismissible without clipping.
+
 ## 0.5.5 — 2026-09-07
 
 ### Home recommendations
