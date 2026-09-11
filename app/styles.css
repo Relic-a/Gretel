@@ -73,9 +73,14 @@ select {
   font: inherit;
 }
 
+/* Reset first: without an explicit surface every unstyled <button> would fall
+   back to the platform widget chrome (a silver "buttonface" slab with unreadable
+   label colour). Every button below opts into its own surface instead. */
 button {
   border: 0;
   cursor: pointer;
+  background: transparent;
+  color: inherit;
 }
 
 button:disabled {
@@ -197,7 +202,7 @@ button:disabled {
   inset: var(--window-titlebar-height) 0 auto;
   z-index: 20;
   display: grid;
-  grid-template-columns: auto minmax(280px, 1fr) minmax(220px, 420px) auto;
+  grid-template-columns: auto minmax(280px, 1fr) minmax(220px, 420px) max-content;
   align-items: stretch;
   height: var(--topbar-height);
   gap: clamp(12px, 2vw, 24px);
@@ -205,6 +210,16 @@ button:disabled {
   background: var(--color-surface);
   border-bottom: 2px solid var(--color-border);
   box-shadow: 0 4px 20px rgb(0 0 0 / 0.5);
+}
+
+/* Promote the fixed top bar onto its own compositor layer so it stops
+   repainting in lockstep with the feed on every scroll frame. Scoped above the
+   compact breakpoint on purpose: below it .section-tabs becomes fixed *inside*
+   the top bar and a transform hint here would re-anchor that bottom tab bar. */
+@media (min-width: 861px) {
+  .topbar {
+    will-change: transform;
+  }
 }
 
 .brand-button {
@@ -445,8 +460,9 @@ button:disabled {
 
 .feed-heading {
   display: grid;
-  grid-template-columns: 1fr;
-  align-items: start;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+  gap: 18px;
   margin-bottom: 30px;
 }
 
@@ -479,7 +495,11 @@ button:disabled {
   position: relative;
   overflow: visible;
   content-visibility: auto;
-  contain-intrinsic-size: auto 360px;
+  /* Must match the real card height (305px border-box => 303px content box).
+     A wrong placeholder made every off-screen row 57px too tall, so the page
+     shrank under the viewport as cards rendered — the feed visibly jumped up
+     and down while scrolling. */
+  contain-intrinsic-size: auto 303px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
   background: var(--color-surface);
@@ -499,14 +519,12 @@ button:disabled {
   box-shadow: 8px 8px 0px var(--color-brand-soft);
 }
 
-.is-scrolling .video-card {
+/* While scrolling we only drop the transition (cheap). We deliberately keep the
+   hover transform: resetting it made the card under the pointer snap back 4px
+   on the first scroll frame and jump again 140ms after the last one. */
+.is-scrolling .video-card,
+.is-scrolling .saved-card {
   transition: none;
-}
-
-.is-scrolling .video-card:hover {
-  transform: none;
-  border-color: var(--color-border);
-  box-shadow: 4px 4px 0px var(--color-border);
 }
 
 .video-card.compact {
@@ -945,13 +963,93 @@ button:disabled {
 .queue-topbar-button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; padding: 0 9px; color: var(--color-muted); background: transparent; }
 .queue-topbar-button.active, .queue-topbar-button:hover { color: var(--color-brand-strong); background: var(--color-brand-soft); }
 .queue-topbar-count { display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--color-brand); color: white; font-size: 11px; font-weight: 800; }
-.global-queue { position: fixed; z-index: 30; right: 18px; top: 72px; width: min(390px, calc(100vw - 36px)); max-height: calc(100dvh - 90px); overflow: auto; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; box-shadow: 0 16px 42px rgb(10 15 30 / .2); }
+.global-queue { position: fixed; z-index: 30; right: 18px; top: calc(var(--window-titlebar-height) + var(--topbar-height) + 10px); width: min(390px, calc(100vw - 36px)); max-height: calc(100dvh - var(--window-titlebar-height) - var(--topbar-height) - 28px); overflow: auto; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 14px; box-shadow: 0 16px 42px rgb(10 15 30 / .2); }
 .queue-drawer { padding: 16px; }.queue-title { display: flex; align-items: baseline; gap: 8px; }.queue-title h2 { margin: 0; font-size: 18px; }.queue-count { color: var(--color-muted); font-size: 13px; }
 .queue-close, .queue-more summary { display: grid; place-items: center; width: 30px; height: 30px; cursor: pointer; list-style: none; }.queue-more { position: relative; }.queue-more summary::-webkit-details-marker { display: none; }
 .queue-more > div, .saved-card-more > div, .collection-more > div { position: absolute; z-index: 5; right: 0; min-width: 140px; padding: 5px; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: 9px; box-shadow: 0 10px 24px rgb(10 15 30 / .16); }.queue-more button, .saved-card-more button, .collection-more button { display: flex; align-items: center; gap: 7px; width: 100%; padding: 8px; text-align: left; border-radius: 6px; }.queue-more > .queue-options { min-width: 184px; padding: 8px; }.queue-options button { min-height: 42px; padding: 10px 12px; white-space: nowrap; font-weight: 750; }
 .queue-drag-handle { display: grid; place-items: center; color: var(--color-muted); cursor: grab; }.queue-item { grid-template-columns: 22px 94px minmax(0, 1fr) 30px; align-items: center; }.queue-copy { display: grid; gap: 3px; min-width: 0; text-align: left; color: inherit; }.queue-copy strong, .queue-copy small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.queue-copy small { color: var(--color-muted); }.queue-item .queue-remove { opacity: 0; }.queue-item:hover .queue-remove, .queue-item:focus-within .queue-remove { opacity: 1; }
 .feedback-toast.queued { border-color: var(--color-brand); }
 .saved-sidebar nav { display: grid; gap: 2px; }.saved-sidebar nav > button, .saved-nav-row > button, .new-collection, .saved-advanced button { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px; text-align: left; border-radius: 7px; }.saved-sidebar nav button span, .saved-nav-row > button span { margin-left: auto; color: var(--color-muted); font-size: 12px; }.saved-nav-row { position: relative; display: flex; align-items: center; }.saved-nav-row > button { min-width: 0; flex: 1; }.collection-more { position: relative; opacity: 0; }.saved-nav-row:hover .collection-more, .saved-nav-row:focus-within .collection-more { opacity: 1; }.collection-more summary, .saved-card-more summary { display: grid; place-items: center; width: 28px; height: 28px; cursor: pointer; list-style: none; }.collection-more summary::-webkit-details-marker, .saved-card-more summary::-webkit-details-marker { display: none; }.saved-advanced { margin-top: 20px; color: var(--color-muted); font-size: 13px; }.saved-advanced summary { cursor: pointer; }.saved-advanced > div { display: grid; gap: 2px; margin-top: 7px; }.saved-card-title { display: flex; gap: 6px; align-items: start; }.saved-card-title h2 { flex: 1; }.saved-card-more { position: relative; flex: none; }.saved-collection-label { display: inline-flex; align-items: center; gap: 5px; width: fit-content; margin-top: 6px; color: var(--color-muted); font-size: 12px; }.saved-note-editor { display: grid; gap: 7px; margin-top: 10px; }.saved-note-editor textarea { width: 100%; resize: vertical; }
+/* Quiet library + queue controls. These previously had layout rules but no
+   surface, so the platform default showed through as a silver slab. */
+.saved-sidebar nav > button,
+.saved-nav-row > button,
+.saved-advanced button,
+.collection-more button,
+.saved-card-more button,
+.queue-close,
+.queue-more button {
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--color-muted);
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.saved-sidebar nav > button:hover,
+.saved-nav-row > button:hover,
+.saved-advanced button:hover,
+.collection-more button:hover,
+.saved-card-more button:hover,
+.queue-close:hover,
+.queue-more button:hover {
+  background: var(--color-surface-soft);
+  color: var(--color-text);
+}
+.saved-sidebar nav > button.active,
+.saved-nav-row > button.active,
+.saved-advanced button.active {
+  background: var(--color-brand-soft);
+  color: var(--color-brand-strong);
+}
+.saved-sidebar nav > button.active span,
+.saved-nav-row > button.active span {
+  color: var(--color-brand-strong);
+}
+.saved-sidebar nav > button:focus-visible,
+.saved-nav-row > button:focus-visible,
+.saved-advanced button:focus-visible,
+.collection-more button:focus-visible,
+.saved-card-more button:focus-visible,
+.queue-close:focus-visible,
+.queue-more button:focus-visible,
+.new-collection:focus-visible {
+  outline: 2px solid var(--color-brand-strong);
+  outline-offset: 2px;
+}
+.new-collection {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+}
+.new-collection:hover {
+  border-color: var(--color-brand);
+  color: var(--color-brand-strong);
+}
+.saved-collection-label {
+  padding: 3px 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface-soft);
+  color: var(--color-text);
+}
+.saved-collection-label:hover {
+  border-color: var(--color-brand);
+  color: var(--color-brand-strong);
+}
+.developer-setting > button {
+  min-height: 38px;
+  padding: 0 14px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text);
+  font-weight: 800;
+  white-space: nowrap;
+  transition: border-color 0.12s ease, color 0.12s ease;
+}
+.developer-setting > button:hover:not(:disabled) {
+  border-color: var(--color-brand);
+  color: var(--color-brand-strong);
+}
+
 @media (max-width: 560px) { .queue-topbar-label { display: none; }.global-queue { top: auto; right: 0; bottom: 0; width: 100%; max-height: min(78dvh, 620px); border-radius: 16px 16px 0 0; }.queue-item { grid-template-columns: 20px 82px minmax(0, 1fr) 28px; }.queue-item .queue-remove { opacity: 1; } }
 
 .watch-meta h1 {
@@ -2605,7 +2703,8 @@ select:focus {
   text-transform: uppercase;
 }
 
-.saved-search {
+.saved-search,
+.feed-search {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -2618,12 +2717,14 @@ select:focus {
   box-shadow: 3px 3px 0 var(--color-border);
 }
 
-.saved-search:focus-within {
+.saved-search:focus-within,
+.feed-search:focus-within {
   border-color: var(--color-brand);
   color: var(--color-brand);
 }
 
-.saved-search input {
+.saved-search input,
+.feed-search input {
   width: 100%;
   min-width: 0;
   border: 0;
@@ -2633,7 +2734,8 @@ select:focus {
   font: inherit;
 }
 
-.saved-search-clear {
+.saved-search-clear,
+.feed-search-clear {
   display: grid;
   place-items: center;
   width: 28px;
@@ -2642,8 +2744,14 @@ select:focus {
   color: var(--color-muted);
 }
 
-.saved-search-clear:hover {
+.saved-search-clear:hover,
+.feed-search-clear:hover {
   color: var(--color-text);
+}
+
+/* History search sits beside the heading, so it is a touch narrower. */
+.feed-search {
+  width: min(360px, 100%);
 }
 
 .saved-error {
@@ -3258,7 +3366,7 @@ button.saved-chip.small {
   }
 
   .topbar {
-    grid-template-columns: auto minmax(240px, 1fr) minmax(180px, 300px) auto;
+    grid-template-columns: auto minmax(240px, 1fr) minmax(180px, 300px) max-content;
   }
 
   .video-grid,
@@ -3299,6 +3407,40 @@ button.saved-chip.small {
 
   .feed-build-pipeline {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  /* The four-column top bar cannot fit its own controls below ~1030px. Without
+     this the action row outgrew its track and the profile button was crushed
+     down to a 0px-wide sliver whose hit box no longer matched what you see.
+     Compact the action cluster here, before the bottom tab bar takes over. */
+  .topbar {
+    grid-template-columns: auto minmax(170px, 1fr) minmax(150px, 240px) max-content;
+    gap: 12px;
+    padding: 0 14px;
+  }
+
+  .topbar-actions {
+    gap: 8px;
+  }
+
+  .topbar-actions .profile-menu {
+    flex: 0 0 auto;
+  }
+
+  .topbar-actions .queue-topbar-button {
+    flex: 0 0 auto;
+  }
+
+  .topbar-actions .profile-button-name,
+  .topbar-actions .profile-chevron {
+    display: none;
+  }
+
+  .topbar-actions .profile-button {
+    width: 46px;
+    max-width: 46px;
+    padding: 0 6px;
+    justify-content: center;
   }
 }
 
@@ -3342,7 +3484,7 @@ button.saved-chip.small {
   }
 
   .topbar {
-    grid-template-columns: auto minmax(140px, 1fr) auto;
+    grid-template-columns: auto minmax(140px, 1fr) max-content;
     gap: 12px;
     padding: 0 14px;
   }
@@ -3367,6 +3509,7 @@ button.saved-chip.small {
     -webkit-backdrop-filter: blur(16px);
     border-top: 1px solid var(--color-border);
     box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.6);
+    will-change: transform;
   }
 
   .topbar-search {
@@ -3425,7 +3568,8 @@ button.saved-chip.small {
     flex-direction: column;
   }
 
-  .saved-search {
+  .saved-search,
+  .feed-search {
     width: 100%;
   }
 

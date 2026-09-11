@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef } from "react";
-import { LoaderCircle } from "lucide-react";
+import { LoaderCircle, Search, X } from "lucide-react";
 
 import type { FeedVideo } from "../types";
 import type { CardFeedbackAction } from "./VideoActions";
@@ -33,6 +33,10 @@ type FeedViewProps = {
   onVideoImpression?: (video: FeedVideo) => void;
   onAddChannel: (channel: string) => void;
   onRemoveChannel: (channel: string) => void;
+  searchValue?: string;
+  onSearchChange?: (value: string) => void;
+  searchPlaceholder?: string;
+  emptyMessage?: string;
 };
 
 export function FeedView(props: FeedViewProps) {
@@ -115,40 +119,66 @@ export function FeedView(props: FeedViewProps) {
             <p>{props.subtitle}</p>
           </div>
         )}
-      </div>
-
-      <div className="video-grid">
-        {props.videos.map((video) => {
-          const subscribed = props.subscriptions.has(normalize(video.author));
-
-          return (
-            <VideoCard
-              key={video.id}
-              video={video}
-              saved={props.savedVideoIds.has(video.id)}
-              liked={props.likedVideoIds.has(video.id)}
-              queued={props.queuedVideoIds?.has(video.id) === true}
-              showSubscribe={false}
-              subscribed={subscribed}
-              onSelectVideo={props.onSelectVideo}
-              onSaveVideo={props.onSaveVideo}
-              onLikeVideo={props.onLikeVideo}
-              onFeedback={props.onFeedback}
-              feedbackPendingAction={
-                props.feedbackPendingVideoId === video.id ? props.feedbackPendingAction ?? null : null
-              }
-              onEnqueueVideo={props.onEnqueueVideo}
-              onImpression={props.onVideoImpression}
-              onAddChannel={props.onAddChannel}
-              onRemoveChannel={props.onRemoveChannel}
+        {props.onSearchChange && (
+          <form className="feed-search" role="search" onSubmit={(event) => event.preventDefault()}>
+            <Search size={16} aria-hidden="true" />
+            <input
+              type="search"
+              value={props.searchValue ?? ""}
+              onChange={(event) => props.onSearchChange?.(event.target.value)}
+              placeholder={props.searchPlaceholder || "Search"}
+              aria-label={props.searchPlaceholder || "Search"}
             />
-          );
-        })}
-        {props.loading &&
-          Array.from({ length: props.videos.length === 0 ? 8 : 4 }).map((_, index) => (
-            <VideoCardSkeleton key={`feed-skeleton-${index}`} />
-          ))}
+            {props.searchValue ? (
+              <button
+                type="button"
+                className="feed-search-clear"
+                aria-label="Clear search"
+                onClick={() => props.onSearchChange?.("")}
+              >
+                <X size={15} aria-hidden="true" />
+              </button>
+            ) : null}
+          </form>
+        )}
       </div>
+
+      {props.videos.length === 0 && !props.loading ? (
+        props.emptyMessage ? <p className="empty-state">{props.emptyMessage}</p> : null
+      ) : (
+        <div className="video-grid">
+          {props.videos.map((video) => {
+            const subscribed = props.subscriptions.has(normalize(video.author));
+
+            return (
+              <VideoCard
+                key={video.id}
+                video={video}
+                saved={props.savedVideoIds.has(video.id)}
+                liked={props.likedVideoIds.has(video.id)}
+                queued={props.queuedVideoIds?.has(video.id) === true}
+                showSubscribe={false}
+                subscribed={subscribed}
+                onSelectVideo={props.onSelectVideo}
+                onSaveVideo={props.onSaveVideo}
+                onLikeVideo={props.onLikeVideo}
+                onFeedback={props.onFeedback}
+                feedbackPendingAction={
+                  props.feedbackPendingVideoId === video.id ? props.feedbackPendingAction ?? null : null
+                }
+                onEnqueueVideo={props.onEnqueueVideo}
+                onImpression={props.onVideoImpression}
+                onAddChannel={props.onAddChannel}
+                onRemoveChannel={props.onRemoveChannel}
+              />
+            );
+          })}
+          {props.loading &&
+            Array.from({ length: props.videos.length === 0 ? 8 : 4 }).map((_, index) => (
+              <VideoCardSkeleton key={`feed-skeleton-${index}`} />
+            ))}
+        </div>
+      )}
 
       <div ref={loaderRef} className="feed-loader">
         {props.loading && props.videos.length > 0 && <LoaderCircle className="spinner" size={20} aria-hidden="true" />}

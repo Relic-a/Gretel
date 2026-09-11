@@ -83,6 +83,7 @@ export default function Home() {
   const [section, setSection] = useState<Section>("home");
   const [savedVideos, setSavedVideos] = useState<FeedVideo[]>([]);
   const [historyVideos, setHistoryVideos] = useState<FeedVideo[]>([]);
+  const [historyQuery, setHistoryQuery] = useState("");
   const savedCollections = useSavedCollections(profileId, authedFetch);
   const savedItems = savedCollections.state.items;
   const savedFolders = savedCollections.state.folders;
@@ -184,9 +185,17 @@ export default function Home() {
   const needsProfile = booted && profiles.length === 0 && !feed;
   const needsOpenRouterKey = settings.openRouterApiKey !== "set";
   const homeVideos = feed?.videos || [];
-  const visibleVideos = searchResults ?? (
+  const sectionVideos = searchResults ?? (
     section === "saved" ? savedVideos : section === "history" ? historyVideos : homeVideos
   );
+  const historyQueryNormalized = normalize(historyQuery.trim());
+  const matchedHistoryVideos = historyQueryNormalized
+    ? historyVideos.filter((video) =>
+        normalize(`${video.title} ${video.author}`).includes(historyQueryNormalized)
+      )
+    : historyVideos;
+  const visibleVideos =
+    section === "history" && searchResults === null ? matchedHistoryVideos : sectionVideos;
   const sideVideos = orderedSideVideos(visibleVideos, activeVideo, feed?.upNextByVideoId);
   const canAskForMore = searchResults === null && section === "home" && Boolean(feed) && !loading && !feedEnd;
 
@@ -361,7 +370,7 @@ export default function Home() {
       return;
     }
 
-    const matchingVideo = visibleVideos.find((video) => video.id === pendingVideoId);
+    const matchingVideo = sectionVideos.find((video) => video.id === pendingVideoId);
 
     if (matchingVideo) {
       setActiveVideo(matchingVideo);
@@ -391,7 +400,7 @@ export default function Home() {
         }
       }
     })();
-  }, [activeVideo, booted, profileId, visibleVideos]);
+  }, [activeVideo, booted, profileId, sectionVideos]);
 
   useEffect(() => {
     if (!booted) {
@@ -1690,7 +1699,7 @@ export default function Home() {
         />
       )}
 
-      {booted && !searching && searchResults === null && section !== "saved" && (visibleVideos.length > 0 || (loading && section === "home")) && !activeVideo && (
+      {booted && !searching && (searchResults !== null || section !== "saved") && (visibleVideos.length > 0 || (loading && section === "home") || (section === "history" && historyVideos.length > 0)) && !activeVideo && (
         <FeedView
           title={searchResults !== null ? `Search results for “${searchedQuery || searchQuery.trim()}”` : section === "history" ? "History" : ""}
           subtitle={
@@ -1723,10 +1732,14 @@ export default function Home() {
           onVideoImpression={section === "home" ? recordVideoImpression : undefined}
           onAddChannel={addChannel}
           onRemoveChannel={removeChannel}
+          searchValue={section === "history" ? historyQuery : undefined}
+          onSearchChange={section === "history" ? setHistoryQuery : undefined}
+          searchPlaceholder="Search history"
+          emptyMessage="No watched videos match your search."
         />
       )}
 
-      {booted && !searching && searchResults === null && section === "history" && visibleVideos.length === 0 && !activeVideo && (
+      {booted && !searching && searchResults === null && section === "history" && historyVideos.length === 0 && !activeVideo && (
         <p className="empty-state">No watched videos yet.</p>
       )}
 
