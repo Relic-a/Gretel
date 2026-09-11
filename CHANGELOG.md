@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.6.1 — 2026-09-11
+
+### History
+
+- Search watched history by title or channel, with an empty state when nothing matches.
+
+### Interface
+
+- Restore the intended surfaces on buttons and library controls instead of the platform widget chrome.
+- Keep the top bar action cluster readable at intermediate window widths.
+- Stop the feed jumping while scrolling by matching the card placeholder height and keeping hover state stable.
+- Anchor the playback queue panel below the top bar instead of behind it.
+
 ## 0.6.0 — 2026-09-10
 
 ### Saved collections
