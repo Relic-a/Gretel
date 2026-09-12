@@ -13,6 +13,16 @@ Gretel is a desktop app for building a more intentional YouTube feed. Create pro
 
 > Current status: **public beta**. Expect rough edges, unsigned installers, and possible platform-specific bugs. Please report problems through [GitHub Issues](https://github.com/Relic-a/Gretel/issues).
 
+## Showcase
+
+From an empty install: create a profile, seed it with topics and channels, watch Gretel build and rank the feed, then save, queue and organise what you find.
+
+[![Gretel showcase: creating a profile, building a feed, and watching it](docs/showcase/gretel-showcase-poster.png)](docs/showcase/gretel-showcase.mp4)
+
+![Gretel showcase](docs/showcase/gretel-showcase.gif)
+
+The full 73-second tour is in [`docs/showcase/gretel-showcase.mp4`](docs/showcase/gretel-showcase.mp4). See [`showcase/`](showcase/) for how it is recorded and rendered.
+
 ## Install the beta
 
 Download the newest beta installer for your platform from [Gretel Releases](https://github.com/Relic-a/Gretel/releases):

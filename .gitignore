@@ -52,3 +52,10 @@ sandbox/
 # app/design scratch
 gretel_design/
 .cache
+
+# showcase video pipeline: raw footage and derived clips are large and fully
+# regenerable. The committed result lives in docs/showcase/.
+showcase/node_modules/
+showcase/captures/
+showcase/public/clips/
+showcase/out/

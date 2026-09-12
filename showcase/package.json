@@ -1,0 +1,26 @@
+{
+  "name": "gretel-showcase",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Recording and rendering pipeline for the Gretel README showcase video.",
+  "scripts": {
+    "capture": "node capture/capture.mjs",
+    "normalize": "node capture/normalize.mjs",
+    "clips": "node capture/encode-clips.mjs",
+    "install-font": "bash scripts/install-font.sh",
+    "render": "remotion render src/index.ts GretelShowcase out/gretel-showcase.mp4 --codec h264 --crf 18 --concurrency 6",
+    "poster": "node scripts/render-poster.mjs",
+    "gif": "node scripts/render-gif.mjs",
+    "studio": "remotion studio src/index.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.409",
+    "@remotion/renderer": "4.0.409",
+    "playwright": "1.63.0",
+    "react": "19.2.6",
+    "react-dom": "19.2.6",
+    "remotion": "4.0.409"
+  }
+}
