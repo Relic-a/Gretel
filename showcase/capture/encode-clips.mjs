@@ -13,7 +13,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(HERE, "..");
-const CAPTURE_DIR = path.join(ROOT, "captures");
+const CAPTURE_DIR = process.env.SHOWCASE_CAPTURE_DIR || path.join(ROOT, "captures");
 const CLIP_DIR = path.join(ROOT, "public", "clips");
 const FPS = Number(process.env.SHOWCASE_FPS || 30);
 
@@ -40,17 +40,17 @@ function main() {
         "-framerate",
         String(FPS),
         "-i",
-        path.join(CAPTURE_DIR, entry.name, "frames", "%05d.jpg"),
+        path.join(CAPTURE_DIR, entry.name, "frames", fs.existsSync(path.join(CAPTURE_DIR, entry.name, "frames", "00000.png")) ? "%05d.png" : "%05d.jpg"),
         "-frames:v",
         String(manifest.frameCount),
         "-c:v",
         "libx264",
         "-preset",
-        "veryfast",
+        "medium",
         "-crf",
-        "19",
+        "10",
         "-pix_fmt",
-        "yuv420p",
+        "yuv444p",
         "-g",
         "30",
         "-movflags",

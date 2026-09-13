@@ -13,7 +13,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-const CAPTURE_DIR = path.resolve(HERE, "..", "captures");
+const CAPTURE_DIR = process.env.SHOWCASE_CAPTURE_DIR || path.resolve(HERE, "..", "captures");
 const FPS = Number(process.env.SHOWCASE_FPS || 30);
 
 function normalizeShot(dir) {
@@ -34,6 +34,7 @@ function normalizeShot(dir) {
   }
 
   const sequence = [];
+  const extension = fs.existsSync(path.join(dir, "00000.png")) ? "png" : "jpg";
   let cursor = 0;
   for (let frame = 0; frame < frameCount; frame += 1) {
     const t = frame / FPS;
@@ -51,8 +52,8 @@ function normalizeShot(dir) {
   fs.rmSync(seqDir, { recursive: true, force: true });
   fs.mkdirSync(seqDir, { recursive: true });
   for (let frame = 0; frame < frameCount; frame += 1) {
-    const source = path.join(dir, `${String(sequence[frame]).padStart(5, "0")}.jpg`);
-    const target = path.join(seqDir, `${String(frame).padStart(5, "0")}.jpg`);
+    const source = path.join(dir, `${String(sequence[frame]).padStart(5, "0")}.${extension}`);
+    const target = path.join(seqDir, `${String(frame).padStart(5, "0")}.${extension}`);
     try {
       fs.linkSync(source, target);
     } catch {

@@ -1,0 +1,17 @@
+Gretel lets you make a YouTube feed around the things you're interested in.
+
+I'll make one for creative coding. First, give it a name. You can keep separate profiles for different interests.
+
+Then add a few topics. I'm using web design, generative art, and WebGL.
+
+You can also add channels you already watch. Gretel uses the topics and channels to find videos for this profile.
+
+Here's the feed. You can scroll through it, save a video for later, or add it to your queue.
+
+Open a video to watch it here. The title and channel stay below the player, and the next videos are on the right.
+
+The queue keeps the videos you want to watch next. You can move them around to change the order.
+
+Saved videos live in their own tab. I'll put these in a collection so they're easier to find again.
+
+That's the basic idea: a few topics, a feed for each profile, and a place to keep the videos you want to come back to.

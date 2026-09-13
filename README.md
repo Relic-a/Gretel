@@ -21,7 +21,7 @@ From an empty install: create a profile, seed it with topics and channels, watch
 
 ![Gretel showcase](docs/showcase/gretel-showcase.gif)
 
-The full 73-second tour is in [`docs/showcase/gretel-showcase.mp4`](docs/showcase/gretel-showcase.mp4). See [`showcase/`](showcase/) for how it is recorded and rendered.
+Watch the 57-second tour [with narration](docs/showcase/gretel-showcase-narrated.mp4) or [without audio](docs/showcase/gretel-showcase.mp4), both at 2880×1920 and 60 fps. The inline GIF is a silent preview. See [`showcase/`](showcase/) for how it is recorded and rendered.
 
 ## Install the beta
 

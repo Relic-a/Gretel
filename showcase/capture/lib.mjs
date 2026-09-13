@@ -26,7 +26,7 @@ const CURSOR_SCRIPT = `
     el.style.cssText = [
       "position:fixed", "left:0", "top:0", "width:22px", "height:22px",
       "z-index:2147483647", "pointer-events:none", "transform:translate3d(-100px,-100px,0)",
-      "transition:transform 60ms linear", "will-change:transform"
+      "will-change:transform"
     ].join(";");
     el.innerHTML = '<svg width="22" height="22" viewBox="0 0 22 22" fill="none">' +
       '<path d="M4 2.6 17.2 11.1l-5.6 1.1-2.7 5.2z" fill="#ffffff" stroke="#0a0a0c" stroke-width="1.4" stroke-linejoin="round"/>' +
@@ -44,11 +44,13 @@ const CURSOR_SCRIPT = `
     document.documentElement.appendChild(ring);
 
     window.addEventListener("mousemove", (event) => {
-      el.style.transform = "translate3d(" + (event.clientX - 3) + "px," + (event.clientY - 3) + "px,0)";
+      const zoom = Number(getComputedStyle(document.documentElement).zoom) || 1;
+      el.style.transform = "translate3d(" + (event.clientX / zoom - 3) + "px," + (event.clientY / zoom - 3) + "px,0)";
     }, { passive: true });
 
     window.addEventListener("mousedown", (event) => {
-      ring.style.transform = "translate3d(" + (event.clientX - 7) + "px," + (event.clientY - 7) + "px,0)";
+      const zoom = Number(getComputedStyle(document.documentElement).zoom) || 1;
+      ring.style.transform = "translate3d(" + (event.clientX / zoom - 7) + "px," + (event.clientY / zoom - 7) + "px,0)";
       ring.style.transition = "none";
       ring.style.opacity = "0.9";
       ring.style.width = "14px";
@@ -106,17 +108,16 @@ export class ScreencastRecorder {
     this.cdp.on("Page.screencastFrame", (event) => {
       const index = this.frames.length;
       this.frames.push({ index, timestamp: event.metadata.timestamp });
-      const file = path.join(outDir, `${String(index).padStart(5, "0")}.jpg`);
+      const file = path.join(outDir, `${String(index).padStart(5, "0")}.png`);
       this.writeChain = this.writeChain.then(
         () => fs.promises.writeFile(file, Buffer.from(event.data, "base64")).catch(() => {})
       );
       this.cdp.send("Page.screencastFrameAck", { sessionId: event.sessionId }).catch(() => {});
     });
     await this.cdp.send("Page.startScreencast", {
-      format: "jpeg",
-      quality: 86,
-      maxWidth: 1440,
-      maxHeight: 900,
+      format: "png",
+      maxWidth: 2880,
+      maxHeight: 1800,
       everyNthFrame: 1
     });
     this.startedAt = nowSeconds();
@@ -198,20 +199,36 @@ export function normalizeFrames(outDir, { fps = FPS } = {}) {
 }
 
 export async function launchBrowser() {
+  const args = [
+    "--hide-scrollbars",
+    "--disable-features=CalculateNativeWinOcclusion",
+    "--font-render-hinting=medium",
+    // A 2880x1800 viewport with a live YouTube embed is memory-hungry. Keep
+    // the renderer lean so a laptop capture does not hit its memory ceiling.
+    "--disable-dev-shm-usage",
+    "--js-flags=--max-old-space-size=512",
+    // The watch shot relies on the embedded player starting on its own. Server
+    // Chrome applies a stricter autoplay policy than a desktop browser.
+    "--autoplay-policy=no-user-gesture-required"
+  ];
+  // Datacenter IPs are refused embedded playback (YouTube error 150). When a
+  // SOCKS/HTTP egress is supplied, route the browser through it so the capture
+  // can still happen on the render server.
+  if (process.env.SHOWCASE_PROXY) {
+    // Chrome already bypasses loopback, so the local app stays direct while
+    // YouTube egresses through the supplied proxy.
+    args.push(`--proxy-server=${process.env.SHOWCASE_PROXY}`);
+  }
   return chromium.launch({
-    args: [
-      "--force-device-scale-factor=1",
-      "--hide-scrollbars",
-      "--disable-features=CalculateNativeWinOcclusion",
-      "--font-render-hinting=none"
-    ]
+    executablePath: process.env.SHOWCASE_BROWSER || undefined,
+    args
   });
 }
 
-export async function newSceneContext(browser, { width = 1440, height = 900 } = {}) {
+export async function newSceneContext(browser, { width = 1440, height = 900, deviceScaleFactor = 2 } = {}) {
   const context = await browser.newContext({
     viewport: { width, height },
-    deviceScaleFactor: 1,
+    deviceScaleFactor,
     colorScheme: "dark",
     reducedMotion: "no-preference"
   });
@@ -219,8 +236,19 @@ export async function newSceneContext(browser, { width = 1440, height = 900 } = 
   return context;
 }
 
-export async function moveMouse(page, x, y, { steps = 18, settle = 40 } = {}) {
-  await page.mouse.move(x, y, { steps });
+export async function moveMouse(page, x, y, { settle = 30 } = {}) {
+  // Bounded motion time instead of dozens of serial protocol round trips.
+  const from = page.__showcasePointer || { x: 720, y: 450 };
+  const start = Date.now();
+  const duration = 180;
+  while (Date.now() - start < duration) {
+    const t = Math.min(1, (Date.now() - start) / duration);
+    const eased = t * t * (3 - 2 * t);
+    await page.mouse.move(from.x + (x - from.x) * eased, from.y + (y - from.y) * eased);
+    await page.waitForTimeout(12);
+  }
+  await page.mouse.move(x, y);
+  page.__showcasePointer = { x, y };
   await page.waitForTimeout(settle);
 }
 
@@ -235,7 +263,7 @@ export async function clickAt(page, locator, { settle = 260, steps = 16, scroll 
   if (!box) throw new Error("element has no bounding box");
   const x = box.x + box.width / 2;
   const y = box.y + box.height / 2;
-  if (y < 0 || y > 900) throw new Error(`element is off-screen (y=${Math.round(y)})`);
+  if (y < 0 || y > page.viewportSize().height) throw new Error(`element is off-screen (y=${Math.round(y)})`);
   await moveMouse(page, x, y, { steps });
   await page.mouse.down();
   await page.waitForTimeout(70);

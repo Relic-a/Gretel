@@ -26,8 +26,8 @@ if (!fs.existsSync(VIDEO)) {
 
 // Defaults cover the build phases through the finished feed: the stretch that
 // reads best at README size.
-const START = process.env.GIF_START || "22";
-const DURATION = process.env.GIF_DURATION || "12";
+const START = process.env.GIF_START || "24";
+const DURATION = process.env.GIF_DURATION || "9";
 const WIDTH = Number(process.env.GIF_WIDTH || 820);
 const FPS = Number(process.env.GIF_FPS || 11);
 const COLORS = Number(process.env.GIF_COLORS || 64);

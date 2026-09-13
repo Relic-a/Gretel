@@ -1,107 +1,82 @@
-# Showcase pipeline
+# README showcase
 
-How the README's showcase video is produced. Everything here is reproducible;
-the committed outputs live in [`docs/showcase/`](../../docs/showcase).
+The two exports share the same 2880×1920, 60 fps visual master:
 
-## What gets committed
+- `docs/showcase/gretel-showcase.mp4`: silent.
+- `docs/showcase/gretel-showcase-narrated.mp4`: Rufus narration.
+- The poster and GIF link to the full video; GIF cannot carry sound.
 
-| File | Purpose |
-| --- | --- |
-| `docs/showcase/gretel-showcase.gif` | Autoplaying preview embedded in the README |
-| `docs/showcase/gretel-showcase.mp4` | Full 73s tour, linked from the poster image |
-| `docs/showcase/gretel-showcase-poster.png` | Clickable preview frame |
+## What changed
 
-Raw recorded footage (`showcase/captures/`) and the per-shot clips
-(`showcase/public/clips/`) are **not** committed — they are large and fully
-regenerable. Only `public/clips/*.mp4` is needed to re-render, and the build
-step recreates them from `captures/`.
+The previous recording used JPEG frames at 1440×900, then applied a dark
+gradient across the app. Its chapter labels and progress indicators covered
+Gretel's own navigation. The new recording uses lossless 2880×1800 PNG frames,
+with a separate 120-pixel caption strip. No gradients, labels, or video
+progress bars cover the application.
 
-## Pipeline
+CDP screencast ignores device pixel ratio on this Chrome build. Capture uses
+a 2880×1800 viewport with content zoom 2, producing fresh high-resolution
+pixels with the same effective app layout. It does not enlarge old footage.
 
-```
-capture  →  normalize  →  clips  →  render  →  gif/poster
-```
+Mouse events are captured separately and drawn at 60 fps. The real pointer
+takes 180 ms to move; the old CSS delay is gone. App captures can hold when
+nothing changes without making the pointer stutter.
 
-1. **`npm run capture`** — drives a real Gretel session in Chromium and records
-   it. Use with `--only=<shot>` to re-record one shot, `--keep-data` to reuse an
-   existing install.
+The tour includes a real watch segment: opening a video and letting the
+embedded player run, with the title and channel below it and the next-video
+column on the right.
 
-2. **`npm run normalize`** — converts the timestamped screencast frames into
-   constant-30fps sequences (see below), then encodes each shot to a compact
-   H.264 clip.
+## Narration and timing
 
-3. **`npm run render`** — renders the Remotion composition to `out/`.
+`narration.txt` is the script for a **single** request to
+`deepgram/flux-tts:free`, voice `flux-rufus-en`. The lossless original is
+`public/audio/rufus-continuous.wav`; `take.json` records its model, voice,
+script, and cache fingerprint. Keys remain in a local environment file.
 
-4. **`npm run gif` / `npm run poster`** — derives the README assets from the
-   rendered video.
+The complete performance plays end to end through one 0.9x tempo adjustment and
+one loudness pass — every paragraph, including the watch segment. Nothing is cut
+or assembled from separate voice generations. Scene boundaries in `src/scenes.ts`
+follow measured word timings; short clips hold their final frame rather than
+slowing down mouse movement.
 
-## Why the capture works the way it does
+Changing the spoken text requires updating those measured boundaries.
+`scripts/transcribe-take.py` uses faster-whisper on the render server to
+inspect word timings.
 
-**Screencast frames, not `recordVideo`.** Playwright's built-in recording
-produces a webm with no reliable relationship between its frames and wall-clock
-time. `capture/lib.mjs` instead uses CDP `Page.startScreencast`, which returns
-every frame with a timestamp. `normalize.mjs` then holds each frame for exactly
-as long as it was on screen, so the edit cuts on real moments.
+## The watch shot
 
-**Beat markers.** Shots call `recorder.beat("name")` at meaningful moments
-(a step opening, the first card appearing). These are written to
-`captures/<shot>/raw.json` and are what `src/scenes.ts` uses to choose in/out
-points, rather than eyeballed timings.
+Every other shot is recorded on the render server. YouTube refuses embedded
+playback (error 150) to that datacenter IP, so for the watch shot the server's
+Chrome egresses through a proxy on a residential connection:
 
-**Waiting for thumbnails.** The recorded feed must never show a card whose
-thumbnail has not painted. `waitForVisibleImages()` requires every thumbnail
-near the viewport to have `naturalWidth > 0`, and `waitForStableFeed()` waits
-for the card count and image-loaded signature to stop changing. Waiting only for
-the feed request to resolve is not enough — that is exactly the blank-thumbnail
-case.
+1. Run a local forward proxy and reverse-tunnel it to the server
+   (`ssh -R 127.0.0.1:1080:127.0.0.1:1080 debian@…`).
+2. Set `SHOWCASE_PROXY=http://127.0.0.1:1080`; `launchBrowser` routes the
+   browser through it.
+3. `capture/recapture-watch.mjs` picks a card known to embed, pre-warms the
+   player (cold start is ~8 s, warm ~2 s), records, and **asserts the player
+   advances** before keeping the footage. A blocked or loading-only player is
+   rejected, never passed off as playback.
 
-**Isolated session.** Recording runs against a throwaway data directory
-(`GRETEL_DATA_DIR`) so the recorded session never contains the developer's own
-profiles, and the OpenRouter key is pre-seeded via the settings API so the real
-secret is never typed on camera.
+Then `SHOWCASE_FPS=60 SHOWCASE_SKIP_CLIPS=1 npm run normalize` and
+`SHOWCASE_ONLY_SHOTS=v2-watch npm run prepare-clips` refresh just that clip.
 
-## Rendering
+## Reproduce
 
-`remotion.config`-free invocation; pass flags on the command line.
+Use Node 24+, FFmpeg, Chrome, and a production Gretel server pointed at a
+**copy of the demo data**, not your personal profiles. All heavy work can run
+on the Debian render server.
 
-### Font
+1. Set `SHOWCASE_CAPTURE_DIR` to a new directory and
+   `SHOWCASE_BROWSER=/usr/bin/google-chrome`; run `npm run capture`.
+2. Run `SHOWCASE_FPS=60 SHOWCASE_SKIP_CLIPS=1 npm run normalize`, then
+   `npm run prepare-clips`. Keep the same capture-directory environment.
+3. Run `npm run narrate` with a local OpenRouter key; then
+   `npm run mix-narration`.
+4. Run `npm run render -- --browser-executable=/usr/bin/google-chrome`.
+5. Copy the visual master to the silent MP4. Run `npm run mux-narration`
+   to create the separate narrated MP4 without re-encoding the visuals.
+6. Run `npm run poster` and `npm run gif`.
 
-The composition asks for **Space Mono** by name. Install it once for the
-rendering user:
-
-```bash
-npm run install-font          # copies public/fonts/*.woff2 into ~/.fonts
-```
-
-This is deliberate: Remotion's `loadFont()` keeps a `delayRender()` open until
-the `FontFace` resolves, which intermittently times out during a long concurrent
-render as browser pages are recycled. A system font removes that dependency.
-
-### Browser
-
-Remotion downloads its own `chrome-headless-shell`. On some hosts (notably
-VPS kernels) that build segfaults on launch. If you see `Page crashed!`
-immediately, install Google Chrome and point Remotion at it:
-
-```bash
---browser-executable=/usr/bin/google-chrome
-```
-
-### Headless server requirements
-
-```bash
-sudo apt-get install -y ffmpeg unzip xz-utils \
-  libnss3 libatk1.0-0 libatk-bridge2.0-0 libcups2 libdrm2 libxkbcommon0 \
-  libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 \
-  libpango-1.0-0 libcairo2 fonts-liberation fontconfig
-```
-
-## Editing the video
-
-Scene timing lives in [`src/scenes.ts`](src/scenes.ts) — one entry per scene,
-with `in`/`out` referencing the normalized frame numbers printed by
-`npm run normalize`. `rate` compresses idle waiting (the recorded wizard is
-~52s of real time for ~30s of screen time). Composition, overlays and
-transitions live in `src/GretelShowcase.tsx`.
-
-Preview interactively with `npm run studio`.
+Raw capture directories and derived source clips are not committed. Pointer
+tracks, narration, render sources, and final README assets are retained.

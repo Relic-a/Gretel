@@ -16,7 +16,7 @@ fs.mkdirSync(OUT_DIR, { recursive: true });
 
 if (fs.existsSync(VIDEO)) {
   // Pull the poster straight from the rendered video so it always matches.
-  const at = process.env.POSTER_AT || "36";
+  const at = process.env.POSTER_AT || "24";
   execFileSync(
     "ffmpeg",
     ["-y", "-v", "error", "-ss", at, "-i", VIDEO, "-frames:v", "1", POSTER],
