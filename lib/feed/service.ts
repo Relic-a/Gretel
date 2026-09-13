@@ -54,6 +54,13 @@ import {
 import { averageNormalizedVectors, cosineSimilarity } from "./vector-math";
 import { hydrateChannelAvatars, resolveMissingChannelAvatars } from "./channel-avatar-cache";
 import { getChannelAvatarUrl } from "./video-utils";
+import { evaluatePlaylist } from "./playlists";
+import {
+  getAdmittedPlaylist,
+  listPendingPlaylists,
+  rememberPlaylistCandidates,
+  setPlaylistDecision
+} from "./playlist-store";
 
 export type CreateFeedOptions = {
   expectedProfileUpdatedAt?: number;
@@ -73,6 +80,7 @@ export type ServeFeedPageOptions = {
 type PoolInitialization = {
   initialized: boolean;
   channelCandidates: FeedVideo[];
+  hiddenPlaylistIds: string[];
 };
 
 type FeedServingSession = {
@@ -90,6 +98,7 @@ const maxFeedServingSessions = 100;
 const preemptiveExpansionInFlight = getGlobalPreemptiveExpansionState();
 const preemptiveExpansionTtlMs = 1000 * 60 * 10;
 const preemptiveExpansionFreshRatioThreshold = 0.4;
+const playlistProcessingInFlight = getGlobalPlaylistProcessingState();
 
 export class FeedProfileStaleError extends Error {
   constructor() {
@@ -127,6 +136,8 @@ export async function serveFeedPage(
   if (!poolState) {
     throw new FeedPoolMissingError(poolKey);
   }
+
+  schedulePendingPlaylistProcessing(profileId, poolKey);
 
   const session = getOrCreateServingSession(options.sessionId, profileId, poolKey, options.servedVideoIds);
   const watchedVideoIds = new Set(options.watchedVideoIds || []);
@@ -323,7 +334,7 @@ export async function searchProfileVideoPage(
   }
   if (!cached) {
     const pager = new SearchPager(
-      async () => (await getYoutubeClient(profileId)).search(query, { type: "video" }),
+      async () => (await getYoutubeClient(profileId)).search(query, { type: "all" }),
       async (page) => page.has_continuation ? page.getContinuation() : null,
       (page) => searchVideos([query], observation, profileId, Number.MAX_SAFE_INTEGER,
         { resolveAvatars: false, results: page }),
@@ -331,6 +342,15 @@ export async function searchProfileVideoPage(
         const endProfileOperation = beginProfileOperation(profileId);
 
         try {
+          const playlistCandidates = candidates.filter((item) => item.itemType === "playlist");
+          const admittedPlaylists = playlistCandidates.flatMap((playlist) => {
+            const admitted = getAdmittedPlaylist(profileId, poolKey, playlist.id);
+            return admitted ? [admitted] : [];
+          });
+          rememberPlaylistCandidates(profileId, poolKey, playlistCandidates, Date.now());
+          schedulePendingPlaylistProcessing(profileId, poolKey);
+          // A newly discovered playlist stays hidden until a later search request.
+          candidates = candidates.filter((item) => item.itemType !== "playlist");
           const config = getGretelConfig();
           const centroid = getCentroid(profileId, poolKey)?.current || [];
           const topicCentroids = getTopicCentroids(profileId, poolKey);
@@ -416,7 +436,7 @@ export async function searchProfileVideoPage(
           });
 
           const finalResult = filterFeedbackVideos(
-            hydrateChannelAvatars(resolvedVideos),
+            hydrateChannelAvatars([...resolvedVideos, ...admittedPlaylists]),
             getContentFeedback(profileId)
           );
 
@@ -487,7 +507,7 @@ async function createFeedOnce(
   const excludeVideoIds = new Set(options.excludeVideoIds || []);
   const feedback = getContentFeedback(profileId);
   const initialization: PoolInitialization = options.readOnlyPool
-    ? { initialized: false, channelCandidates: [] }
+    ? { initialized: false, channelCandidates: [], hiddenPlaylistIds: [] }
     : await initializePoolOnce(
         profileId,
         poolKey,
@@ -498,6 +518,7 @@ async function createFeedOnce(
         options.expectedProfileUpdatedAt
       );
   const initializedRoot = initialization.initialized;
+  for (const playlistId of initialization.hiddenPlaylistIds) excludeVideoIds.add(playlistId);
 
   let poolVideos = scorePoolVideos(profileId, poolKey, listPoolNodes(profileId, poolKey));
   recordScoringObservation(observation, profileId, poolVideos, "initial");
@@ -832,12 +853,12 @@ async function initializePoolOnce(
   const existingCentroid = getCentroid(profileId, poolKey);
 
   if (existingState && existingCentroid) {
-    return { initialized: false, channelCandidates: [] };
+    return { initialized: false, channelCandidates: [], hiddenPlaylistIds: [] };
   }
 
   const timestamp = Date.now();
   const config = getGretelConfig();
-  const [discoveredRootVideos, channelCandidates] = await Promise.all([
+  const [discoveredRootItems, channelCandidates] = await Promise.all([
     queries.length > 0
       ? searchVideos(queries, observation, profileId, config.expansion.initialFetchSize)
       : Promise.resolve([]),
@@ -845,6 +866,8 @@ async function initializePoolOnce(
       ? fetchChannelVideos(channels, channelSort, observation, profileId, config.expansion.initialFetchSize)
       : Promise.resolve([])
   ]);
+  const discoveredPlaylists = discoveredRootItems.filter((item) => item.itemType === "playlist");
+  const discoveredRootVideos = discoveredRootItems.filter((item) => item.itemType !== "playlist");
   const persistentChannels = persistentChannelCandidates(profileId, channelCandidates);
   const embeddingCandidates = [...new Map(
     [...discoveredRootVideos, ...persistentChannels].map((video) => [video.id, video])
@@ -956,7 +979,66 @@ async function initializePoolOnce(
   ensureProfileCurrent(profileId, expectedProfileUpdatedAt);
   addPoolNodes(profileId, poolKey, "channelVideos", channelPoolVideos, timestamp);
 
-  return { initialized: true, channelCandidates };
+  rememberPlaylistCandidates(profileId, poolKey, discoveredPlaylists, timestamp);
+  schedulePendingPlaylistProcessing(profileId, poolKey);
+
+  return {
+    initialized: true,
+    channelCandidates,
+    hiddenPlaylistIds: discoveredPlaylists.map((playlist) => playlist.id)
+  };
+}
+
+function getGlobalPlaylistProcessingState() {
+  const globalKey = "__gretelPlaylistProcessingInFlight";
+  const globalScope = globalThis as typeof globalThis & { [globalKey]?: Set<string> };
+  if (!globalScope[globalKey]) globalScope[globalKey] = new Set<string>();
+  return globalScope[globalKey];
+}
+
+function schedulePendingPlaylistProcessing(profileId: string, poolKey: string) {
+  const key = `${profileId}:${poolKey}`;
+  if (playlistProcessingInFlight.has(key)) return;
+  const pending = listPendingPlaylists(profileId, poolKey);
+  if (pending.length === 0) return;
+  playlistProcessingInFlight.add(key);
+  void (async () => {
+    try {
+      for (const candidate of pending) {
+        try {
+          const result = await evaluatePlaylist(profileId, poolKey, candidate.playlist);
+          const playlist = { ...result.playlist, playlistPoolKey: poolKey };
+          setPlaylistDecision(profileId, poolKey, playlist, result.admitted);
+          if (result.admitted) {
+            // Keep the discovery time so delayed playlists do not form a new block at the top.
+            addPoolNodes(
+              profileId,
+              poolKey,
+              playlist.sourceNodeId === "relatedVideos" ? "relatedVideos" : "tagSearch",
+              [playlist],
+              candidate.discoveredAt
+            );
+          }
+          clearVideoSearchCache(profileId);
+          logInfo("feed.playlist_evaluated", {
+            profileId,
+            playlistId: playlist.id,
+            admitted: result.admitted,
+            sampledVideos: result.sampledVideos,
+            passingVideos: result.passingVideos
+          });
+        } catch (error) {
+          logWarn("feed.playlist_evaluation_failed", {
+            profileId,
+            playlistId: candidate.playlist.id,
+            ...errorFields(error)
+          });
+        }
+      }
+    } finally {
+      playlistProcessingInFlight.delete(key);
+    }
+  })();
 }
 
 function persistentChannelCandidates(profileId: string, videos: FeedVideo[]) {
@@ -1101,7 +1183,12 @@ async function expandPool(
           )
       );
       const visitedVideoIds = getVisitedVideoIds(profileId, poolKey);
-      const newCandidates = rawRelatedVideos.filter((video) => !visitedVideoIds.has(video.id));
+      const relatedPlaylists = rawRelatedVideos.filter((item) => item.itemType === "playlist");
+      const newCandidates = rawRelatedVideos.filter(
+        (video) => video.itemType !== "playlist" && !visitedVideoIds.has(video.id)
+      );
+      rememberPlaylistCandidates(profileId, poolKey, relatedPlaylists, Date.now());
+      schedulePendingPlaylistProcessing(profileId, poolKey);
       const embeddings = await embedVideos(profileId, newCandidates, observation, "pool_expansion");
       const parentScores = new Map(seeds.map((seed) => [seed.id, seed.engagementScore || 0]));
       const topicCentroids = getTopicCentroids(profileId, poolKey);
@@ -1348,7 +1435,7 @@ function logTopServingItems(
   });
 }
 
-async function embedVideos(
+export async function embedVideos(
   profileId: string,
   videos: FeedVideo[],
   observation: FeedObservation,
@@ -1641,9 +1728,10 @@ async function retainReadyQueueEmbeddings(
 }
 
 function buildUpNextByVideoId(profileId: string, videos: FeedVideo[]) {
+  const playableVideos = videos.filter((video) => video.itemType !== "playlist");
   const embeddings = new Map<string, number[]>();
 
-  for (const video of videos) {
+  for (const video of playableVideos) {
     const embedding = getRetainedEmbedding(profileId, video.id);
 
     if (embedding) {
@@ -1652,11 +1740,11 @@ function buildUpNextByVideoId(profileId: string, videos: FeedVideo[]) {
   }
 
   return Object.fromEntries(
-    videos.map((video) => [
+    playableVideos.map((video) => [
       video.id,
       selectUpNextCandidates({
         currentVideo: video,
-        candidates: videos.filter((candidate) => candidate.id !== video.id),
+        candidates: playableVideos.filter((candidate) => candidate.id !== video.id),
         embeddings
       }).map((candidate) => candidate.id)
     ])

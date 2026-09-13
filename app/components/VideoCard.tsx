@@ -1,11 +1,11 @@
 import React, { useEffect, useRef } from "react";
-import { Bookmark, ListPlus, ListVideo } from "lucide-react";
+import { Bookmark, ListPlus, ListVideo, PlaySquare } from "lucide-react";
 
 import type { FeedVideo } from "../types";
 import type { CardFeedbackAction } from "./VideoActions";
 import { observeCardIntersection } from "./shared-intersection-observer";
 import { VideoActions } from "./VideoActions";
-import { formatPublished, handleThumbnailError, thumbnailFor } from "./video-utils";
+import { formatPublished, handleThumbnailError, isPlaylistCard, thumbnailFor } from "./video-utils";
 
 type VideoCardProps = {
   video: FeedVideo;
@@ -31,6 +31,11 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
   const reportedRef = useRef("");
   const videoRef = useRef(props.video);
   videoRef.current = props.video;
+  const isPlaylist = isPlaylistCard(props.video);
+  const playlistCount = props.video.playlistVideoCount || 0;
+  const cardClasses = ["video-card", isPlaylist ? "playlist-card" : "", props.compact ? "compact" : ""]
+    .filter(Boolean)
+    .join(" ");
 
   useEffect(() => {
     reportedRef.current = "";
@@ -54,7 +59,7 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
   }, [props.video.id, props.onImpression]);
 
   return (
-    <article ref={cardRef} className={props.compact ? "video-card compact" : "video-card"}>
+    <article ref={cardRef} className={cardClasses} data-playlist-card={isPlaylist ? "" : undefined}>
       <div className="thumbnail-wrap">
         {/* One-tap actions: Save and Queue live on the thumbnail so the common
             cases never require opening the ⋮ menu. */}
@@ -63,8 +68,16 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
             <button
               type="button"
               className={props.queued ? "quick-action queued" : "quick-action"}
-              aria-label={props.queued ? `${props.video.title} is queued` : `Queue ${props.video.title}`}
-              title={props.queued ? "In your queue" : "Add to queue"}
+              aria-label={
+                props.queued
+                  ? isPlaylist
+                    ? `Playlist ${props.video.title} is queued`
+                    : `${props.video.title} is queued`
+                  : isPlaylist
+                    ? `Queue all videos in ${props.video.title}`
+                    : `Queue ${props.video.title}`
+              }
+              title={props.queued ? "In your queue" : isPlaylist ? "Add playlist to queue" : "Add to queue"}
               onClick={() => props.onEnqueueVideo?.(props.video)}
             >
               {props.queued ? <ListVideo aria-hidden="true" size={16} /> : <ListPlus aria-hidden="true" size={16} />}
@@ -80,14 +93,34 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
             <Bookmark aria-hidden="true" size={16} fill={props.saved ? "currentColor" : "none"} />
           </button>
         </div>
-        <button type="button" className="thumbnail-button" onClick={() => props.onSelectVideo(props.video)}>
+        <button
+          type="button"
+          className="thumbnail-button"
+          onClick={() => props.onSelectVideo(props.video)}
+          aria-label={isPlaylist ? `Open playlist ${props.video.title}` : undefined}
+        >
           <img
             src={thumbnailFor(props.video)}
             loading="lazy"
             alt=""
             onError={(e) => handleThumbnailError(e, props.video.id)}
           />
-          {props.video.duration && <span className="duration-pill">{props.video.duration}</span>}
+          {isPlaylist ? (
+            <span className="playlist-badge">
+              <PlaySquare aria-hidden="true" size={13} />
+              Playlist
+            </span>
+          ) : null}
+          {isPlaylist ? (
+            playlistCount > 0 ? (
+              <span className="playlist-count-pill">
+                <ListVideo aria-hidden="true" size={12} />
+                {playlistCount} {playlistCount === 1 ? "video" : "videos"}
+              </span>
+            ) : null
+          ) : props.video.duration ? (
+            <span className="duration-pill">{props.video.duration}</span>
+          ) : null}
         </button>
       </div>
       <div className="video-meta">
@@ -127,7 +160,11 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
           </button>
         )}
         <div className="published-line" title={formatPublished(props.video)}>
-          {formatPublished(props.video)}
+          {isPlaylist
+            ? [playlistCount > 0 ? `${playlistCount} videos` : "Playlist", formatPublished(props.video)]
+                .filter(Boolean)
+                .join(" · ")
+            : formatPublished(props.video)}
         </div>
       </div>
     </article>

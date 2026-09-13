@@ -14,13 +14,14 @@ import {
   ChevronDown,
   Loader2,
   Pin,
+  PlaySquare,
   ThumbsDown,
 } from "lucide-react";
 import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import type { FeedVideo } from "../types";
-import { formatPublished, handleThumbnailError, normalize, thumbnailFor, authedHeaders } from "./video-utils";
+import { formatPublished, handleThumbnailError, isPlaylistCard, normalize, thumbnailFor, authedHeaders } from "./video-utils";
 import {
   describeYouTubePlayerError,
   type YouTubePlayerErrorInfo,
@@ -112,6 +113,7 @@ type WatchViewProps = {
   onPlaybackStateChange?: (playing: boolean) => void;
   onTimeUpdate?: (currentTime: number, duration: number) => void;
   queuedVideoIds: Set<string>;
+  queuedPlaylistIds?: Set<string>;
   onEnqueueVideo: (video: FeedVideo) => void;
   onVideoEnded?: () => void;
 };
@@ -704,13 +706,25 @@ export function WatchView(props: WatchViewProps) {
             {visibleSideVideos.length} videos
           </span>
         </div>
-        {visibleSideVideos.map((video) => (
+        {visibleSideVideos.map((video) => {
+          const isPlaylist = isPlaylistCard(video);
+          const queued = isPlaylist
+            ? props.queuedPlaylistIds?.has(video.playlistId || video.id) === true
+            : props.queuedVideoIds.has(video.id);
+          return (
           <div className="side-video-row" key={video.id}>
-            <button type="button" className="side-video" onClick={() => props.onSelectVideo(video)} aria-label={`Play ${video.title} by ${video.author}`}>
+            <button type="button" className="side-video" onClick={() => props.onSelectVideo(video)} aria-label={isPlaylist ? `Open playlist ${video.title} by ${video.author}` : `Play ${video.title} by ${video.author}`}>
               <span className="side-thumb">
                 <img src={thumbnailFor(video)} loading="lazy" alt="" onError={(e) => handleThumbnailError(e, video.id)} />
-                {video.duration && <span className="duration-pill">{video.duration}</span>}
-                {props.queuedVideoIds.has(video.id) && (
+                {isPlaylist ? (
+                  <span className="playlist-badge side-playlist-badge">
+                    <PlaySquare aria-hidden="true" size={12} />
+                    Playlist
+                  </span>
+                ) : video.duration ? (
+                  <span className="duration-pill">{video.duration}</span>
+                ) : null}
+                {queued && (
                   <span className="queued-pill" title="In your queue">
                     <ListVideo aria-hidden="true" size={12} />
                   </span>
@@ -724,10 +738,10 @@ export function WatchView(props: WatchViewProps) {
             </button>
             <button
               type="button"
-              className={props.queuedVideoIds.has(video.id) ? "queue-icon-button queued" : "queue-icon-button"}
+              className={queued ? "queue-icon-button queued" : "queue-icon-button"}
               onClick={() => props.onEnqueueVideo(video)}
-              aria-label={props.queuedVideoIds.has(video.id) ? `${video.title} is queued` : `Queue ${video.title}`}
-              title={props.queuedVideoIds.has(video.id) ? "Already queued" : "Add to queue"}
+              aria-label={queued ? `${video.title} is queued` : isPlaylist ? `Queue all videos in ${video.title}` : `Queue ${video.title}`}
+              title={queued ? "Already queued" : isPlaylist ? "Add playlist to queue" : "Add to queue"}
             >
               <ListPlus aria-hidden="true" size={16} />
             </button>
@@ -753,7 +767,7 @@ export function WatchView(props: WatchViewProps) {
               </details>
             )}
           </div>
-        ))}
+        );})}
         <div ref={sideSentinelRef} className="side-sentinel">
           {props.loadingFeed && (
             <div className="comments-loader">

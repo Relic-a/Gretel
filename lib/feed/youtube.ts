@@ -14,6 +14,7 @@ import {
   getDuration,
   getPublishedAt,
   getPublishedText,
+  getPlaylistId,
   getThumbnailUrl,
   getVideoId,
   getViewCount,
@@ -22,6 +23,7 @@ import {
   getText,
   getTitle
 } from "./video-utils";
+import { toPlaylistCard } from "./playlists";
 import { rememberChannelAvatar, resolveMissingChannelAvatars, getChannelAvatar } from "./channel-avatar-cache";
 
 export async function searchVideos(
@@ -48,7 +50,7 @@ export async function searchVideos(
       const searchResults = await Promise.all(
         queries.map(async (query) => {
           try {
-            const results = options.results ?? await youtube.search(query, { type: "video" });
+            const results = options.results ?? await youtube.search(query, { type: "all" });
             return { query, results, error: null };
           } catch (error) {
             return { query, results: { results: [] }, error };
@@ -61,7 +63,16 @@ export async function searchVideos(
         const sourceVideos = getSearchVideoItems(results);
         const fetchedVideos = sourceVideos.length;
 
-        for (const video of sourceVideos) {
+        for (let position = 0; position < sourceVideos.length; position += 1) {
+          const video = sourceVideos[position];
+          const playlistId = getPlaylistId(video);
+          if (playlistId) {
+            if (!seen.has(playlistId)) {
+              seen.add(playlistId);
+              queryVideos.push({ ...toPlaylistCard(video, query, position), sourceNodeId: "tagSearch" });
+            }
+            continue;
+          }
           const id = getVideoId(video);
           const duration = getDuration(video);
           const title = getTitle(video);
@@ -78,6 +89,7 @@ export async function searchVideos(
             rememberChannelAvatar({ channelId, channelName: author }, authorAvatarUrl);
           }
           queryVideos.push({
+            itemType: "video",
             id,
             title,
             author,
@@ -139,7 +151,9 @@ export async function searchVideos(
 function getSearchVideoItems(results: { videos?: unknown[]; results?: unknown[] }) {
   if (Array.isArray(results.results)) {
     return results.results.filter(
-      (item) => item && typeof item === "object" && "type" in item && item.type === "Video"
+      (item) => item && typeof item === "object" && (
+        ("type" in item && item.type === "Video") || Boolean(getPlaylistId(item))
+      )
     );
   }
 
@@ -257,6 +271,7 @@ export async function fetchChannelVideos(
             rememberChannelAvatar({ channelId: authorChannelId, channelName: authorChannelKey }, authorAvatarUrl);
           }
           channelVideos.push({
+            itemType: "video",
             id,
             title: getTitle(video),
             author,

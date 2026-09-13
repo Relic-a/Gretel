@@ -12,6 +12,7 @@ import { OrganizeDialog, SavedWorkspace, type OrganizeDraft, type SavedFilter } 
 import { useSavedCollections, type SavedCollectionsResult } from "./components/use-saved-collections";
 import { WatchView } from "./components/WatchView";
 import { QueuePanel } from "./components/QueuePanel";
+import { PlaylistPanel } from "./components/PlaylistPanel";
 import {
   buildFeedbackPayload,
   channelMatchesVideo,
@@ -19,12 +20,13 @@ import {
   feedbackToastCopy
 } from "./components/feedback-client";
 import { usePlaybackQueue } from "./components/use-playback-queue";
-import { authedHeaders, normalize } from "./components/video-utils";
+import { authedHeaders, isPlaylistCard, normalize } from "./components/video-utils";
 import { fetchStartupFeed } from "../lib/feed/startup-request";
 import type {
   ChannelResult,
   FeedResponse,
   FeedVideo,
+  PlaylistDetails,
   Profile,
   PublicGretelConfig,
   SavedCollectionsResponse,
@@ -142,11 +144,35 @@ export default function Home() {
   const [queueOpen, setQueueOpen] = useState(false);
   const queueDrawerRef = useRef<HTMLElement | null>(null);
   const [queueNotice, setQueueNotice] = useState(false);
+  // Playlist cards are not watchable videos: opening one loads its ordered
+  // videos from YouTube and shows them in a dedicated side panel instead.
+  const [openPlaylist, setOpenPlaylist] = useState<FeedVideo | null>(null);
+  const [playlistDetails, setPlaylistDetails] = useState<PlaylistDetails | null>(null);
+  const [playlistLoading, setPlaylistLoading] = useState(false);
+  const [playlistError, setPlaylistError] = useState("");
+  const [playlistNotice, setPlaylistNotice] = useState(false);
+  const playlistRequestIdRef = useRef(0);
   useEffect(() => {
     if (!queueNotice) return;
     const timer = window.setTimeout(() => setQueueNotice(false), 5000);
     return () => window.clearTimeout(timer);
   }, [queueNotice]);
+  useEffect(() => {
+    if (!playlistNotice) return;
+    const timer = window.setTimeout(() => setPlaylistNotice(false), 5000);
+    return () => window.clearTimeout(timer);
+  }, [playlistNotice]);
+  useEffect(() => {
+    if (!openPlaylist) return;
+    function dismissPlaylistWhenOutside(event: PointerEvent) {
+      const target = event.target;
+      if (!(target instanceof Element)) return;
+      if (target.closest(".playlist-panel") || target.closest("[data-playlist-card]")) return;
+      closePlaylist();
+    }
+    document.addEventListener("pointerdown", dismissPlaylistWhenOutside);
+    return () => document.removeEventListener("pointerdown", dismissPlaylistWhenOutside);
+  }, [openPlaylist]);
   useEffect(() => {
     function dismissOpenDetails(event: PointerEvent) {
       const target = event.target as Node;
@@ -197,6 +223,14 @@ export default function Home() {
   const visibleVideos =
     section === "history" && searchResults === null ? matchedHistoryVideos : sectionVideos;
   const sideVideos = orderedSideVideos(visibleVideos, activeVideo, feed?.upNextByVideoId);
+  const playlistNextVideoId = useMemo(() => {
+    const autoplayIds = playlistDetails?.autoplayVideoIds || [];
+    const index = activeVideo ? autoplayIds.indexOf(activeVideo.id) : -1;
+    if (index >= 0 && index + 1 < autoplayIds.length) {
+      return autoplayIds[index + 1];
+    }
+    return autoplayIds[0] || null;
+  }, [playlistDetails, activeVideo]);
   const canAskForMore = searchResults === null && section === "home" && Boolean(feed) && !loading && !feedEnd;
 
   useEffect(() => {
@@ -1226,13 +1260,83 @@ export default function Home() {
     () => new Set((queue.snapshot?.items || []).map((video) => video.id)),
     [queue.snapshot]
   );
+  // Queued playlist members carry their source playlistId, which is how the
+  // panel knows the whole playlist already sits in the queue.
+  const queuedPlaylistIds = useMemo(
+    () =>
+      new Set(
+        (queue.snapshot?.items || []).flatMap((video) =>
+          video.itemType !== "playlist" && video.playlistId ? [video.playlistId] : []
+        )
+      ),
+    [queue.snapshot]
+  );
 
   function openVideo(video: FeedVideo) {
+    if (isPlaylistCard(video)) {
+      void openPlaylistDetails(video);
+      return;
+    }
     setActiveVideo(video);
     writeRoute(section, video.id);
     window.scrollTo({ top: 0, behavior: "smooth" });
     // Keep the queue cursor in sync when the user jumps to a queued video.
     void queue.setCurrentIfQueued(video.id);
+  }
+
+  function closePlaylist() {
+    playlistRequestIdRef.current += 1;
+    setOpenPlaylist(null);
+    setPlaylistDetails(null);
+    setPlaylistLoading(false);
+    setPlaylistError("");
+  }
+
+  async function fetchPlaylistDetails(playlist: FeedVideo) {
+    const requestId = playlistRequestIdRef.current + 1;
+    playlistRequestIdRef.current = requestId;
+    setPlaylistLoading(true);
+    setPlaylistError("");
+
+    try {
+      const params = new URLSearchParams({
+        profileId,
+        playlistId: playlist.playlistId || playlist.id,
+        playlistPoolKey: playlist.playlistPoolKey || ""
+      });
+      const response = await authedFetch(`/api/playlist?${params.toString()}`);
+      const data = await response.json();
+
+      if (requestId !== playlistRequestIdRef.current) {
+        return;
+      }
+      if (!response.ok) {
+        throw new Error(data.error || "Could not load this playlist.");
+      }
+
+      setPlaylistDetails({
+        playlistId: typeof data.playlistId === "string" ? data.playlistId : playlist.id,
+        videos: Array.isArray(data.videos) ? data.videos : [],
+        autoplayVideoIds: Array.isArray(data.autoplayVideoIds) ? data.autoplayVideoIds : []
+      });
+    } catch (caught) {
+      if (requestId !== playlistRequestIdRef.current) {
+        return;
+      }
+      setPlaylistDetails(null);
+      setPlaylistError(caught instanceof Error ? caught.message : "Could not load this playlist.");
+    } finally {
+      if (requestId === playlistRequestIdRef.current) {
+        setPlaylistLoading(false);
+      }
+    }
+  }
+
+  async function openPlaylistDetails(playlist: FeedVideo) {
+    setOpenPlaylist(playlist);
+    setPlaylistDetails(null);
+    setQueueOpen(false);
+    await fetchPlaylistDetails(playlist);
   }
 
   function dismissFeedbackNotice() {
@@ -1382,8 +1486,16 @@ export default function Home() {
 
   const handleEnqueueVideo = useCallback(
     (video: FeedVideo) => {
+      const isPlaylist = isPlaylistCard(video);
       const wasEmpty = (queue.snapshot?.items.length ?? 0) === 0;
-      void queue.enqueue(video);
+      // A playlist card is expanded server-side by the same enqueue action into
+      // its ordered videos, so the client only needs to send the card.
+      void queue.enqueue(video).then((data) => {
+        if (data && isPlaylist) setPlaylistNotice(true);
+      });
+      // A queued playlist becomes many videos; a toast with a "View queue"
+      // action keeps the playlist panel visible instead of covering it.
+      if (isPlaylist) return;
       if (wasEmpty) setQueueOpen(true);
       else setQueueNotice(true);
     },
@@ -1408,6 +1520,26 @@ export default function Home() {
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
   }, [queue, section]);
+
+  /** Follow the playlist's own order when playback advances. */
+  const handleVideoEnded = useCallback(() => {
+    const autoplayIds = playlistDetails?.autoplayVideoIds || [];
+    const index = activeVideo ? autoplayIds.indexOf(activeVideo.id) : -1;
+    const nextId = index >= 0 ? autoplayIds[index + 1] : undefined;
+    const nextVideo = nextId
+      ? playlistDetails?.videos.find((video) => video.id === nextId) || null
+      : null;
+
+    if (nextVideo) {
+      setActiveVideo(nextVideo);
+      writeRoute(section, nextVideo.id);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      void queue.setCurrentIfQueued(nextVideo.id);
+      return;
+    }
+
+    void handlePlayerEnded();
+  }, [activeVideo, handlePlayerEnded, playlistDetails, queue, section]);
 
   const handleToggleQueueAutoplay = useCallback(
     (enabled: boolean) => {
@@ -1537,6 +1669,29 @@ export default function Home() {
         <div className="feedback-toast queued" role="status" aria-live="polite"><div className="feedback-toast-copy"><strong>Added to queue</strong></div><button className="feedback-toast-retry" onClick={() => { setQueueNotice(false); setQueueOpen(true); }}>View queue</button><button className="feedback-toast-dismiss" aria-label="Dismiss queue notice" onClick={() => setQueueNotice(false)}><X size={15} /></button></div>
       )}
 
+      {playlistNotice && !queueOpen && (
+        <div className="feedback-toast queued" role="status" aria-live="polite"><div className="feedback-toast-copy"><strong>Playlist added to queue</strong><span>Its videos are queued in playlist order.</span></div><button className="feedback-toast-retry" onClick={() => { setPlaylistNotice(false); setQueueOpen(true); }}>View queue</button><button className="feedback-toast-dismiss" aria-label="Dismiss playlist queue notice" onClick={() => setPlaylistNotice(false)}><X size={15} /></button></div>
+      )}
+
+      {openPlaylist && (
+        <PlaylistPanel
+          playlist={openPlaylist}
+          details={playlistDetails}
+          nextVideoId={playlistNextVideoId}
+          loading={playlistLoading}
+          error={playlistError}
+          activeVideoId={activeVideo?.id || ""}
+          saved={savedVideoIds.has(openPlaylist.id)}
+          queued={queuedPlaylistIds.has(openPlaylist.playlistId || openPlaylist.id)}
+          onSelectVideo={openVideo}
+          onPlayAll={(video) => openVideo(video)}
+          onToggleSave={() => void saveVideo(openPlaylist)}
+          onEnqueue={() => handleEnqueueVideo(openPlaylist)}
+          onRetry={() => void fetchPlaylistDetails(openPlaylist)}
+          onClose={closePlaylist}
+        />
+      )}
+
       {saveNotice && !saveDialog && (
         <div className="feedback-toast saved" role="status" aria-live="polite">
           <span className="feedback-toast-icon" aria-hidden="true">
@@ -1647,8 +1802,9 @@ export default function Home() {
           }}
           onTimeUpdate={handleWatchTimeUpdate}
           queuedVideoIds={queuedVideoIds}
+          queuedPlaylistIds={queuedPlaylistIds}
           onEnqueueVideo={handleEnqueueVideo}
-          onVideoEnded={handlePlayerEnded}
+          onVideoEnded={handleVideoEnded}
         />
       )}
 
@@ -1714,6 +1870,7 @@ export default function Home() {
           savedVideoIds={savedVideoIds}
           likedVideoIds={likedVideoIds}
           queuedVideoIds={queuedVideoIds}
+          queuedPlaylistIds={queuedPlaylistIds}
           loading={searchResults !== null ? loadingSearchMore : loading}
           isBuilding={isBuilding}
           canAskForMore={searchResults !== null ? Boolean(searchCursor) : canAskForMore}

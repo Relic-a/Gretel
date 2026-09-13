@@ -11,6 +11,8 @@ import {
   setQueueCurrentVideo
 } from "../../../lib/queue-store";
 import { verifyApiToken } from "../../../lib/api-auth";
+import { getPlaylistDetails } from "../../../lib/feed/playlists";
+import { isPlaylistAdmitted } from "../../../lib/feed/playlist-store";
 
 export const runtime = "nodejs";
 
@@ -44,6 +46,18 @@ export async function POST(request: Request) {
     switch (action) {
       case "enqueue": {
         const candidates = Array.isArray(body.videos) ? body.videos : [body.video];
+        const playlist = candidates.find((value: unknown) =>
+          value && typeof value === "object" && (value as Record<string, unknown>).itemType === "playlist"
+        ) as Record<string, unknown> | undefined;
+        if (playlist) {
+          const playlistId = typeof playlist.id === "string" ? playlist.id : "";
+          const poolKey = typeof playlist.playlistPoolKey === "string" ? playlist.playlistPoolKey : "";
+          if (!playlistId || !poolKey || !isPlaylistAdmitted(profileId, poolKey, playlistId)) {
+            return Response.json({ error: "This playlist is not available for this feed." }, { status: 400 });
+          }
+          const details = await getPlaylistDetails(profileId, poolKey, playlistId);
+          return Response.json(enqueueQueueVideos(profileId, details.videos));
+        }
         const videos = candidates.flatMap((value: unknown) => {
           const video = parseQueueVideo(value);
           return video ? [video] : [];

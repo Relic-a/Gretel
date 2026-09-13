@@ -11,12 +11,14 @@ import {
   getDuration,
   getPublishedAt,
   getPublishedText,
+  getPlaylistId,
   getThumbnailUrl,
   getTitle,
   getViewCount,
   getVideoId,
   shouldKeepVideo
 } from "./video-utils";
+import { toPlaylistCard } from "./playlists";
 import { getYoutubeClient } from "./youtube-client";
 import { rememberChannelAvatar, resolveMissingChannelAvatars } from "./channel-avatar-cache";
 
@@ -120,7 +122,23 @@ async function recommendVideosFromLinks(
         let seedVideoCount = 0;
         const maxVideosPerSeed = budgetForSeed(seedVideo, seedVideos);
 
-        for (const video of feed) {
+        for (let position = 0; position < feed.length; position += 1) {
+          const video = feed[position];
+          const playlistId = getPlaylistId(video);
+          if (playlistId) {
+            if (!seen.has(playlistId)) {
+              seen.add(playlistId);
+              recommendations.push({
+                ...toPlaylistCard(video, sourceLabel, position),
+                sourceNodeId: "relatedVideos",
+                parent_video_id: seedVideo.id,
+                parent_title: seedVideo.title,
+                parent_author: seedVideo.author,
+                recommendation_depth: (seedVideo.recommendation_depth || 0) + 1
+              });
+            }
+            continue;
+          }
           const id = getVideoId(video);
           const duration = getDuration(video);
 
@@ -136,6 +154,7 @@ async function recommendVideosFromLinks(
             rememberChannelAvatar({ channelId, channelName: author }, authorAvatarUrl);
           }
           recommendations.push({
+            itemType: "video",
             id,
             title: getTitle(video),
             author,

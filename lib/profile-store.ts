@@ -284,12 +284,19 @@ export function resetProfile(profileId: string) {
       database.prepare("DELETE FROM feed_pool_state WHERE profile_id = ?").run(profileId);
       database.prepare("DELETE FROM feed_pool_nodes WHERE profile_id = ?").run(profileId);
       database.prepare("DELETE FROM feed_visited_videos WHERE profile_id = ?").run(profileId);
+      deleteProfileRowsIfTableExists(database, "feed_playlists", profileId);
+      deleteProfileRowsIfTableExists(database, "playlist_video_eligibility", profileId);
       database.prepare("UPDATE profiles SET updated_at = ? WHERE id = ?").run(Date.now(), profileId);
     });
 
     resetYoutubeProfileCache(profileId);
     database.pragma("wal_checkpoint(PASSIVE)");
   });
+}
+
+function deleteProfileRowsIfTableExists(database: Database.Database, tableName: string, profileId: string) {
+  const exists = database.prepare("SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?").get(tableName);
+  if (exists) database.prepare(`DELETE FROM ${tableName} WHERE profile_id = ?`).run(profileId);
 }
 
 function deleteFeedAlgorithmRows(profileId: string) {

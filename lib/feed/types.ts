@@ -1,6 +1,7 @@
 export type ChannelSort = "mixed";
 
 export type FeedVideo = {
+  itemType?: "video" | "playlist";
   id: string;
   title: string;
   author: string;
@@ -29,6 +30,11 @@ export type FeedVideo = {
   liked?: boolean;
   clicked?: boolean;
   ignoreCount?: number;
+  playlistId?: string;
+  playlistPoolKey?: string;
+  playlistVideoCount?: number;
+  playlistPosition?: number;
+  centroidEligible?: boolean;
 };
 
 export type FeedNodeId =

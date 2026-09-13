@@ -1,9 +1,18 @@
 import type React from "react";
 import type { FeedVideo } from "../types";
 
+export function isPlaylistCard(video: Pick<FeedVideo, "itemType">): boolean {
+  return video.itemType === "playlist";
+}
+
 export function thumbnailFor(video: FeedVideo) {
   if (video.thumbnailCacheUrl) {
     return video.thumbnailCacheUrl;
+  }
+  // Playlist ids (PL…) are not video ids, so the video thumbnail proxy would
+  // 404 and fall through to a broken image. Use the real playlist art instead.
+  if (isPlaylistCard(video)) {
+    return video.thumbnailUrl || "";
   }
   if (video.id) {
     return `/api/thumbnails/${video.id}`;
@@ -24,7 +33,9 @@ export function handleThumbnailError(
   }
 
   if (currentSrc.includes("/api/thumbnails/")) {
-    img.src = `https://i.ytimg.com/vi/${id}/hq720.jpg`;
+    // A missing playlist id must not be guessed into a YouTube video URL; drop
+    // the art rather than requesting an unrelated thumbnail.
+    img.src = id.startsWith("PL") ? "" : `https://i.ytimg.com/vi/${id}/hq720.jpg`;
   } else if (currentSrc.includes("maxresdefault")) {
     img.src = `https://i.ytimg.com/vi/${id}/hq720.jpg`;
   } else if (currentSrc.includes("hq720")) {

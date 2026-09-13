@@ -235,7 +235,7 @@ function createFakeYoutubeClient() {
         return { channels: [{ id: `UC-${slug(query)}` }] };
       }
 
-      assert.equal(options.type, "video");
+      assert.equal(options.type, "all");
       calls.videoSearch += 1;
 
       return {

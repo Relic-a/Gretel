@@ -98,6 +98,7 @@ export function selectExpansionSeeds(input: {
   const count = input.seedCount ?? input.config.feed.expansionSeedCount;
 
   return [...input.videos]
+    .filter((video) => video.itemType !== "playlist")
     .filter((video) => !input.feedback || !isFeedbackExcluded(video, input.feedback))
     .sort((left, right) => {
       if (isColdStart) {

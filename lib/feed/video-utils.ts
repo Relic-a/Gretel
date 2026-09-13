@@ -79,6 +79,27 @@ export function getVideoId(video: unknown) {
   return "";
 }
 
+export function getPlaylistId(value: unknown) {
+  if (!value || typeof value !== "object") return "";
+  const source = value as Record<string, unknown>;
+  const contentType = getText(source.content_type).toUpperCase();
+  const type = getText(source.type).toUpperCase();
+  const id = getText(source.content_id || source.playlist_id || source.id);
+  return (contentType === "PLAYLIST" || type === "PLAYLIST" || type === "GRIDPLAYLIST") ? id : "";
+}
+
+export function getPlaylistVideoCount(value: unknown) {
+  if (!value || typeof value !== "object") return 0;
+  const source = value as Record<string, unknown>;
+  const texts = [source.video_count, source.video_count_short, source.thumbnail_text, ...getMetadataTexts(value)]
+    .map(getText);
+  for (const text of texts) {
+    const match = text.match(/[\d,]+/);
+    if (match) return Number(match[0].replace(/,/g, "")) || 0;
+  }
+  return 0;
+}
+
 export function getTitle(video: unknown) {
   if (!video || typeof video !== "object") {
     return "Untitled video";
@@ -393,7 +414,7 @@ export function collectThumbnailCandidates(value: unknown, collected: ThumbnailC
     });
   }
 
-  for (const key of ["thumbnails", "thumbnail", "image", "avatar", "content_image", "metadata"] as const) {
+  for (const key of ["thumbnails", "thumbnail", "image", "avatar", "content_image", "primary_thumbnail", "metadata"] as const) {
     if (key in source && source[key]) {
       collectThumbnailCandidates(source[key], collected);
     }
@@ -474,7 +495,7 @@ export function getThumbnailUrl(video: unknown, explicitId?: string): string {
     return selection.selectedUrl;
   }
 
-  if (id) {
+  if (id && !getPlaylistId(video)) {
     return `https://i.ytimg.com/vi/${id}/hq720.jpg`;
   }
 

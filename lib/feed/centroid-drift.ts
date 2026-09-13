@@ -17,9 +17,20 @@ import {
 import { averageNormalizedVectors, cosineSimilarity, driftCentroid, normalizeVector } from "./vector-math";
 import { listPoolNodes, updatePoolSimilarities } from "./pool-store";
 import { logDebug, logInfo } from "../logger";
+import { isPlaylistVideoCentroidEligible } from "./playlist-store";
 
 export async function updateCentroidsForPositiveEngagement(profileId: string, video: FeedVideo) {
   const config = getGretelConfig();
+
+  if (video.centroidEligible === false || !isPlaylistVideoCentroidEligible(profileId, video.id)) {
+    logDebug("feed.phase4.centroid_drift", {
+      profileId,
+      videoId: video.id,
+      status: "skipped",
+      reason: "playlist_member_below_threshold"
+    });
+    return;
+  }
 
   if (!isPositiveEngagement(video, config.learning.watchSaveThreshold)) {
     logDebug("feed.phase4.centroid_drift", {

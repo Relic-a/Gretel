@@ -3,7 +3,7 @@ import { LoaderCircle, Search, X } from "lucide-react";
 
 import type { FeedVideo } from "../types";
 import type { CardFeedbackAction } from "./VideoActions";
-import { normalize } from "./video-utils";
+import { isPlaylistCard, normalize } from "./video-utils";
 import { VideoCard } from "./VideoCard";
 import { FeedBuildProgress } from "./FeedBuildProgress";
 
@@ -15,6 +15,7 @@ type FeedViewProps = {
   savedVideoIds: Set<string>;
   likedVideoIds: Set<string>;
   queuedVideoIds?: Set<string>;
+  queuedPlaylistIds?: Set<string>;
   loading: boolean;
   isBuilding?: boolean;
   canAskForMore: boolean;
@@ -149,6 +150,11 @@ export function FeedView(props: FeedViewProps) {
         <div className="video-grid">
           {props.videos.map((video) => {
             const subscribed = props.subscriptions.has(normalize(video.author));
+            // A queued playlist is expanded server-side into its videos, so the
+            // card is "queued" when any of those members sit in the queue.
+            const queued = isPlaylistCard(video)
+              ? props.queuedPlaylistIds?.has(video.playlistId || video.id) === true
+              : props.queuedVideoIds?.has(video.id) === true;
 
             return (
               <VideoCard
@@ -156,7 +162,7 @@ export function FeedView(props: FeedViewProps) {
                 video={video}
                 saved={props.savedVideoIds.has(video.id)}
                 liked={props.likedVideoIds.has(video.id)}
-                queued={props.queuedVideoIds?.has(video.id) === true}
+                queued={queued}
                 showSubscribe={false}
                 subscribed={subscribed}
                 onSelectVideo={props.onSelectVideo}

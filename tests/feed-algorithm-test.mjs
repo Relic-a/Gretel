@@ -174,6 +174,54 @@ test("root discovery stores a unit centroid, filters embedding outliers, and gat
   }
 });
 
+test("playlist lockups are hidden while sampled, admitted as one card, and keep real thumbnails", async () => {
+  const playlistId = "PLplaylist-support";
+  const playlistVideos = [
+    rawVideo("playlist-good-1", "alpha lesson one", "Playlist Author"),
+    rawVideo("playlist-good-2", "alpha lesson two", "Playlist Author"),
+    rawVideo("playlist-bad", "unrelated soap", "Playlist Author")
+  ];
+  const modules = loadRuntimeModules({
+    youtubeClient: createFakeYoutubeClient({
+      searchResults: [
+        rawVideo("root-alpha", "alpha root", "Search"),
+        rawPlaylist(playlistId, "Alpha course", "https://example.test/playlist.jpg")
+      ],
+      playlistVideos
+    }),
+    embeddingForText(text) {
+      return /soap/i.test(text) ? [0, 1] : [1, 0];
+    }
+  });
+  const profile = modules.profileStore.createProfile("Playlist support");
+  profileStoreForCleanup = modules.profileStore;
+
+  try {
+    process.env.GRETEL_CONFIG = writeConfig("playlist-support.json", {
+      expansion: { initialExpansionCycles: 0 },
+      feed: { maxQueries: 1, maxVideos: 8, minVideosPerQuery: 2, similarityThreshold: 0.75, subscriptionFastLanePerSession: 0 },
+      embeddings: { provider: "mock", dimensions: 2, batchSize: 8 }
+    });
+    const first = await modules.service.createFeed(profile.id, ["alpha"], [], "mixed", observation(), { servingOnly: true });
+    assert.equal(first.videos.some((item) => item.id === playlistId), false, "pending playlist is hidden from its discovery response");
+
+    const poolKey = modules.poolStore.createFeedPoolKey({ tags: ["alpha"], channels: [], channelSort: "mixed" });
+    await waitFor(() => modules.poolStore.listPoolNodes(profile.id, poolKey).some((item) => item.id === playlistId));
+    const playlist = modules.poolStore.listPoolNodes(profile.id, poolKey).find((item) => item.id === playlistId);
+    assert.equal(playlist.itemType, "playlist");
+    assert.equal(playlist.thumbnailUrl, "https://example.test/playlist.jpg");
+    assert.equal(playlist.thumbnailCacheUrl, undefined);
+    assert.equal(playlist.playlistPoolKey, poolKey);
+
+    const details = await modules.playlists.getPlaylistDetails(profile.id, poolKey, playlistId);
+    assert.deepEqual(details.autoplayVideoIds, playlistVideos.map((item) => item.id));
+    assert.equal(details.videos.find((item) => item.id === "playlist-bad").centroidEligible, false);
+    assert.equal(details.videos.length, 3, "low-similarity members remain in an admitted playlist");
+  } finally {
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});
+
 test("pool expansion budgets by score, skips visited videos, enforces threshold, and records parent IDs", async () => {
   const config = testConfig({
     feed: {
@@ -1435,6 +1483,7 @@ function loadRuntimeModules({
     poolStore: require(path.join(buildDir, "lib", "feed", "pool-store.js")),
     algorithmStore: require(path.join(buildDir, "lib", "feed", "algorithm-store.js")),
     centroidDrift: require(path.join(buildDir, "lib", "feed", "centroid-drift.js")),
+    playlists: require(path.join(buildDir, "lib", "feed", "playlists.js")),
     vectorMath: require(path.join(buildDir, "lib", "feed", "vector-math.js")),
     profileStore
   };
@@ -1447,7 +1496,8 @@ function createFakeYoutubeClient({
   infoForSeed = () => [],
   transcriptForVideo = () => "",
   channelAvatarUrl = "",
-  onGetChannel = () => {}
+  onGetChannel = () => {},
+  playlistVideos = []
 } = {}) {
   return {
     async search(_query, options = {}) {
@@ -1500,6 +1550,13 @@ function createFakeYoutubeClient({
         }
       };
     },
+    async getPlaylist() {
+      return {
+        items: playlistVideos,
+        has_continuation: false,
+        async getContinuation() { throw new Error("No continuation"); }
+      };
+    },
     async getTranscriptText(videoId) {
       return transcriptForVideo(videoId);
     }
@@ -1550,6 +1607,25 @@ function rawVideo(id, title, author) {
     duration: { text: "10:00" },
     view_count: { text: "100 views" }
   };
+}
+
+function rawPlaylist(id, title, thumbnailUrl) {
+  return {
+    type: "LockupView",
+    content_type: "PLAYLIST",
+    content_id: id,
+    metadata: { title, metadata: { metadata_rows: [] } },
+    content_image: { primary_thumbnail: { image: [{ url: thumbnailUrl, width: 1280, height: 720 }] } }
+  };
+}
+
+async function waitFor(predicate, timeoutMs = 1000) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  assert.fail("Timed out waiting for background playlist processing");
 }
 
 function video(id, fields = {}) {

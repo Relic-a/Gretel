@@ -1,4 +1,5 @@
 export type FeedVideo = {
+  itemType?: "video" | "playlist";
   id: string;
   title: string;
   author: string;
@@ -23,6 +24,17 @@ export type FeedVideo = {
   clicked?: boolean;
   ignoreCount?: number;
   watchTimeRatio?: number;
+  playlistId?: string;
+  playlistPoolKey?: string;
+  playlistVideoCount?: number;
+  playlistPosition?: number;
+  centroidEligible?: boolean;
+};
+
+export type PlaylistDetails = {
+  playlistId: string;
+  videos: FeedVideo[];
+  autoplayVideoIds: string[];
 };
 
 export type Profile = {
