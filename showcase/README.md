@@ -5,6 +5,25 @@ The two exports share the same 2880×1920, 60 fps visual master:
 - `docs/showcase/gretel-showcase.mp4`: silent.
 - `docs/showcase/gretel-showcase-narrated.mp4`: Rufus narration.
 - The poster and GIF link to the full video; GIF cannot carry sound.
+- `docs/showcase/gretel-showcase-steps.gif` and `docs/showcase/steps/*.gif`: the
+  README's per-step previews, cut from the silent master.
+
+## Step GIFs
+
+`npm run gif-steps` cuts one short looping GIF per entry in `src/scenes.ts` from
+the silent master (nothing is re-captured or re-rendered):
+
+- `docs/showcase/steps/NN-<step>.gif`: that step on its own, numbered to match
+  the tour order and named from the scene title.
+- `docs/showcase/gretel-showcase-steps.gif`: every step back to back in one
+  file, starting at the first step rather than the intro title card.
+
+Scene boundaries come from the same measured timings the video uses, so the
+clips stay in sync when the narration changes. All clips are normalised to
+960×640 at 12 fps and a 64-colour palette with dithering off, matching
+`render-gif.mjs`; the final frame holds for a beat so the resulting state is
+readable before the loop restarts. The whole set is under 10 MB so the README
+stays inside GitHub's markdown limit.
 
 ## What changed
 
@@ -76,7 +95,7 @@ on the Debian render server.
 4. Run `npm run render -- --browser-executable=/usr/bin/google-chrome`.
 5. Copy the visual master to the silent MP4. Run `npm run mux-narration`
    to create the separate narrated MP4 without re-encoding the visuals.
-6. Run `npm run poster` and `npm run gif`.
+6. Run `npm run poster`, `npm run gif`, and `npm run gif-steps`.
 
 Raw capture directories and derived source clips are not committed. Pointer
 tracks, narration, render sources, and final README assets are retained.

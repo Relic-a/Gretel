@@ -23,6 +23,22 @@ From an empty install: create a profile, seed it with topics and channels, watch
 
 Watch the 57-second tour [with narration](docs/showcase/gretel-showcase-narrated.mp4) or [without audio](docs/showcase/gretel-showcase.mp4), both at 2880×1920 and 60 fps. The inline GIF is a silent preview. See [`showcase/`](showcase/) for how it is recorded and rendered.
 
+### Every step
+
+A short silent GIF of the full tour, one loop per step, cut from the video
+[without narration](docs/showcase/gretel-showcase.mp4):
+
+![Gretel showcase: each step of the tour](docs/showcase/gretel-showcase-steps.gif)
+
+Prefer one step at a time? Each interaction also has its own clip:
+
+| Step | Step |
+| --- | --- |
+| **1 · Name a profile**<br>Creative Coding<br>![Name a profile](docs/showcase/steps/01-name-a-profile.gif) | **2 · Add topics**<br>Web design · Generative art · WebGL<br>![Add topics](docs/showcase/steps/02-add-topics.gif) |
+| **3 · Add a channel**<br>The Coding Train<br>![Add a channel](docs/showcase/steps/03-add-a-channel.gif) | **4 · Browse the feed**<br>Save for later or add to the queue<br>![Browse the feed](docs/showcase/steps/04-browse-the-feed.gif) |
+| **5 · Watch a video**<br>Player, details, and up next<br>![Watch a video](docs/showcase/steps/05-watch-a-video.gif) | **6 · Change the queue order**<br>Choose what plays next<br>![Change the queue order](docs/showcase/steps/06-change-the-queue-order.gif) |
+| **7 · Organize saved videos**<br>Keep related videos in a collection<br>![Organize saved videos](docs/showcase/steps/07-organize-saved-videos.gif) | |
+
 ## Install the beta
 
 Download the newest beta installer for your platform from [Gretel Releases](https://github.com/Relic-a/Gretel/releases):

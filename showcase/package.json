@@ -17,6 +17,7 @@
     "mux-narration": "node scripts/mux-narration.mjs",
     "poster": "node scripts/render-poster.mjs",
     "gif": "node scripts/render-gif.mjs",
+    "gif-steps": "node scripts/render-step-gifs.mjs",
     "studio": "remotion studio src/index.ts",
     "typecheck": "tsc --noEmit"
   },
