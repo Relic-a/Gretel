@@ -32,6 +32,29 @@ const COLORS = Number(process.env.STEP_GIF_COLORS || 64);
 // Hold the final frame for a beat so the last state is readable before the
 // loop restarts.
 const HOLD_SECONDS = Number(process.env.STEP_GIF_HOLD || 0.9);
+// Leave this much of the paused tail in a trimmed step, so the result still
+// reads before the loop restarts.
+const BEAT_SECONDS = Number(process.env.STEP_GIF_BEAT || 0.4);
+
+// The narration is one continuous take, so the tour deliberately holds after an
+// action to let the voice catch up. On the steps below that hold runs on far
+// longer than the action and the tail sits completely frozen; trimming it from
+// the end makes the loop land on the finished state instead of staring at it.
+//
+// Measured against the master as the last frame with real UI motion, ignoring
+// the text caret and encoder noise, then cross-checked with the committed
+// pointer tracks:
+//
+//   v2-name     last motion  1.80s of a 6.38s scene -> 4.15s frozen tail
+//   v2-topics   last motion  2.73s of a 5.95s scene -> 2.82s frozen tail
+//   v2-channels last motion  2.10s of a 7.33s scene -> 4.83s frozen tail
+//
+// Steps that use their whole scene are absent: nothing is cut from them.
+const TAIL_TRIM_SECONDS = {
+  "v2-name": 4.15,
+  "v2-topics": 2.82,
+  "v2-channels": 4.83
+};
 
 if (!fs.existsSync(VIDEO)) {
   console.error(`missing ${VIDEO}; run: npm run render`);
@@ -44,6 +67,16 @@ const slug = (value) =>
     .replace(/[^a-z0-9]+/g, "-")
     .replace(/(^-|-$)/g, "");
 
+const clips = scenes.map((scene) => {
+  const full = (scene.end - scene.start) / SOURCE_FPS;
+  const requested = TAIL_TRIM_SECONDS[scene.shot] || 0;
+  const trim = Math.min(requested, Math.max(0, full - BEAT_SECONDS));
+  if (requested > full - BEAT_SECONDS) {
+    console.warn(`warning: ${scene.shot} trim of ${requested}s exceeds its scene; clamped to ${trim.toFixed(2)}s`);
+  }
+  return { scene, start: scene.start / SOURCE_FPS, duration: full - trim, trim };
+});
+
 fs.mkdirSync(DEST, { recursive: true });
 
 // Drop any stale clips so a renamed or removed step does not linger.
@@ -51,12 +84,12 @@ for (const entry of fs.readdirSync(DEST)) {
   if (entry.endsWith(".gif")) fs.rmSync(path.join(DEST, entry));
 }
 
-const preprocess = `fps=${GIF_FPS},scale=${GIF_WIDTH}:-2:flags=lanczos,tpad=stop_mode=clone:stop_duration=${HOLD_SECONDS}`;
+const preprocess = (hold = HOLD_SECONDS) =>
+  `fps=${GIF_FPS},scale=${GIF_WIDTH}:-2:flags=lanczos,tpad=stop_mode=clone:stop_duration=${hold}`;
 const written = [];
 
-for (const [index, scene] of scenes.entries()) {
-  const start = scene.start / SOURCE_FPS;
-  const duration = (scene.end - scene.start) / SOURCE_FPS;
+for (const [index, clip] of clips.entries()) {
+  const { scene, start, duration, trim } = clip;
   const name = `${String(index + 1).padStart(2, "0")}-${slug(scene.title)}.gif`;
   const out = path.join(DEST, name);
   const palette = path.join(DEST, `.${slug(scene.title)}.palette.png`);
@@ -66,7 +99,7 @@ for (const [index, scene] of scenes.entries()) {
     [
       "-y", "-v", "error",
       "-ss", String(start), "-t", String(duration), "-i", VIDEO,
-      "-vf", `${preprocess},palettegen=max_colors=${COLORS}:stats_mode=diff`,
+      "-vf", `${preprocess()},palettegen=max_colors=${COLORS}:stats_mode=diff`,
       palette
     ],
     { stdio: "inherit" }
@@ -79,7 +112,7 @@ for (const [index, scene] of scenes.entries()) {
       "-ss", String(start), "-t", String(duration), "-i", VIDEO,
       "-i", palette,
       "-filter_complex",
-      `${preprocess}[x];[x][1:v]paletteuse=dither=none:diff_mode=rectangle`,
+      `${preprocess()}[x];[x][1:v]paletteuse=dither=none:diff_mode=rectangle`,
       "-loop", "0",
       out
     ],
@@ -88,8 +121,9 @@ for (const [index, scene] of scenes.entries()) {
 
   fs.rmSync(palette, { force: true });
   const sizeMb = fs.statSync(out).size / 1048576;
-  written.push({ name, title: scene.title, duration, sizeMb });
-  console.log(`${name}  ${duration.toFixed(2)}s  ${sizeMb.toFixed(2)} MB`);
+  written.push({ name, title: scene.title, duration, trim, sizeMb });
+  const note = trim > 0 ? `  (trimmed ${trim.toFixed(2)}s of pause)` : "";
+  console.log(`${name}  ${duration.toFixed(2)}s  ${sizeMb.toFixed(2)} MB${note}`);
 }
 
 const total = written.reduce((sum, clip) => sum + clip.sizeMb, 0);
@@ -97,33 +131,48 @@ const dims = `${GIF_WIDTH}×${Math.round((GIF_WIDTH * HEIGHT) / WIDTH)}`;
 console.log(`\n${written.length} step GIFs in ${DEST} (${dims}, ${GIF_FPS} fps, ${total.toFixed(2)} MB total)`);
 
 // One GIF holding every step back to back, for readers who want the whole
-// sequence in a single inline asset. It starts at the first step (the intro
-// title card is not a step) and runs to the last step's end.
-const montageFrom = scenes[0].start / SOURCE_FPS;
-const montageTo = scenes.at(-1).end / SOURCE_FPS;
-const montageDuration = montageTo - montageFrom;
+// sequence in a single inline asset. It concatenates exactly the segments the
+// per-step clips use — same trims, same order — so the two never disagree, and
+// it skips the intro title card because that is not a step. Both passes rebuild
+// the concat from the master, so no intermediate encode is involved.
 const montage = path.join(OUT_DIR, "gretel-showcase-steps.gif");
 const montagePalette = path.join(OUT_DIR, ".gretel-showcase-steps.palette.png");
+const montageDuration = clips.reduce((sum, clip) => sum + clip.duration, 0);
 
+const concatArgs = () => {
+  const inputs = clips.flatMap((clip) => [
+    "-ss", String(clip.start), "-t", String(clip.duration), "-i", VIDEO
+  ]);
+  const segments = clips
+    .map((_, i) => `[${i}:v]fps=${GIF_FPS},scale=${GIF_WIDTH}:-2:flags=lanczos,format=yuv420p,setpts=PTS-STARTPTS[s${i}]`)
+    .join(";");
+  const labels = clips.map((_, i) => `[s${i}]`).join("");
+  return { inputs, graph: `${segments};${labels}concat=n=${clips.length}:v=1:a=0[out]` };
+};
+
+const pass1 = concatArgs();
 execFileSync(
   "ffmpeg",
   [
     "-y", "-v", "error",
-    "-ss", String(montageFrom), "-t", String(montageDuration), "-i", VIDEO,
-    "-vf", `${preprocess},palettegen=max_colors=${COLORS}:stats_mode=diff`,
+    ...pass1.inputs,
+    "-filter_complex", `${pass1.graph};[out]palettegen=max_colors=${COLORS}:stats_mode=diff[p]`,
+    "-map", "[p]",
     montagePalette
   ],
   { stdio: "inherit" }
 );
 
+const pass2 = concatArgs();
 execFileSync(
   "ffmpeg",
   [
     "-y", "-v", "error",
-    "-ss", String(montageFrom), "-t", String(montageDuration), "-i", VIDEO,
+    ...pass2.inputs,
     "-i", montagePalette,
     "-filter_complex",
-    `${preprocess}[x];[x][1:v]paletteuse=dither=none:diff_mode=rectangle`,
+    `${pass2.graph};[out][${clips.length}:v]paletteuse=dither=none:diff_mode=rectangle[g]`,
+    "-map", "[g]",
     "-loop", "0",
     montage
   ],
@@ -136,4 +185,3 @@ console.log(`gretel-showcase-steps.gif  ${montageDuration.toFixed(2)}s  ${montag
 if (montageMb > 9.5) {
   console.warn("warning: step montage is close to GitHub's 10 MB markdown limit");
 }
-

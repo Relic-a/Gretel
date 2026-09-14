@@ -25,6 +25,31 @@ clips stay in sync when the narration changes. All clips are normalised to
 readable before the loop restarts. The whole set is under 10 MB so the README
 stays inside GitHub's markdown limit.
 
+### Trimming the narration pauses
+
+The narration is one continuous take, so the tour deliberately holds after an
+action to let the voice catch up. On some steps that hold outlasts the action by
+several seconds and the tail sits completely frozen. Those steps are trimmed
+from the end in `TAIL_TRIM_SECONDS` so the loop lands on the finished state
+instead of staring at it:
+
+| Step | Scene | Last real motion | Trimmed |
+| --- | --- | --- | --- |
+| `v2-name` | 6.38s | 1.80s | 4.15s |
+| `v2-topics` | 5.95s | 2.73s | 2.82s |
+| `v2-channels` | 7.33s | 2.10s | 4.83s |
+
+Each trim leaves a 0.4s beat of the pause (`STEP_GIF_BEAT`) so the result is
+still readable, and the clip ends on the completed interaction — the typed name,
+all three topic chips, the added channel. The remaining steps use their whole
+scene and are untouched.
+
+The measured instant is the last frame with real UI motion, ignoring the
+blinking text caret and encoder noise, and it is cross-checked against the
+committed pointer tracks in `src/pointers/`, whose last event lands at or before
+the last real motion. The montage concatenates the same trimmed segments, so it
+and the per-step clips always agree.
+
 ## What changed
 
 The previous recording used JPEG frames at 1440×900, then applied a dark

@@ -26,7 +26,8 @@ Watch the 57-second tour [with narration](docs/showcase/gretel-showcase-narrated
 ### Every step
 
 A short silent GIF of the full tour, one loop per step, cut from the video
-[without narration](docs/showcase/gretel-showcase.mp4):
+[without narration](docs/showcase/gretel-showcase.mp4). The pauses the narration
+needs are trimmed from the end of each step so it stops on the finished state:
 
 ![Gretel showcase: each step of the tour](docs/showcase/gretel-showcase-steps.gif)
 
