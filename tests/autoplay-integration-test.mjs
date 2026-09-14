@@ -18,6 +18,16 @@ assert.doesNotMatch(
 const pageSource = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
 assert.match(
   pageSource,
+  /queuedVideoIds\.has\(activeVideo\.id\)[\s\S]*?handlePlayerEnded\(\)/,
+  "queued videos should keep using the queue autoplay transition"
+);
+assert.match(
+  pageSource,
+  /feed\?\.upNextByVideoId\?\.\[activeVideo\.id\][\s\S]*?sideVideos\.find\(/,
+  "non-queued videos should advance through the ranked feed up-next list"
+);
+assert.match(
+  pageSource,
   /refreshVideos\s*=\s*useCallback[\s\S]*?requestFeed\(\{\s*resetFeed:\s*true,\s*buildIfMissing:\s*true\s*\}\)/,
   "refreshVideos must serve from existing pool using buildIfMissing: true"
 );

@@ -1521,25 +1521,58 @@ export default function Home() {
     }
   }, [queue, section]);
 
-  /** Follow the playlist's own order when playback advances. */
+  /**
+   * Follow the playlist's own order when playback advances, then resolve an
+   * ended video in the right playback domain. Queue items use the
+   * queue's persisted autoplay setting; ordinary videos use the feed's
+   * ranked up-next order instead of being treated as an empty queue.
+   */
   const handleVideoEnded = useCallback(() => {
     const autoplayIds = playlistDetails?.autoplayVideoIds || [];
     const index = activeVideo ? autoplayIds.indexOf(activeVideo.id) : -1;
     const nextId = index >= 0 ? autoplayIds[index + 1] : undefined;
-    const nextVideo = nextId
+    const playlistNextVideo = nextId
       ? playlistDetails?.videos.find((video) => video.id === nextId) || null
       : null;
 
-    if (nextVideo) {
-      setActiveVideo(nextVideo);
-      writeRoute(section, nextVideo.id);
+    if (playlistNextVideo) {
+      setActiveVideo(playlistNextVideo);
+      writeRoute(section, playlistNextVideo.id);
       window.scrollTo({ top: 0, behavior: "smooth" });
-      void queue.setCurrentIfQueued(nextVideo.id);
+      void queue.setCurrentIfQueued(playlistNextVideo.id);
       return;
     }
 
-    void handlePlayerEnded();
-  }, [activeVideo, handlePlayerEnded, playlistDetails, queue, section]);
+    if (activeVideo && queuedVideoIds.has(activeVideo.id)) {
+      void handlePlayerEnded();
+      return;
+    }
+
+    const rankedNextIds = activeVideo ? feed?.upNextByVideoId?.[activeVideo.id] || [] : [];
+    const rankedNextVideo = rankedNextIds
+      .map((videoId) => visibleVideos.find((video) => video.id === videoId))
+      .find((video) => video && !isPlaylistCard(video));
+    const nextVideo = rankedNextVideo || sideVideos.find((video) => !isPlaylistCard(video)) || null;
+
+    if (!nextVideo) {
+      return;
+    }
+
+    setActiveVideo(nextVideo);
+    writeRoute(section, nextVideo.id);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+    void queue.setCurrentIfQueued(nextVideo.id);
+  }, [
+    activeVideo,
+    feed,
+    handlePlayerEnded,
+    playlistDetails,
+    queue,
+    queuedVideoIds,
+    section,
+    sideVideos,
+    visibleVideos
+  ]);
 
   const handleToggleQueueAutoplay = useCallback(
     (enabled: boolean) => {
