@@ -2,7 +2,24 @@ import { getGretelConfig } from "./config";
 import type { FeedVideo } from "./types";
 
 export function shouldKeepVideo(id: string, seen: Set<string>) {
-  return Boolean(id) && !seen.has(id);
+  return Boolean(id) && !isYouTubePlaylistId(id) && !seen.has(id);
+}
+
+/**
+ * YouTube video IDs are 11 characters, while playlist IDs use longer,
+ * collection-specific prefixes. Keep the prefix check explicit so synthetic
+ * IDs used by local providers and tests are not rejected unnecessarily.
+ */
+export function isYouTubePlaylistId(id: string) {
+  return id.length > 11 && /^(?:PL|UU|LL|FL|RD|UL|OLAK5uy_)/.test(id);
+}
+
+export function isPlayableFeedVideo(video: Pick<FeedVideo, "id" | "itemType">) {
+  return video.itemType !== "playlist" && !isYouTubePlaylistId(video.id);
+}
+
+export function isSupportedFeedItem(video: Pick<FeedVideo, "id" | "itemType">) {
+  return video.itemType === "playlist" || isPlayableFeedVideo(video);
 }
 
 export function nextUniqueVideo(videos: FeedVideo[], seen: Set<string>, startIndex: number) {

@@ -2,6 +2,7 @@ import { applyEngagement, type VideoInteraction } from "./engagement";
 import type { GretelConfig } from "./config-defaults";
 import { isFeedbackExcluded, type ContentFeedbackState } from "./feedback";
 import type { FeedNodeSummary, FeedVideo } from "./types";
+import { isPlayableFeedVideo, isSupportedFeedItem } from "./video-utils";
 import { cosineSimilarity } from "./vector-math";
 
 export type CandidatePoolResult = {
@@ -33,6 +34,7 @@ export function createCandidatePoolFeed(input: {
   const interactionCount = input.interactions.size;
   const isColdStart = interactionCount < input.config.feed.coldStartInteractionThreshold;
   const allPoolVideos = [...input.rootVideos, ...input.channelVideos, ...input.relatedVideos]
+    .filter(isSupportedFeedItem)
     .map((video) => applyEngagement(video, input.interactions, input.config));
   const poolVideos = allPoolVideos
     .filter((video) => !input.feedback || !isFeedbackExcluded(video, input.feedback))
@@ -62,6 +64,7 @@ export function describePoolHealth(input: {
   config: GretelConfig;
 }): PoolHealth {
   const eligibleVideos = input.videos.filter((video) =>
+    isSupportedFeedItem(video) &&
     (!input.feedback || !isFeedbackExcluded(video, input.feedback)) &&
     isEligibleForServing(video, input.watchedVideoIds, input.interactions, input.config)
   );
@@ -98,7 +101,7 @@ export function selectExpansionSeeds(input: {
   const count = input.seedCount ?? input.config.feed.expansionSeedCount;
 
   return [...input.videos]
-    .filter((video) => video.itemType !== "playlist")
+    .filter(isPlayableFeedVideo)
     .filter((video) => !input.feedback || !isFeedbackExcluded(video, input.feedback))
     .sort((left, right) => {
       if (isColdStart) {

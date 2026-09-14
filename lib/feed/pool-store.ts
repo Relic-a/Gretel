@@ -2,6 +2,7 @@ import { getDatabase, getLikedVideoIds, getWatchedVideoIds } from "../profile-st
 import { deleteRetainedEmbeddings } from "./algorithm-store";
 import { hydrateChannelAvatar } from "./channel-avatar-cache";
 import type { FeedNodeId, FeedVideo } from "./types";
+import { isSupportedFeedItem } from "./video-utils";
 
 export type FeedPoolState = {
   rootDiscoveredAt: number;
@@ -154,6 +155,10 @@ export function addPoolNodes(
 
   runTransaction(() => {
     for (const video of videos) {
+      if (!isSupportedFeedItem(video)) {
+        continue;
+      }
+
       statement.run(
         profileId,
         poolKey,
@@ -197,6 +202,10 @@ export function listPoolNodes(profileId: string, poolKey: string) {
   return rows.flatMap<StoredPoolNode>((row) => {
     try {
       const video = hydrateChannelAvatar(JSON.parse(row.video_json) as FeedVideo);
+
+      if (!isSupportedFeedItem(video)) {
+        return [];
+      }
 
       return [{
         ...video,

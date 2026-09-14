@@ -1,15 +1,6 @@
-```text
-  _____ _____  ______ _______ ______ _      
- / ____|  __ \|  ____|__   __|  ____| |     
-| |  __| |__) | |__     | |  | |__  | |     
-| | |_ |  _  /|  __|    | |  |  __| | |     
-| |__| | | \ \| |____   | |  | |____| |____ 
- \_____|_|  \_\______|  |_|  |______|______|
-```
-
 # Gretel
 
-Gretel is a desktop app for building a more intentional YouTube feed. Create profiles, add topics and channels you care about, and let Gretel build a personalized feed using YouTube data and OpenRouter embeddings.
+Gretel is a local desktop app for building focused YouTube feeds around separate interests without creating extra Google accounts. Each profile starts with a few topics and channels; Gretel uses YouTube's own recommendations through YT.js to discover candidate videos, then embeddings keep expansion relevant and adapt the profile as videos are watched—preserving YouTube's useful surprises while giving people control over what earns a place in their feed.
 
 > Current status: **public beta**. Expect rough edges, unsigned installers, and possible platform-specific bugs. Please report problems through [GitHub Issues](https://github.com/Relic-a/Gretel/issues).
 
@@ -17,28 +8,7 @@ Gretel is a desktop app for building a more intentional YouTube feed. Create pro
 
 From an empty install: create a profile, seed it with topics and channels, watch Gretel build and rank the feed, then save, queue and organise what you find.
 
-[![Gretel showcase: creating a profile, building a feed, and watching it](docs/showcase/gretel-showcase-poster.png)](docs/showcase/gretel-showcase.mp4)
-
-![Gretel showcase](docs/showcase/gretel-showcase.gif)
-
-Watch the 57-second tour [with narration](docs/showcase/gretel-showcase-narrated.mp4) or [without audio](docs/showcase/gretel-showcase.mp4), both at 2880×1920 and 60 fps. The inline GIF is a silent preview. See [`showcase/`](showcase/) for how it is recorded and rendered.
-
-### Every step
-
-A short silent GIF of the full tour, one loop per step, cut from the video
-[without narration](docs/showcase/gretel-showcase.mp4). The pauses the narration
-needs are trimmed from the end of each step so it stops on the finished state:
-
-![Gretel showcase: each step of the tour](docs/showcase/gretel-showcase-steps.gif)
-
-Prefer one step at a time? Each interaction also has its own clip:
-
-| Step | Step |
-| --- | --- |
-| **1 · Name a profile**<br>Creative Coding<br>![Name a profile](docs/showcase/steps/01-name-a-profile.gif) | **2 · Add topics**<br>Web design · Generative art · WebGL<br>![Add topics](docs/showcase/steps/02-add-topics.gif) |
-| **3 · Add a channel**<br>The Coding Train<br>![Add a channel](docs/showcase/steps/03-add-a-channel.gif) | **4 · Browse the feed**<br>Save for later or add to the queue<br>![Browse the feed](docs/showcase/steps/04-browse-the-feed.gif) |
-| **5 · Watch a video**<br>Player, details, and up next<br>![Watch a video](docs/showcase/steps/05-watch-a-video.gif) | **6 · Change the queue order**<br>Choose what plays next<br>![Change the queue order](docs/showcase/steps/06-change-the-queue-order.gif) |
-| **7 · Organize saved videos**<br>Keep related videos in a collection<br>![Organize saved videos](docs/showcase/steps/07-organize-saved-videos.gif) | |
+![Gretel showcase: profile setup, feed browsing, playback, queue ordering, and saved-video organization](docs/showcase/gretel-showcase-steps.gif)
 
 ## Install the beta
 

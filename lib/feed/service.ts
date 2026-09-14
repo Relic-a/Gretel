@@ -53,7 +53,7 @@ import {
 } from "./algorithm-store";
 import { averageNormalizedVectors, cosineSimilarity } from "./vector-math";
 import { hydrateChannelAvatars, resolveMissingChannelAvatars } from "./channel-avatar-cache";
-import { getChannelAvatarUrl } from "./video-utils";
+import { getChannelAvatarUrl, isPlayableFeedVideo } from "./video-utils";
 import { evaluatePlaylist } from "./playlists";
 import {
   getAdmittedPlaylist,
@@ -867,8 +867,9 @@ async function initializePoolOnce(
       : Promise.resolve([])
   ]);
   const discoveredPlaylists = discoveredRootItems.filter((item) => item.itemType === "playlist");
-  const discoveredRootVideos = discoveredRootItems.filter((item) => item.itemType !== "playlist");
-  const persistentChannels = persistentChannelCandidates(profileId, channelCandidates);
+  const discoveredRootVideos = discoveredRootItems.filter(isPlayableFeedVideo);
+  const persistentChannels = persistentChannelCandidates(profileId, channelCandidates)
+    .filter(isPlayableFeedVideo);
   const embeddingCandidates = [...new Map(
     [...discoveredRootVideos, ...persistentChannels].map((video) => [video.id, video])
   ).values()];
@@ -1185,7 +1186,7 @@ async function expandPool(
       const visitedVideoIds = getVisitedVideoIds(profileId, poolKey);
       const relatedPlaylists = rawRelatedVideos.filter((item) => item.itemType === "playlist");
       const newCandidates = rawRelatedVideos.filter(
-        (video) => video.itemType !== "playlist" && !visitedVideoIds.has(video.id)
+        (video) => isPlayableFeedVideo(video) && !visitedVideoIds.has(video.id)
       );
       rememberPlaylistCandidates(profileId, poolKey, relatedPlaylists, Date.now());
       schedulePendingPlaylistProcessing(profileId, poolKey);
@@ -1728,7 +1729,7 @@ async function retainReadyQueueEmbeddings(
 }
 
 function buildUpNextByVideoId(profileId: string, videos: FeedVideo[]) {
-  const playableVideos = videos.filter((video) => video.itemType !== "playlist");
+  const playableVideos = videos.filter(isPlayableFeedVideo);
   const embeddings = new Map<string, number[]>();
 
   for (const video of playableVideos) {

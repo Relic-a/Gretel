@@ -116,6 +116,7 @@ test("root discovery stores a unit centroid, filters embedding outliers, and gat
     youtubeClient: createFakeYoutubeClient({
       searchResults: [
         rawVideo("root-alpha-1", "alpha root one", "Search"),
+        rawVideo("PL12345678901234567890123456789012", "playlist mislabeled as a video", "Search"),
         rawVideo("root-alpha-outlier", "alpha soap update", "Search"),
         { type: "Channel", id: "channel-card", title: "alpha channel card" },
         rawVideo("root-alpha-2", "second alpha root", "Search")
@@ -162,6 +163,7 @@ test("root discovery stores a unit centroid, filters embedding outliers, and gat
     const centroid = modules.algorithmStore.getCentroid(profile.id, poolKey).current;
 
     assert.equal(roots.length, 2);
+    assert.equal(roots.some((video) => video.id.startsWith("PL")), false);
     assert.equal(roots.some((video) => video.id === "root-alpha-outlier"), false);
     assert.equal(magnitude(centroid), 1);
     assert.deepEqual(channels.map((video) => video.id), ["channel-above"]);
@@ -250,6 +252,7 @@ test("pool expansion budgets by score, skips visited videos, enforces threshold,
         calls.push(seedId);
         return [
           rawVideo("root-alpha", "duplicate above threshold", "Related"),
+          rawVideo("PL12345678901234567890123456789012", "playlist mislabeled as a video", "Related"),
           rawVideo("related-above", "related above", "Related"),
           rawVideo("related-below", "related below", "Related")
         ];
@@ -298,6 +301,7 @@ test("pool expansion budgets by score, skips visited videos, enforces threshold,
     assert.equal(feed.pool.expandedPool, true);
     assert.deepEqual(calls, ["root-alpha", "root-alpha"]);
     assert.equal(related.some((node) => node.id === "root-alpha"), false);
+    assert.equal(related.some((node) => node.id.startsWith("PL")), false);
     assert.deepEqual(related.map((node) => node.id), ["related-above"]);
     assert.equal(related[0].parent_video_id, "root-alpha");
     assert.deepEqual(modules.algorithmStore.getRetainedEmbedding(profile.id, "related-above"), [1, 0]);
@@ -1184,6 +1188,50 @@ test("pruning removes lowest scoring nodes first and lets a high-scoring child s
     modules.poolStore.prunePool(profile.id, poolKey, scored, 2);
     const remaining = modules.poolStore.listPoolNodes(profile.id, poolKey).map((node) => node.id).sort();
     assert.deepEqual(remaining, ["child", "middle"]);
+  } finally {
+    modules.profileStore.deleteProfile(profile.id);
+  }
+});
+
+test("pool persistence rejects playlist IDs mislabeled as videos but keeps playlist cards", () => {
+  const modules = loadRuntimeModules({ youtubeClient: createFakeYoutubeClient() });
+  const profile = modules.profileStore.createProfile("Pool item validation");
+  profileStoreForCleanup = modules.profileStore;
+  const poolKey = "pool-item-validation";
+
+  try {
+    modules.poolStore.markRootDiscovered(profile.id, poolKey, Date.now());
+    modules.poolStore.addPoolNodes(
+      profile.id,
+      poolKey,
+      "relatedVideos",
+      [
+        video("valid-video"),
+        video("PL12345678901234567890123456789012", { itemType: "video" }),
+        video("PLabcdefghijklmnopqrstuvwxzy123456", { itemType: "playlist" })
+      ],
+      Date.now()
+    );
+    const legacyPlaylistId = "PLlegacy12345678901234567890123456";
+    modules.profileStore.getDatabase().prepare(
+      `INSERT INTO feed_pool_nodes (
+        profile_id, pool_key, video_id, node_id, video_json, parent_video_id,
+        similarity_score, parent_engagement_score, first_seen_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, NULL, 0, 0, ?, ?)`
+    ).run(
+      profile.id,
+      poolKey,
+      legacyPlaylistId,
+      "relatedVideos",
+      JSON.stringify(video(legacyPlaylistId)),
+      Date.now(),
+      Date.now()
+    );
+
+    assert.deepEqual(
+      modules.poolStore.listPoolNodes(profile.id, poolKey).map((node) => node.id).sort(),
+      ["PLabcdefghijklmnopqrstuvwxzy123456", "valid-video"]
+    );
   } finally {
     modules.profileStore.deleteProfile(profile.id);
   }
