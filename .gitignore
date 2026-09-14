@@ -53,9 +53,12 @@ sandbox/
 gretel_design/
 .cache
 
-# showcase video pipeline: raw footage and derived clips are large and fully
-# regenerable. The committed result lives in docs/showcase/.
+# showcase video pipeline: raw footage and generated media are large and fully
+# regenerable. Keep only the combined README GIF in version control.
 showcase/node_modules/
 showcase/captures/
 showcase/public/clips/
+showcase/public/audio/
 showcase/out/
+docs/showcase/*
+!docs/showcase/gretel-showcase-steps.gif
