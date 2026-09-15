@@ -212,15 +212,10 @@ button:disabled {
   box-shadow: 0 4px 20px rgb(0 0 0 / 0.5);
 }
 
-/* Promote the fixed top bar onto its own compositor layer so it stops
-   repainting in lockstep with the feed on every scroll frame. Scoped above the
-   compact breakpoint on purpose: below it .section-tabs becomes fixed *inside*
-   the top bar and a transform hint here would re-anchor that bottom tab bar. */
-@media (min-width: 861px) {
-  .topbar {
-    will-change: transform;
-  }
-}
+/* No `will-change: transform` promotion on .topbar: on WebKitGTK (Tauri on
+   Linux) a persistently promoted fixed layer can keep painting at the previous
+   window size after a resize, so the top bar's controls visually detach from
+   their real hit boxes. The scroll-repaint win was marginal; correctness wins. */
 
 .brand-button {
   align-self: center;
@@ -3509,7 +3504,6 @@ button.saved-chip.small {
     -webkit-backdrop-filter: blur(16px);
     border-top: 1px solid var(--color-border);
     box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.6);
-    will-change: transform;
   }
 
   .topbar-search {

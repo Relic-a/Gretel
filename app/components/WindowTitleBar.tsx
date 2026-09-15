@@ -22,8 +22,23 @@ export function WindowTitleBar() {
       });
     };
 
+    // WebKitGTK can leave layer-promoted surfaces (fixed bars, popovers)
+    // painted at the previous window size after a resize even though layout is
+    // correct, so hit boxes drift from what is on screen. Nudge the root layer
+    // once per resize so the whole page is re-rasterized at the new size.
+    const nudgeRepaint = () => {
+      const root = document.documentElement;
+      root.style.transform = "translateZ(0)";
+      requestAnimationFrame(() => {
+        root.style.transform = "";
+      });
+    };
+
     syncMaximized();
-    void appWindow.onResized(syncMaximized).then((stopListening) => {
+    void appWindow.onResized(() => {
+      syncMaximized();
+      nudgeRepaint();
+    }).then((stopListening) => {
       if (disposed) stopListening();
       else unlisten = stopListening;
     });

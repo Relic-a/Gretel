@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.7.1 — 2026-09-14
+
+### Interface
+
+- Fix controls staying painted at the previous window size after a resize on Linux (WebKitGTK): drop the compositor-layer hints on the top bar and bottom tab bar, and re-rasterize the page on every window resize so hit boxes always match what is on screen.
+- Disable WebKitGTK's dmabuf renderer automatically on NVIDIA + Wayland, where it leaked promoted layers on resize.
+
+## 0.7.0 — 2026-09-14
+
+### Playlists
+
+- Playlist-aware cards with an ordered side panel, bulk enqueue, and playlist-order autoplay.
+- Reject playlist IDs mislabeled as videos.
+
+### Docs
+
+- README showcase video with a per-step GIF tour.
+
 ## 0.6.1 — 2026-09-11
 
 ### History

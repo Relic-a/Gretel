@@ -139,6 +139,8 @@ fn select_linux_rendering_mode(
     session: &str,
     gpu_vendors: &[String],
 ) -> LinuxRenderingMode {
+    let has_nvidia = gpu_vendors.iter().any(|vendor| vendor == "nvidia");
+
     match requested.trim().to_ascii_lowercase().as_str() {
         "nvidia-wayland"
             if session == "wayland" && gpu_vendors.iter().any(|vendor| vendor == "nvidia") =>
@@ -146,6 +148,11 @@ fn select_linux_rendering_mode(
             LinuxRenderingMode::NvidiaWayland
         }
         "disable-dmabuf" => LinuxRenderingMode::DisableDmabuf,
+        // WebKitGTK + NVIDIA on Wayland leaves promoted/layered surfaces
+        // (the fixed top bar, the bottom tab bar) painted at the previous
+        // window size after a resize, so their hit boxes no longer match what
+        // is on screen. Fall back to the non-dmabuf renderer by default.
+        _ if session == "wayland" && has_nvidia => LinuxRenderingMode::DisableDmabuf,
         _ => LinuxRenderingMode::Default,
     }
 }
@@ -570,7 +577,26 @@ mod tests {
             LinuxRenderingMode::DisableDmabuf
         );
         assert_eq!(
-            select_linux_rendering_mode("unexpected", "wayland", &["nvidia".to_string()]),
+            select_linux_rendering_mode("unexpected", "wayland", &["intel".to_string()]),
+            LinuxRenderingMode::Default
+        );
+    }
+
+    #[test]
+    fn nvidia_wayland_auto_disables_dmabuf() {
+        // WebKitGTK's dmabuf path leaks/forgets promoted layers on resize with
+        // NVIDIA drivers, so the safe compositing mode is automatic here.
+        assert_eq!(
+            select_linux_rendering_mode("default", "wayland", &["nvidia".to_string()]),
+            LinuxRenderingMode::DisableDmabuf
+        );
+        // An explicit choice still wins over the automatic fallback.
+        assert_eq!(
+            select_linux_rendering_mode("nvidia-wayland", "wayland", &["nvidia".to_string()]),
+            LinuxRenderingMode::NvidiaWayland
+        );
+        assert_eq!(
+            select_linux_rendering_mode("default", "x11", &["nvidia".to_string()]),
             LinuxRenderingMode::Default
         );
     }
