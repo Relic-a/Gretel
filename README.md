@@ -163,4 +163,4 @@ npm test               # Run tests
 
 ## License
 
-Copyright (c) 2026 Ezana. All rights reserved. See [LICENSE](LICENSE).
+Licensed under the Apache License, Version 2.0. See [LICENSE](LICENSE).
