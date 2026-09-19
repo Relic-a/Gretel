@@ -26,7 +26,8 @@ The installers are currently unsigned, so your operating system may show an unfa
 - Topic and channel based discovery
 - Saved videos, liked videos, and watch history
 - Local SQLite storage
-- OpenRouter-powered embeddings
+- Managed embeddings after Google sign-in or access-code redemption
+- Optional bring-your-own OpenRouter key mode
 - Desktop builds for Linux, Windows, and macOS through Tauri
 
 ## Requirements
@@ -34,9 +35,9 @@ The installers are currently unsigned, so your operating system may show an unfa
 - Node.js 24.x
 - npm
 - Rust 1.77+ and the platform prerequisites listed by Tauri (Windows builds need Visual Studio Build Tools with the MSVC and Windows SDK workloads)
-- An OpenRouter API key
+- A Supabase project and OpenRouter key only when operating Gretel's managed service
 
-You can create an OpenRouter key at:
+Developers using bring-your-own-key mode can create an OpenRouter key at:
 
 https://openrouter.ai/keys
 
@@ -80,7 +81,7 @@ npm run tauri:dev
 
 ## App Settings
 
-You can also enter your OpenRouter API key inside the app settings UI. Gretel stores local settings in the app data directory, not in the public repo.
+Most users can continue with Google or redeem an access code; Gretel then sends authenticated embedding requests through its Supabase Edge Function. Developers can instead enter an OpenRouter API key inside the app settings UI. Gretel stores local settings in the app data directory, not in the public repo.
 
 The key is stored locally as plain text so the bundled server can use it. On macOS and Linux, Gretel restricts the settings file to the current OS user. Use a dedicated OpenRouter key with a spending limit and revoke it if the device is lost or shared. See [Privacy](PRIVACY.md) for the complete data flow.
 
@@ -91,6 +92,27 @@ Approximate data locations:
 - macOS: `~/Library/Application Support/com.ezana.gretel/data`
 
 Existing Electron data in the previous `Gretel/data` location is reused automatically when the new Tauri data directory is empty.
+
+## Managed embedding service
+
+The versioned Supabase schema and Edge Function live under `supabase/`. Before releasing managed access:
+
+1. Enable Google under Supabase **Authentication → Providers** and set the Google OAuth client ID and secret.
+2. Add `https://grcoyidmgrxiumrezagz.supabase.co/auth/v1/callback` as the authorized redirect URI in Google Cloud.
+3. Add `gretel://auth/callback` to Supabase **Authentication → URL Configuration → Redirect URLs**.
+4. Enable anonymous sign-ins for access-code users.
+5. Set `OPENROUTER_API_KEY` in Supabase **Edge Functions → Secrets**.
+
+Create a one-use beta code from the Supabase SQL editor. The plaintext code is returned once; only its SHA-256 hash is stored:
+
+```sql
+select public.gretel_create_access_code(
+  p_label := 'Beta invite',
+  p_max_redemptions := 1,
+  p_expires_at := now() + interval '30 days',
+  p_monthly_input_limit := 25000
+);
+```
 
 ### Linux rendering compatibility
 

@@ -13,10 +13,15 @@ import {
   saveProfileFeedPreferences
 } from "../../../lib/profile-store";
 import { verifyApiToken } from "../../../lib/api-auth";
+import { withManagedAuth } from "../../../lib/managed-auth-context";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  return withManagedAuth(request, () => handlePost(request));
+}
+
+async function handlePost(request: Request) {
   if (!verifyApiToken(request)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -130,7 +135,7 @@ export async function POST(request: Request) {
       ...errorFields(error, { stack: true })
     });
     return Response.json(
-      { error: "Feed generation failed. Check your API key and network access." },
+      { error: "Feed generation failed. Check your embedding access and network connection." },
       { status: 500 }
     );
   }

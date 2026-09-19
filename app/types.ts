@@ -100,6 +100,7 @@ export type PublicGretelConfig = {
 export type UserSettings = {
   openRouterApiKey?: string;
   openRouterModel?: string;
+  embeddingMode?: "managed" | "byok";
   developerAnalytics?: boolean;
 };
 

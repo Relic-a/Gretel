@@ -26,7 +26,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+      "csp": "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' https://grcoyidmgrxiumrezagz.supabase.co wss://grcoyidmgrxiumrezagz.supabase.co; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
     }
   },
   "bundle": {
@@ -79,6 +79,11 @@
     }
   },
   "plugins": {
+    "deep-link": {
+      "desktop": {
+        "schemes": ["gretel"]
+      }
+    },
     "updater": {
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY4NUUxRDI0Mzk2QkYxMTEKUldRUjhXczVKQjFlYUlORG95YVBDaGVuMVpCUVBqVXc0c1FUc0h3eFJxV0ZkUkRDeWFhNUlXQWkK",
       "endpoints": [

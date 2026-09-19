@@ -7,15 +7,19 @@ Gretel is a local-first desktop application. Profiles, topics, subscriptions, sa
 Gretel connects directly to:
 
 - **YouTube** to search for channels and videos, load metadata and comments, fetch thumbnails, and play videos in the embedded YouTube player. YouTube receives the network information and player data normally associated with those requests.
-- **OpenRouter** to generate semantic embeddings. Gretel sends configured topic text and limited video text, including configured transcript excerpts, to the selected embedding model. Requests use the OpenRouter API key supplied by the user and are subject to OpenRouter's and the selected model provider's policies.
+- **Supabase** for Google-based authentication, access-code sessions, managed-embedding quotas, usage records, and a shared embedding cache. Supabase receives account identifiers, request counts, text hashes, and embedding vectors. Gretel does not store the submitted text in Supabase's usage records or embedding cache.
+- **OpenRouter** to generate semantic embeddings. Gretel sends configured topic text and limited video text, including configured transcript excerpts, to the selected embedding model. Requests use either Gretel's server-side OpenRouter credential or an API key supplied by the user and are subject to OpenRouter's and the selected model provider's policies.
+- **Google** when the user chooses Continue with Google. Google provides Supabase with basic identity information needed to create the Gretel account. Gretel does not request access to the user's YouTube account or Google password.
 
-Gretel does not operate a developer-controlled analytics or account service. Developer analytics are disabled by default and, when enabled, remain in the local Gretel database.
+Developer analytics are disabled by default and, when enabled, remain in the local Gretel database. Managed-embedding usage accounting is always recorded for abuse prevention and quota enforcement.
 
 ## API-key storage
 
 The OpenRouter key is stored as plain text in `data/user-settings.json` so Gretel's bundled local server can use it. On macOS and Linux, Gretel restricts the app-data directory and settings file to the current OS user. On Windows, the file inherits the access controls of the user's AppData directory.
 
 Use a dedicated OpenRouter key with an account spending limit. Revoke it through OpenRouter if the computer is lost, compromised, or shared with an untrusted user.
+
+Supabase session credentials are stored by the application webview so Gretel can keep the user signed in. Signing out removes the local Supabase session. Access-code sessions that have not been linked to a permanent identity cannot be recovered after sign-out or local-data deletion.
 
 ## Deleting local data
 

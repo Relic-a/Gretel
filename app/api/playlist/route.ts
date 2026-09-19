@@ -2,10 +2,15 @@ import { verifyApiToken } from "../../../lib/api-auth";
 import { getPlaylistDetails } from "../../../lib/feed/playlists";
 import { isPlaylistAdmitted } from "../../../lib/feed/playlist-store";
 import { getProfile } from "../../../lib/profile-store";
+import { withManagedAuth } from "../../../lib/managed-auth-context";
 
 export const runtime = "nodejs";
 
 export async function GET(request: Request) {
+  return withManagedAuth(request, () => handleGet(request));
+}
+
+async function handleGet(request: Request) {
   if (!verifyApiToken(request)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }

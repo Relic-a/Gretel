@@ -3,6 +3,7 @@
 import { FormEvent, useRef } from "react";
 
 import type { UserSettings } from "../types";
+import type { GretelAccess } from "./use-gretel-auth";
 import { useDialogFocus } from "./use-dialog-focus";
 
 type SettingsModalProps = {
@@ -12,6 +13,11 @@ type SettingsModalProps = {
   onClose: () => void;
   onSubmit: (event: FormEvent) => void;
   onChange: (settings: UserSettings) => void;
+  account: { email?: string; isAnonymous?: boolean } | null;
+  access: GretelAccess | null;
+  authPending: boolean;
+  onGoogle: () => void;
+  onSignOut: () => void;
 };
 
 export function SettingsModal(props: SettingsModalProps) {
@@ -41,14 +47,60 @@ export function SettingsModal(props: SettingsModalProps) {
         </div>
 
         <form onSubmit={props.onSubmit} className="setup-form">
-          <p className="modal-copy">Save your OpenRouter key here so embedding requests work without restarting the app.</p>
+          <div className="embedding-source-setting">
+            <div>
+              <h2>Embedding access</h2>
+              <p>Use Gretel’s managed allowance or connect your own OpenRouter account.</p>
+            </div>
+            <div className="embedding-source-options" role="radiogroup" aria-label="Embedding access">
+              <button
+                type="button"
+                role="radio"
+                aria-checked={props.settings.embeddingMode !== "byok"}
+                className={props.settings.embeddingMode !== "byok" ? "active" : ""}
+                onClick={() => props.account
+                  ? props.onChange({ ...props.settings, embeddingMode: "managed" })
+                  : props.onGoogle()}
+                disabled={props.authPending}
+              >
+                <span>Managed by Gretel</span>
+                <small>{props.account ? "No API key required" : "Connect Google to use"}</small>
+              </button>
+              <button
+                type="button"
+                role="radio"
+                aria-checked={props.settings.embeddingMode === "byok"}
+                className={props.settings.embeddingMode === "byok" ? "active" : ""}
+                onClick={() => props.onChange({ ...props.settings, embeddingMode: "byok" })}
+              >
+                <span>My OpenRouter key</span>
+                <small>You cover provider usage</small>
+              </button>
+            </div>
+          </div>
+
+          {props.account && (
+            <div className="account-setting">
+              <div>
+                <span>{props.account.isAnonymous ? "Access-code session" : props.account.email || "Google account"}</span>
+                <small>
+                  {props.access?.active
+                    ? `${props.access.remainingInputs.toLocaleString()} of ${props.access.monthlyInputLimit.toLocaleString()} managed inputs remaining this month`
+                    : "Managed access is not active."}
+                </small>
+              </div>
+              <button type="button" onClick={props.onSignOut} disabled={props.authPending}>Sign out</button>
+            </div>
+          )}
+
+          <p className="modal-copy">Your OpenRouter key remains an optional fallback and is stored only on this computer.</p>
 
           <label>
             <span>OpenRouter API key</span>
             <small>Stored locally as plain text in <code>data/user-settings.json</code>. Use a dedicated key with a spending limit.</small>
             <input
               type="password"
-              autoFocus
+              autoFocus={props.settings.embeddingMode === "byok"}
               autoComplete="off"
               maxLength={512}
               spellCheck={false}
@@ -60,6 +112,7 @@ export function SettingsModal(props: SettingsModalProps) {
                 })
               }
               placeholder={props.settings.openRouterApiKey === "set" ? "API key already saved" : "sk-or-v1-..."}
+              disabled={props.settings.embeddingMode !== "byok"}
             />
           </label>
 

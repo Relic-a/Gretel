@@ -64,6 +64,7 @@ export function normalize(value: string) {
 }
 
 const apiTokenKey = "gretel.apiToken.v1";
+const supabaseAccessTokenKey = "gretel.supabaseAccessToken.v1";
 
 export function getStoredApiToken(): string {
   if (typeof window === "undefined") return "";
@@ -93,8 +94,13 @@ export function getStoredApiToken(): string {
 
 export function authedHeaders(extraHeaders: Record<string, string> = {}): Record<string, string> {
   const token = getStoredApiToken();
+  let supabaseAccessToken = "";
+  try {
+    supabaseAccessToken = window.localStorage.getItem(supabaseAccessTokenKey) || "";
+  } catch {}
   return {
     ...extraHeaders,
-    ...(token ? { "x-gretel-token": token } : {})
+    ...(token ? { "x-gretel-token": token } : {}),
+    ...(supabaseAccessToken ? { "x-supabase-access-token": supabaseAccessToken } : {})
   };
 }

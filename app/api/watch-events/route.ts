@@ -2,10 +2,15 @@ import { saveWatchedVideo } from "../../../lib/profile-store";
 import { errorFields, logError, logInfo, logWarn } from "../../../lib/logger";
 import { updateCentroidsForPositiveEngagement } from "../../../lib/feed/centroid-drift";
 import { verifyApiToken } from "../../../lib/api-auth";
+import { withManagedAuth } from "../../../lib/managed-auth-context";
 
 export const runtime = "nodejs";
 
 export async function POST(request: Request) {
+  return withManagedAuth(request, () => handlePost(request));
+}
+
+async function handlePost(request: Request) {
   if (!verifyApiToken(request)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }

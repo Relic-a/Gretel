@@ -1,0 +1,5 @@
+project_id = "gretel"
+
+[functions.embed]
+verify_jwt = false
+

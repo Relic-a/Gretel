@@ -7,6 +7,7 @@ import { getDataDir } from "./data-dir";
 export type UserSettings = {
   openRouterApiKey?: string;
   openRouterModel?: string;
+  embeddingMode?: "managed" | "byok";
   developerAnalytics?: boolean;
 };
 
@@ -66,11 +67,15 @@ function sanitizeUserSettings(value: unknown): UserSettings {
     typeof input.openRouterApiKey === "string" ? input.openRouterApiKey.trim().slice(0, 512) : "";
   const openRouterModel =
     typeof input.openRouterModel === "string" ? input.openRouterModel.trim().slice(0, 200) : "";
+  const embeddingMode = input.embeddingMode === "managed" || input.embeddingMode === "byok"
+    ? input.embeddingMode
+    : undefined;
   const developerAnalytics = input.developerAnalytics === true;
 
   return {
     ...(openRouterApiKey ? { openRouterApiKey } : {}),
     ...(openRouterModel ? { openRouterModel } : {}),
+    ...(embeddingMode ? { embeddingMode } : {}),
     ...(developerAnalytics ? { developerAnalytics: true } : {})
   };
 }

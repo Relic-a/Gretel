@@ -13,6 +13,7 @@ import {
 import { verifyApiToken } from "../../../lib/api-auth";
 import { getPlaylistDetails } from "../../../lib/feed/playlists";
 import { isPlaylistAdmitted } from "../../../lib/feed/playlist-store";
+import { withManagedAuth } from "../../../lib/managed-auth-context";
 
 export const runtime = "nodejs";
 
@@ -30,6 +31,10 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  return withManagedAuth(request, () => handlePost(request));
+}
+
+async function handlePost(request: Request) {
   if (!verifyApiToken(request)) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }

@@ -6,6 +6,8 @@ import { BellOff, Bookmark, EyeOff, LoaderCircle, ThumbsDown, X } from "lucide-r
 import type { CardFeedbackAction } from "./components/VideoActions";
 import { ProfileModal } from "./components/ProfileModal";
 import { SettingsModal } from "./components/SettingsModal";
+import { AuthGate } from "./components/AuthGate";
+import { useGretelAuth } from "./components/use-gretel-auth";
 import { TopBar } from "./components/TopBar";
 import { FeedView } from "./components/FeedView";
 import { OrganizeDialog, SavedWorkspace, type OrganizeDraft, type SavedFilter } from "./components/SavedWorkspace";
@@ -67,6 +69,7 @@ type CachedFeed = FeedResponse & {
 type Section = "home" | "saved" | "history";
 
 export default function Home() {
+  const auth = useGretelAuth();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profileId, setProfileId] = useState("");
   const [profileName, setProfileName] = useState("");
@@ -209,7 +212,12 @@ export default function Home() {
   );
   const activeProfile = profiles.find((profile) => profile.id === profileId);
   const needsProfile = booted && profiles.length === 0 && !feed;
-  const needsOpenRouterKey = settings.openRouterApiKey !== "set";
+  const hasLocalOpenRouterKey = Boolean(settings.openRouterApiKey);
+  const byokEnabled = settings.embeddingMode === "byok" ||
+    (!settings.embeddingMode && settings.openRouterApiKey === "set");
+  const managedEnabled = auth.access?.active === true && !byokEnabled;
+  const needsOpenRouterKey = !managedEnabled && !hasLocalOpenRouterKey;
+  const showAccessGate = booted && !byokEnabled && auth.access?.active !== true;
   const homeVideos = feed?.videos || [];
   const sectionVideos = searchResults ?? (
     section === "saved" ? savedVideos : section === "history" ? historyVideos : homeVideos
@@ -277,6 +285,7 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    if (!auth.ready) return;
     let disposed = false;
 
     async function boot() {
@@ -357,7 +366,16 @@ export default function Home() {
     return () => {
       disposed = true;
     };
-  }, []);
+  }, [auth.ready]);
+
+  useEffect(() => {
+    if (!booted || auth.access?.active !== true || settings.embeddingMode || settings.openRouterApiKey === "set") {
+      return;
+    }
+    const nextSettings = { ...settings, embeddingMode: "managed" as const };
+    setSettings(nextSettings);
+    void persistSettings(nextSettings).catch(() => undefined);
+  }, [auth.access?.active, booted, settings]);
 
   useEffect(() => {
     function applyRoute() {
@@ -659,7 +677,11 @@ export default function Home() {
       throw new Error(data.error || "Could not load settings.");
     }
 
-    setSettings(data);
+    const nextSettings = data.openRouterApiKey === "set" && !data.embeddingMode
+      ? { ...data, embeddingMode: "byok" as const }
+      : data;
+    setSettings(nextSettings);
+    return nextSettings as UserSettings;
   }
 
   async function saveSettings(event: FormEvent) {
@@ -668,23 +690,36 @@ export default function Home() {
     setSavingSettings(true);
 
     try {
-      const response = await authedFetch("/api/settings", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(settings)
-      });
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Could not save settings.");
-      }
-
+      const data = await persistSettings(settings);
       setSettings(data);
       setShowSettings(false);
     } catch (caught) {
       setSettingsError(caught instanceof Error ? caught.message : "Could not save settings.");
     } finally {
       setSavingSettings(false);
+    }
+  }
+
+  async function persistSettings(nextSettings: UserSettings) {
+    const response = await authedFetch("/api/settings", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(nextSettings)
+    });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.error || "Could not save settings.");
+    return data as UserSettings;
+  }
+
+  async function useOwnOpenRouterKey() {
+    auth.setError("");
+    const nextSettings = { ...settings, embeddingMode: "byok" as const };
+    setSettings(nextSettings);
+    try {
+      setSettings(await persistSettings(nextSettings));
+      if (profiles.length > 0) setShowSettings(true);
+    } catch (caught) {
+      auth.setError(caught instanceof Error ? caught.message : "Could not switch embedding access.");
     }
   }
 
@@ -1603,6 +1638,20 @@ export default function Home() {
     void queue.refresh();
   }, [queue]);
 
+  if (showAccessGate) {
+    return (
+      <main className="app-shell">
+        <AuthGate
+          pending={auth.pending}
+          error={auth.error}
+          onGoogle={() => void auth.signInWithGoogle()}
+          onRedeem={auth.redeemAccessCode}
+          onUseOwnKey={() => void useOwnOpenRouterKey()}
+        />
+      </main>
+    );
+  }
+
   return (
     <main className="app-shell">
       <TopBar
@@ -1984,6 +2033,14 @@ export default function Home() {
           }}
           onSubmit={saveSettings}
           onChange={setSettings}
+          account={auth.session ? {
+            email: auth.session.user.email,
+            isAnonymous: auth.session.user.is_anonymous
+          } : null}
+          access={auth.access}
+          authPending={auth.pending}
+          onGoogle={() => void auth.signInWithGoogle()}
+          onSignOut={() => void auth.signOut()}
         />
       )}
     </main>

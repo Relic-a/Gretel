@@ -3,6 +3,8 @@ import { loadDotEnvFile } from "../env";
 import { fetchWithNetworkRetry } from "../network-retry";
 import { getUserSettings } from "../settings";
 import { normalizeVector } from "./vector-math";
+import { getManagedAccessToken } from "../managed-auth-context";
+import { SUPABASE_EMBED_FUNCTION_URL, SUPABASE_PUBLISHABLE_KEY } from "../supabase-config";
 
 export type EmbeddingProvider = {
   provider?: "openrouter" | "mock";
@@ -29,6 +31,20 @@ export function getEmbeddingProvider(config = getGretelConfig()): EmbeddingProvi
     process.env.OPENROUTER_API_KEY ||
     "";
 
+  const embeddingMode = settings.embeddingMode || (apiKey ? "byok" : "managed");
+  if (embeddingMode === "managed") {
+    const accessToken = getManagedAccessToken();
+    if (!accessToken) {
+      throw new Error("Sign in to Gretel or choose your own OpenRouter key in Settings.");
+    }
+    return new ManagedEmbeddingProvider(
+      accessToken,
+      settings.openRouterModel || config.embeddings.model,
+      config.embeddings.dimensions,
+      config.embeddings.requestTimeoutMs
+    );
+  }
+
   if (!apiKey) {
     throw new Error(
       `Missing OpenRouter API key in ${config.embeddings.openRouterApiKeyEnv}, OPENROUTER_KEY, ROUTER_API_KEY, or user settings`
@@ -44,6 +60,71 @@ export function getEmbeddingProvider(config = getGretelConfig()): EmbeddingProvi
     process.env[config.embeddings.openRouterAppNameEnv] || "",
     config.embeddings.requestTimeoutMs
   );
+}
+
+class ManagedEmbeddingProvider implements EmbeddingProvider {
+  readonly provider = "openrouter" as const;
+
+  constructor(
+    private readonly accessToken: string,
+    readonly model: string,
+    private readonly dimensions: number,
+    private readonly timeoutMs: number
+  ) {}
+
+  async embedTexts(texts: string[]) {
+    if (texts.length === 0) return [];
+
+    const response = await fetchWithNetworkRetry(
+      SUPABASE_EMBED_FUNCTION_URL,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.accessToken}`,
+          apikey: SUPABASE_PUBLISHABLE_KEY,
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          action: "embed",
+          model: this.model,
+          dimensions: this.dimensions,
+          input: texts
+        })
+      },
+      { timeoutMs: this.timeoutMs }
+    );
+
+    const payload = await response.json().catch(() => ({})) as {
+      error?: string;
+      code?: string;
+      data?: Array<{ embedding?: number[]; index?: number }>;
+    };
+    if (!response.ok) {
+      throw new Error(payload.error || `Managed embedding request failed with ${response.status}`);
+    }
+
+    const data = [...(payload.data || [])].sort(
+      (left, right) => (left.index ?? 0) - (right.index ?? 0)
+    );
+    if (data.length !== texts.length) {
+      throw new Error(`Managed embeddings returned ${data.length} embeddings for ${texts.length} inputs`);
+    }
+
+    return data.map((item, index) => {
+      if (!Array.isArray(item.embedding) || item.embedding.some(
+        (value) => typeof value !== "number" || !Number.isFinite(value)
+      )) {
+        throw new Error(`Managed embedding ${index} contains invalid components`);
+      }
+      const vector = normalizeVector(item.embedding);
+      if (vector.length !== this.dimensions) {
+        throw new Error(
+          `Managed embedding ${index} has ${vector.length} dimensions; expected ${this.dimensions}`
+        );
+      }
+      return vector;
+    });
+  }
 }
 
 class OpenRouterEmbeddingProvider implements EmbeddingProvider {
