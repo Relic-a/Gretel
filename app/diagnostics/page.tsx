@@ -82,7 +82,7 @@ export default function DiagnosticsPage() {
           <select value={hours} onChange={(event) => setHours(Number(event.target.value))}>
             {windows.map((window) => <option key={window.hours} value={window.hours}>{window.label}</option>)}
           </select>
-          <Link href="/">Back to feed</Link>
+          <Link href="/app">Back to feed</Link>
         </div>
       </header>
 

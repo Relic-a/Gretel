@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 const read = (file) => readFileSync(new URL("../" + file, import.meta.url), "utf8");
 const hook = read("app/components/use-playback-queue.ts");
 const panel = read("app/components/QueuePanel.tsx");
-const page = read("app/page.tsx");
+const page = read("app/gretel-app.tsx");
 const topbar = read("app/components/TopBar.tsx");
 const watch = read("app/components/WatchView.tsx");
 for (const action of ["enqueue", "remove", "reorder", "clear", "current", "autoplay", "next", "ended"]) assert.match(hook, new RegExp('"' + action + '"'));

@@ -74,7 +74,7 @@ test("the playlist card advertises itself and never fakes a duration", () => {
 });
 
 test("opening a playlist card loads /api/playlist with the profile, playlist, and pool key", () => {
-  const page = read("app/page.tsx");
+  const page = read("app/gretel-app.tsx");
   assert.match(page, /openPlaylistDetails/);
   assert.match(page, /\/api\/playlist\?\$\{params\.toString\(\)\}/);
   assert.match(page, /playlistId: playlist\.playlistId \|\| playlist\.id/);
@@ -100,7 +100,7 @@ test("the dedicated side panel shows ordered videos and its states", () => {
 });
 
 test("autoplay follows autoplayVideoIds and advances the watch player in order", () => {
-  const page = read("app/page.tsx");
+  const page = read("app/gretel-app.tsx");
   const panel = read("app/components/PlaylistPanel.tsx");
   assert.match(page, /autoplayVideoIds/);
   assert.match(page, /playlistNextVideoId/);
@@ -112,7 +112,7 @@ test("autoplay follows autoplayVideoIds and advances the watch player in order",
 });
 
 test("saving a playlist card is a normal save and queue uses the existing enqueue action", () => {
-  const page = read("app/page.tsx");
+  const page = read("app/gretel-app.tsx");
   assert.match(page, /onToggleSave=\{\(\) => void saveVideo\(openPlaylist\)\}/);
   assert.match(page, /handleEnqueueVideo/);
   assert.match(page, /queue\.enqueue\(video\)/);

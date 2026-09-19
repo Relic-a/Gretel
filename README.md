@@ -79,6 +79,16 @@ Run the Tauri desktop app in development:
 npm run tauri:dev
 ```
 
+## Website
+
+The Next.js app serves both the marketing pages and the desktop application UI:
+
+- `/` is the public landing page, with direct download buttons for every platform installer plus links to [Gretel Releases](https://github.com/Relic-a/Gretel/releases).
+- `/privacy` and `/terms` are the privacy policy and terms of service, linked from the landing page footer.
+- `/app` is the desktop application itself. The Tauri launcher opens this route, so the marketing page can load in a normal browser without exposing the app shell.
+
+Set `NEXT_PUBLIC_SITE_URL` to the public origin when deploying the marketing site so canonical URLs and link previews resolve. Leave it unset for local and desktop builds.
+
 ## App Settings
 
 Most users can continue with Google or redeem an access code; Gretel then sends authenticated embedding requests through its Supabase Edge Function. Developers can instead enter an OpenRouter API key inside the app settings UI. Gretel stores local settings in the app data directory, not in the public repo.

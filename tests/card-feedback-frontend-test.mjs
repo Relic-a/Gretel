@@ -17,13 +17,13 @@ test("Save and queue are keyboard-discoverable card actions", () => {
   assert.match(card, /card-quick-actions/);
   assert.match(card, /Add to queue|Queue/);
   assert.match(card, /Save/);
-  const page = read("app/page.tsx");
+  const page = read("app/gretel-app.tsx");
   assert.match(page, /showSaveNotice/);
   assert.doesNotMatch(page, /setSaveDialog\(\{[\s\S]{0,200}toggleSave/);
   const css = read("app/styles.css");
   assert.match(css, /video-card:focus-within .card-quick-actions/);
 });
 test("feedback keeps the existing optimistic recovery path", () => {
-  const page = read("app/page.tsx");
+  const page = read("app/gretel-app.tsx");
   for (const token of ["submitContentFeedback", "feedbackTargetIds", "feedbackSnapshotRef", "Try again"]) assert.match(page, new RegExp(token));
 });

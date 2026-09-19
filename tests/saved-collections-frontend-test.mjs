@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 const read = (file) => readFileSync(new URL("../" + file, import.meta.url), "utf8");
 const workspace = read("app/components/SavedWorkspace.tsx");
 const hook = read("app/components/use-saved-collections.tsx");
-const page = read("app/page.tsx");
+const page = read("app/gretel-app.tsx");
 for (const token of ["All saved", "New collection", "Advanced filters", "Organize", "Add note"]) assert.match(workspace, new RegExp(token));
 assert.match(workspace, /maxLength=\{5000\}/);
 assert.match(workspace, /aria-label="Saved collections"/);

@@ -520,7 +520,7 @@ fn navigate_to_server<R: tauri::Runtime>(
     port: u16,
     api_token: &str,
 ) -> Result<(), String> {
-    let url = Url::parse(&format!("http://127.0.0.1:{port}/?token={api_token}"))
+    let url = Url::parse(&format!("http://127.0.0.1:{port}/app?token={api_token}"))
         .map_err(|error| format!("Could not build Gretel server URL: {error}"))?;
     window
         .navigate(url)

@@ -15,7 +15,7 @@ assert.doesNotMatch(
   "the ended-state handler must not select the next video"
 );
 
-const pageSource = readFileSync(new URL("../app/page.tsx", import.meta.url), "utf8");
+const pageSource = readFileSync(new URL("../app/gretel-app.tsx", import.meta.url), "utf8");
 assert.match(
   pageSource,
   /queuedVideoIds\.has\(activeVideo\.id\)[\s\S]*?handlePlayerEnded\(\)/,

@@ -1,8 +1,8 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./styles.css";
-import { WindowTitleBar } from "./components/WindowTitleBar";
-import { UpdateManager } from "./components/UpdateManager";
+import "./landing.css";
+import { siteUrl } from "./site";
 
 const spaceMono = localFont({
   src: [
@@ -16,8 +16,13 @@ const spaceMono = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Gretel",
-  description: "Describe the YouTube feed you want and Gretel curates it."
+  metadataBase: siteUrl ? new URL(siteUrl) : undefined,
+  title: {
+    default: "Gretel · A YouTube feed you actually chose",
+    template: "%s"
+  },
+  description: "Describe the YouTube feed you want and Gretel curates it.",
+  applicationName: "Gretel"
 };
 
 export default function RootLayout({
@@ -27,11 +32,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className={spaceMono.variable}>
-      <body>
-        <WindowTitleBar />
-        {children}
-        <UpdateManager />
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
