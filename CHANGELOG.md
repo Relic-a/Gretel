@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.7.3 — 2026-09-20
+
+- Keep managed-access sessions signed in across desktop restarts by storing Supabase authentication in app-scoped Tauri storage instead of random-port browser storage.
+- Migrate an accessible legacy browser session into the durable desktop store and save authentication changes immediately.
+
 ## 0.7.2 — 2026-09-20
 
 - Harden managed embeddings with a fixed request contract, bounded provider calls, atomic quota/concurrency controls, and stale-reservation refunds.

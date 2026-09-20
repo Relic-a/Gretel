@@ -16,6 +16,7 @@
     "core:window:allow-toggle-maximize",
     "process:allow-restart",
     "deep-link:default",
+    "store:default",
     "updater:default",
     {
       "identifier": "opener:allow-open-url",

@@ -40,6 +40,7 @@ assert.match(config.app.security.csp, /object-src 'none'/);
 assert.deepEqual(capability.remote.urls, ["http://127.0.0.1:*"]);
 assert.ok(capability.permissions.includes("core:window:allow-close"));
 assert.ok(capability.permissions.includes("core:window:allow-start-dragging"));
+assert.ok(capability.permissions.includes("store:default"));
 assert.ok(
   capability.permissions.some((permission) =>
     typeof permission === "object" &&
@@ -87,6 +88,7 @@ assert.ok(existsSync(path.join(root, "app", "fonts", "space-mono-regular.woff2")
 assert.ok(existsSync(path.join(root, "app", "fonts", "OFL.txt")));
 assert.match(launcher, /thread::spawn\(move \|\|/);
 assert.match(launcher, /tauri_plugin_opener::init\(\)/);
+assert.match(launcher, /tauri_plugin_store::Builder::new\(\)\.build\(\)/);
 assert.match(launcher, /app\.deep_link\(\)\.register_all\(\)\?/);
 assert.match(cargoManifest, /tauri-plugin-single-instance\s*=\s*\{[^}]*features\s*=\s*\["deep-link"\]/);
 assert.match(authClient, /redirectTo\s*=\s*isTauri\(\)\s*\?\s*"gretel:\/\/auth\/callback"/);

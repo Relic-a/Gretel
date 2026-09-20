@@ -1,6 +1,6 @@
 [package]
 name = "gretel"
-version = "0.7.2"
+version = "0.7.3"
 description = "Gretel desktop app"
 authors = ["Gretel contributors"]
 license = "Apache-2.0"
@@ -21,6 +21,7 @@ tauri-plugin-opener = "2"
 tauri-plugin-deep-link = "=2.4.5"
 tauri-plugin-single-instance = { version = "=2.3.6", features = ["deep-link"] }
 tauri-plugin-process = "^2.3.1"
+tauri-plugin-store = "=2.4.5"
 tauri-plugin-updater = "^2.9.0"
 serde_json = "1"
 

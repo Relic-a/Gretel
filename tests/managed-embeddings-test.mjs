@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 
-const [migration, hardeningMigration, edgeFunction, embeddingProvider, authHook, appShell, videoUtils, supabaseConfig, tauriConfig] = await Promise.all([
+const [migration, hardeningMigration, edgeFunction, embeddingProvider, authHook, authClient, authStorage, appShell, videoUtils, supabaseConfig, tauriConfig] = await Promise.all([
   readFile(new URL("../supabase/migrations/20260918060000_managed_embeddings.sql", import.meta.url), "utf8"),
   readFile(new URL("../supabase/migrations/20260920174007_harden_managed_embedding_release.sql", import.meta.url), "utf8"),
   readFile(new URL("../supabase/functions/embed/index.ts", import.meta.url), "utf8"),
   readFile(new URL("../lib/feed/embeddings.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/components/use-gretel-auth.ts", import.meta.url), "utf8"),
+  readFile(new URL("../lib/supabase-client.ts", import.meta.url), "utf8"),
+  readFile(new URL("../lib/supabase-auth-storage.ts", import.meta.url), "utf8"),
   readFile(new URL("../app/gretel-app.tsx", import.meta.url), "utf8"),
   readFile(new URL("../app/components/video-utils.ts", import.meta.url), "utf8"),
   readFile(new URL("../supabase/config.toml", import.meta.url), "utf8"),
@@ -62,6 +64,10 @@ assert.match(authHook, /handledCallbackCodes/);
 assert.match(authHook, /window\.addEventListener\("focus"/);
 assert.match(authHook, /gretel:managed-usage-changed/);
 assert.match(authHook, /window\.sessionStorage\.setItem\(managedAccessTokenKey/);
+assert.match(authClient, /storage:\s*getSupabaseAuthStorage\(\)/);
+assert.match(authStorage, /@tauri-apps\/plugin-store/);
+assert.match(authStorage, /await store\.save\(\)/);
+assert.match(authStorage, /window\.localStorage\.getItem\(key\)/);
 assert.doesNotMatch(videoUtils, /localStorage\.getItem\(supabaseAccessTokenKey/);
 assert.match(appShell, /showSettings && auth\.session/);
 assert.match(appShell, /gretel:managed-usage-changed/);
