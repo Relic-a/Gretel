@@ -1,6 +1,6 @@
 {
   "name": "gretel",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "private": true,
   "license": "Apache-2.0",
   "type": "module",
@@ -25,7 +25,7 @@
     "lint": "tsc --noEmit"
   },
   "description": "Gretel desktop app",
-  "author": "Ezana",
+  "author": "Gretel contributors",
   "dependencies": {
     "@supabase/supabase-js": "2.116.0",
     "@tauri-apps/api": "^2.11.0",

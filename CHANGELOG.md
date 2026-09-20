@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.2 — 2026-09-20
+
+- Harden managed embeddings with a fixed request contract, bounded provider calls, atomic quota/concurrency controls, and stale-reservation refunds.
+- Refresh managed usage after relevant operations, on focus, and when Settings opens.
+- Add an audited, admin-only allowance adjustment workflow.
+- Validate desktop OAuth callback URLs and duplicate delivery while completing Linux, Windows, and macOS deep-link registration.
+- Add the public landing, privacy, terms, and desktop `/app` routing release changes.
+
 ## 0.7.1 — 2026-09-14
 
 ### Interface

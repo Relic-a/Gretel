@@ -154,7 +154,6 @@ export default function LandingPage() {
                   height={1067}
                   loading="eager"
                   fetchPriority="high"
-                  quality={72}
                   sizes="(max-width: 900px) 100vw, 620px"
                 />
               </div>

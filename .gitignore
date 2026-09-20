@@ -62,3 +62,4 @@ showcase/public/audio/
 showcase/out/
 docs/showcase/*
 !docs/showcase/gretel-showcase-steps.gif
+.vercel

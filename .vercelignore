@@ -1,0 +1,16 @@
+# Desktop, test, and showcase sources are not part of the hosted Next.js app.
+docs/
+showcase/
+src-tauri/
+tests/
+release/
+
+# Local build and development artifacts.
+.next/
+.tmp/
+.worktrees/
+.cache/
+node_modules/
+data/
+logs/
+*.tsbuildinfo

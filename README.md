@@ -124,6 +124,18 @@ select public.gretel_create_access_code(
 );
 ```
 
+To adjust an existing user's monthly managed-input allowance, run the audited,
+admin-only database function from the Supabase SQL editor (never from the desktop
+client). Use a negative amount to reduce an allowance; the result cannot go below zero:
+
+```sql
+select * from public.gretel_grant_managed_inputs(
+  p_user_id := '<USER_UUID>'::uuid,
+  p_amount := 5000,
+  p_reason := '<OPERATOR_REASON>'
+);
+```
+
 ### Linux rendering compatibility
 
 Gretel leaves WebKitGTK's renderer defaults unchanged. If an NVIDIA system running Wayland crashes in `libnvidia-gpucomp` or `libEGL_nvidia`, launch Gretel with the narrow explicit-sync workaround first:

@@ -96,7 +96,7 @@ export function authedHeaders(extraHeaders: Record<string, string> = {}): Record
   const token = getStoredApiToken();
   let supabaseAccessToken = "";
   try {
-    supabaseAccessToken = window.localStorage.getItem(supabaseAccessTokenKey) || "";
+    supabaseAccessToken = window.sessionStorage.getItem(supabaseAccessTokenKey) || "";
   } catch {}
   return {
     ...extraHeaders,

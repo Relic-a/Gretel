@@ -3,6 +3,11 @@ import { withSupabase } from "npm:@supabase/server@1.7.0";
 const OPENROUTER_EMBEDDINGS_URL = "https://openrouter.ai/api/v1/embeddings";
 const DEFAULT_MODEL = "qwen/qwen3-embedding-8b";
 const DEFAULT_DIMENSIONS = 1024;
+const MAX_BODY_BYTES = 128_000;
+const MAX_INPUTS = 32;
+const MAX_ITEM_CHARACTERS = 12_000;
+const MAX_TOTAL_CHARACTERS = 60_000;
+const PROVIDER_TIMEOUT_MS = 30_000;
 
 type SupabaseContext = {
   supabaseAdmin: {
@@ -25,20 +30,26 @@ const authenticatedHandler = withSupabase(
       }
 
       const body = await readJsonBody(request);
-      const action = typeof body.action === "string" ? body.action : "embed";
+      const action = body.action;
 
       if (action === "status") {
+        if (!hasExactKeys(body, ["action"])) return invalidSchema(corsHeaders);
         return handleStatus(context, userId, corsHeaders);
       }
       if (action === "redeem") {
+        if (!hasExactKeys(body, ["action", "code"]) || typeof body.code !== "string") return invalidSchema(corsHeaders);
         return handleRedemption(context, userId, body, corsHeaders);
       }
       if (action === "embed") {
+        if (!hasExactKeys(body, ["action", "input"])) return invalidSchema(corsHeaders);
         return handleEmbedding(context, userId, body, corsHeaders);
       }
 
       return json({ error: "Unknown Gretel gateway action.", code: "invalid_action" }, 400, corsHeaders);
     } catch (error) {
+      if (safeError(error) === "invalid_request_body") {
+        return json({ error: "Invalid Gretel gateway request.", code: "invalid_request" }, 400, corsHeaders);
+      }
       console.error("gretel.embed.unhandled", safeError(error));
       return json({ error: "The embedding gateway could not complete this request.", code: "gateway_error" }, 500, corsHeaders);
     }
@@ -52,6 +63,10 @@ export default {
     }
     if (request.method !== "POST") {
       return json({ error: "Method not allowed.", code: "method_not_allowed" }, 405, getCorsHeaders(request));
+    }
+    const authorization = request.headers.get("authorization") || "";
+    if (!/^Bearer [A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(authorization)) {
+      return json({ error: "A valid Gretel session is required.", code: "invalid_session" }, 401, getCorsHeaders(request));
     }
     return authenticatedHandler(request);
   },
@@ -125,23 +140,17 @@ async function handleEmbedding(
   corsHeaders: Record<string, string>,
 ) {
   const requestedTexts = Array.isArray(body.input) ? body.input : [];
-  if (requestedTexts.length === 0 || requestedTexts.some((value) => typeof value !== "string")) {
+  if (requestedTexts.length === 0 || requestedTexts.length > MAX_INPUTS || requestedTexts.some((value) => typeof value !== "string")) {
     return json({ error: "Embedding input must be a non-empty list of text.", code: "invalid_input" }, 400, corsHeaders);
   }
 
-  const model = typeof body.model === "string" && body.model.trim()
-    ? body.model.trim().slice(0, 200)
-    : DEFAULT_MODEL;
-  const dimensions = Number.isSafeInteger(body.dimensions)
-    ? Number(body.dimensions)
-    : DEFAULT_DIMENSIONS;
-  if (dimensions < 1 || dimensions > 32768) {
-    return json({ error: "Invalid embedding dimensions.", code: "invalid_dimensions" }, 400, corsHeaders);
-  }
+  const model = DEFAULT_MODEL;
+  const dimensions = DEFAULT_DIMENSIONS;
 
   const texts = requestedTexts.map((value) => normalizeEmbeddingText(value as string));
-  if (texts.some((value) => value.length === 0 || value.length > 30000)) {
-    return json({ error: "Each embedding input must contain between 1 and 30,000 characters.", code: "invalid_input" }, 400, corsHeaders);
+  const characterCount = texts.reduce((total, text) => total + text.length, 0);
+  if (texts.some((value) => value.length === 0 || value.length > MAX_ITEM_CHARACTERS) || characterCount > MAX_TOTAL_CHARACTERS) {
+    return json({ error: "Embedding input is empty or too large.", code: "invalid_input" }, 400, corsHeaders);
   }
 
   const hashes = await Promise.all(texts.map(sha256));
@@ -173,7 +182,7 @@ async function handleEmbedding(
       p_model: model,
       p_requested_inputs: texts.length,
       p_cached_inputs: texts.length - missingIndexes.length,
-      p_character_count: texts.reduce((total, text) => total + text.length, 0),
+      p_character_count: characterCount,
     },
   );
 
@@ -205,6 +214,7 @@ async function handleEmbedding(
           input: missingIndexes.map((index) => texts[index]),
           dimensions,
         }),
+        signal: AbortSignal.timeout(PROVIDER_TIMEOUT_MS),
       });
 
       if (!response.ok) {
@@ -242,7 +252,9 @@ async function handleEmbedding(
     const embeddings = hashes.map((hash) => cached.get(hash));
     if (embeddings.some((embedding) => !embedding)) throw new Error("missing_embedding");
 
-    await finalize(context, requestId, true);
+    if (!await finalize(context, requestId, true)) {
+      return json({ error: "The Gretel service is temporarily unavailable.", code: "database_error" }, 503, corsHeaders);
+    }
     return json({
       data: embeddings.map((embedding, index) => ({ embedding, index })),
       model,
@@ -266,7 +278,11 @@ async function finalize(context: SupabaseContext, requestId: string, succeeded: 
     p_succeeded: succeeded,
     p_error_code: errorCode || null,
   });
-  if (error) console.error("gretel.embed.finalize", safeError(error));
+  if (error) {
+    console.error("gretel.embed.finalize", safeError(error));
+    return false;
+  }
+  return true;
 }
 
 function getCorsHeaders(request: Request): Record<string, string> {
@@ -298,11 +314,26 @@ async function sha256(value: string) {
 
 async function readJsonBody(request: Request): Promise<Record<string, unknown>> {
   try {
-    const value = await request.json();
-    return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+    const declaredLength = Number(request.headers.get("content-length") || 0);
+    if (declaredLength > MAX_BODY_BYTES) throw new Error("request_too_large");
+    const text = await request.text();
+    if (new TextEncoder().encode(text).byteLength > MAX_BODY_BYTES) throw new Error("request_too_large");
+    const value = JSON.parse(text);
+    if (!value || typeof value !== "object" || Array.isArray(value)) throw new Error("invalid_json");
+    return value as Record<string, unknown>;
   } catch {
-    return {};
+    throw new Error("invalid_request_body");
   }
+}
+
+function hasExactKeys(body: Record<string, unknown>, keys: string[]) {
+  const actual = Object.keys(body).sort();
+  const expected = [...keys].sort();
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+
+function invalidSchema(corsHeaders: Record<string, string>) {
+  return json({ error: "Invalid Gretel gateway request.", code: "invalid_request" }, 400, corsHeaders);
 }
 
 function databaseError(error: unknown, corsHeaders: Record<string, string>) {

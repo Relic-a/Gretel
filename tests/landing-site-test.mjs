@@ -50,6 +50,12 @@ assert.match(
   "the Tauri launcher must load the desktop app route, not the landing page"
 );
 assert.match(launcher, /http:\/\/127\.0\.0\.1:\{port\}\/app\?token=\{api_token\}/);
+const tauriConfig = JSON.parse(read("src-tauri/tauri.conf.json"));
+assert.equal(
+  tauriConfig.build.devUrl,
+  "http://127.0.0.1:3000/app",
+  "the Tauri development window must load the desktop app route"
+);
 
 // Google requires a privacy policy that is accurate about the little data Gretel holds.
 assert.match(privacy, /Google API Services User Data Policy/);

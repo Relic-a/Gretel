@@ -12,6 +12,8 @@ const packageJson = JSON.parse(readFileSync(path.join(root, "package.json"), "ut
 const nextConfig = readFileSync(path.join(root, "next.config.mjs"), "utf8");
 const layout = readFileSync(path.join(root, "app", "layout.tsx"), "utf8");
 const launcher = readFileSync(path.join(root, "src-tauri", "src", "lib.rs"), "utf8");
+const cargoManifest = readFileSync(path.join(root, "src-tauri", "Cargo.toml"), "utf8");
+const authClient = readFileSync(path.join(root, "app", "components", "use-gretel-auth.ts"), "utf8");
 const executable = readFileSync(path.join(root, "src-tauri", "src", "main.rs"), "utf8");
 const titleBar = readFileSync(path.join(root, "app", "components", "WindowTitleBar.tsx"), "utf8");
 const startupPage = readFileSync(path.join(root, "src-tauri", "frontend", "index.html"), "utf8");
@@ -24,10 +26,15 @@ assert.match(packageJson.scripts["dist:win"], /--bundles nsis(?:\s|$)/);
 assert.match(packageJson.scripts["dist:linux"], /--bundles deb,rpm(?:\s|$)/);
 assert.match(nextConfig, /Content-Security-Policy/);
 assert.match(nextConfig, /frame-ancestors 'none'/);
-assert.equal(config.build.devUrl, "http://127.0.0.1:3000");
+assert.equal(
+  config.build.devUrl,
+  "http://127.0.0.1:3000/app",
+  "Tauri development must open the desktop app instead of the marketing site"
+);
 assert.equal(config.build.frontendDist, "frontend");
 assert.equal(config.app.windows[0].decorations, false);
 assert.equal(config.app.withGlobalTauri, true);
+assert.deepEqual(config.plugins["deep-link"].desktop.schemes, ["gretel"]);
 assert.equal(typeof config.app.security.csp, "string");
 assert.match(config.app.security.csp, /object-src 'none'/);
 assert.deepEqual(capability.remote.urls, ["http://127.0.0.1:*"]);
@@ -80,6 +87,10 @@ assert.ok(existsSync(path.join(root, "app", "fonts", "space-mono-regular.woff2")
 assert.ok(existsSync(path.join(root, "app", "fonts", "OFL.txt")));
 assert.match(launcher, /thread::spawn\(move \|\|/);
 assert.match(launcher, /tauri_plugin_opener::init\(\)/);
+assert.match(launcher, /app\.deep_link\(\)\.register_all\(\)\?/);
+assert.match(cargoManifest, /tauri-plugin-single-instance\s*=\s*\{[^}]*features\s*=\s*\["deep-link"\]/);
+assert.match(authClient, /redirectTo\s*=\s*isTauri\(\)\s*\?\s*"gretel:\/\/auth\/callback"/);
+assert.match(authClient, /deepLink\.onOpenUrl/);
 assert.match(launcher, /update_install_mode/);
 assert.match(launcher, /CREATE_NO_WINDOW/);
 assert.match(launcher, /GRETEL_RENDER_MODE/);

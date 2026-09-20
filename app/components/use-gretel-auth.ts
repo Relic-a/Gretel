@@ -26,6 +26,7 @@ export function useGretelAuth() {
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const callbackInFlight = useRef(false);
+  const handledCallbackCodes = useRef(new Set<string>());
 
   const refreshAccess = useCallback(async (nextSession?: Session | null) => {
     const currentSession = nextSession === undefined
@@ -48,9 +49,23 @@ export function useGretelAuth() {
 
   const handleCallbackUrl = useCallback(async (callbackUrl: string) => {
     if (callbackInFlight.current) return;
-    const parsed = new URL(callbackUrl);
+    let parsed: URL;
+    try {
+      parsed = new URL(callbackUrl);
+    } catch {
+      setError("Google sign-in returned an invalid callback URL.");
+      return;
+    }
+    const isDesktopCallback = parsed.protocol === "gretel:" && parsed.hostname === "auth" && parsed.pathname === "/callback";
+    const isWebCallback = (parsed.protocol === "http:" || parsed.protocol === "https:") &&
+      parsed.origin === window.location.origin && parsed.pathname === window.location.pathname;
+    if (!isDesktopCallback && !isWebCallback) return;
+    if (parsed.searchParams.has("error")) {
+      setError("Google sign-in was cancelled or denied.");
+      return;
+    }
     const code = parsed.searchParams.get("code");
-    if (!code) return;
+    if (!code || code.length > 4096 || handledCallbackCodes.current.has(code)) return;
 
     callbackInFlight.current = true;
     setPending(true);
@@ -62,6 +77,7 @@ export function useGretelAuth() {
         flowId ? { flowId } : undefined
       );
       if (exchangeError) throw exchangeError;
+      handledCallbackCodes.current.add(code);
       await refreshAccess(data.session);
       if (parsed.protocol === "http:" || parsed.protocol === "https:") {
         window.history.replaceState(null, "", `${window.location.pathname}${window.location.hash}`);
@@ -99,10 +115,10 @@ export function useGretelAuth() {
         if (isTauri()) {
           const deepLink = await import("@tauri-apps/plugin-deep-link");
           const current = await deepLink.getCurrent();
-          const currentUrl = current?.find((value) => value.startsWith("gretel://auth/callback"));
+          const currentUrl = current?.find(isExactDesktopCallback);
           if (currentUrl) await handleCallbackUrl(currentUrl);
           unlisten = await deepLink.onOpenUrl((urls) => {
-            const callbackUrl = urls.find((value) => value.startsWith("gretel://auth/callback"));
+            const callbackUrl = urls.find(isExactDesktopCallback);
             if (callbackUrl) void handleCallbackUrl(callbackUrl);
           });
         }
@@ -119,6 +135,26 @@ export function useGretelAuth() {
       unlisten?.();
     };
   }, [handleCallbackUrl, refreshAccess]);
+
+  useEffect(() => {
+    let refreshQueued = false;
+    const refresh = () => {
+      if (refreshQueued) return;
+      refreshQueued = true;
+      window.setTimeout(() => {
+        refreshQueued = false;
+        void refreshAccess().catch(() => undefined);
+      }, 0);
+    };
+    const onFocus = () => refresh();
+    const onUsage = () => refresh();
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("gretel:managed-usage-changed", onUsage);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("gretel:managed-usage-changed", onUsage);
+    };
+  }, [refreshAccess]);
 
   const signInWithGoogle = useCallback(async () => {
     setPending(true);
@@ -213,9 +249,18 @@ function invokeGateway(session: Session, body: Record<string, unknown>) {
 
 function persistAccessToken(token: string) {
   try {
-    if (token) window.localStorage.setItem(managedAccessTokenKey, token);
-    else window.localStorage.removeItem(managedAccessTokenKey);
+    if (token) window.sessionStorage.setItem(managedAccessTokenKey, token);
+    else window.sessionStorage.removeItem(managedAccessTokenKey);
   } catch {}
+}
+
+function isExactDesktopCallback(value: string) {
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "gretel:" && parsed.hostname === "auth" && parsed.pathname === "/callback";
+  } catch {
+    return false;
+  }
 }
 
 function isTauri() {

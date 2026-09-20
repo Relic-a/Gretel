@@ -39,7 +39,6 @@ export function getEmbeddingProvider(config = getGretelConfig()): EmbeddingProvi
     }
     return new ManagedEmbeddingProvider(
       accessToken,
-      settings.openRouterModel || config.embeddings.model,
       config.embeddings.dimensions,
       config.embeddings.requestTimeoutMs
     );
@@ -67,10 +66,13 @@ class ManagedEmbeddingProvider implements EmbeddingProvider {
 
   constructor(
     private readonly accessToken: string,
-    readonly model: string,
     private readonly dimensions: number,
     private readonly timeoutMs: number
-  ) {}
+  ) {
+    this.model = "qwen/qwen3-embedding-8b";
+  }
+
+  readonly model: string;
 
   async embedTexts(texts: string[]) {
     if (texts.length === 0) return [];
@@ -86,8 +88,6 @@ class ManagedEmbeddingProvider implements EmbeddingProvider {
         },
         body: JSON.stringify({
           action: "embed",
-          model: this.model,
-          dimensions: this.dimensions,
           input: texts
         })
       },

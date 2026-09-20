@@ -11,7 +11,7 @@ export function SiteFooter() {
           <GretelMark size={24} />
           <div>
             <strong>Gretel</strong>
-            <p>A local-first YouTube feed curator by Ezana.</p>
+            <p>A local-first YouTube feed curator.</p>
           </div>
         </div>
 
@@ -31,7 +31,7 @@ export function SiteFooter() {
       </div>
 
       <div className="site-footer-base">
-        <span>© {new Date().getFullYear()} Ezana. All rights reserved.</span>
+        <span>© {new Date().getFullYear()} Gretel contributors.</span>
         <span>Gretel is not affiliated with, endorsed by, or sponsored by YouTube or Google.</span>
       </div>
     </footer>

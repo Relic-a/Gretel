@@ -15,7 +15,8 @@ const contentSecurityPolicy = [
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: "standalone",
+  // Tauri bundles the standalone server; Vercel packages Next.js itself.
+  ...(process.env.VERCEL ? {} : { output: "standalone" }),
   experimental: {
     useTypeScriptCli: false
   },

@@ -53,6 +53,12 @@ function authedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Resp
   return fetch(input, {
     ...init,
     headers: authedHeaders(customHeaders)
+  }).then((response) => {
+    const path = typeof input === "string" ? input : input instanceof URL ? input.pathname : input.url;
+    if (response.ok && init?.method === "POST" && ["/api/feed/build", "/api/search"].some((route) => path.startsWith(route))) {
+      window.dispatchEvent(new Event("gretel:managed-usage-changed"));
+    }
+    return response;
   });
 }
 
@@ -376,6 +382,10 @@ export default function Home() {
     setSettings(nextSettings);
     void persistSettings(nextSettings).catch(() => undefined);
   }, [auth.access?.active, booted, settings]);
+
+  useEffect(() => {
+    if (showSettings && auth.session) void auth.refreshAccess().catch(() => undefined);
+  }, [showSettings, auth.session, auth.refreshAccess]);
 
   useEffect(() => {
     function applyRoute() {

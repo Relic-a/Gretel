@@ -11,6 +11,9 @@ use std::{
 
 use tauri::{AppHandle, Manager, RunEvent, Url, WebviewWindow};
 
+#[cfg(any(windows, target_os = "linux"))]
+use tauri_plugin_deep_link::DeepLinkExt;
+
 struct ServerProcess(Mutex<Option<Child>>);
 
 #[tauri::command]
@@ -46,6 +49,13 @@ pub fn run() {
         .plugin(tauri_plugin_process::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            // Linux and Windows support runtime protocol registration. Doing this on
+            // every launch covers development, portable executables, and AppImages in
+            // addition to installer-managed builds. macOS registers the same scheme
+            // from tauri.conf.json when the application bundle is installed.
+            #[cfg(any(windows, target_os = "linux"))]
+            app.deep_link().register_all()?;
+
             if cfg!(debug_assertions) || tauri_debug_mode() {
                 // `tauri dev` (including `tauri dev --release`) starts Next.js through
                 // beforeDevCommand and loads devUrl.
