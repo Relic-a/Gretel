@@ -7,6 +7,7 @@ import { getSupabaseClient } from "../../lib/supabase-client";
 import { SUPABASE_EMBED_FUNCTION_URL, SUPABASE_PUBLISHABLE_KEY } from "../../lib/supabase-config";
 
 export const managedAccessTokenKey = "gretel.supabaseAccessToken.v1";
+const ACCESS_REFRESH_TIMEOUT_MS = 15_000;
 
 export type GretelAccess = {
   active: boolean;
@@ -40,7 +41,9 @@ export function useGretelAuth() {
         ? (await getSupabaseClient().auth.getSession()).data.session
         : nextSession;
       if (requestId === accessRequestId.current) {
-        setSession(currentSession);
+        setSession((previous) => previous?.access_token === currentSession?.access_token
+          ? previous
+          : currentSession);
         persistAccessToken(currentSession?.access_token || "");
       }
       if (!currentSession) {
@@ -52,7 +55,7 @@ export function useGretelAuth() {
         return null;
       }
 
-      const response = await invokeGateway(currentSession, { action: "status" });
+      const response = await invokeGateway(currentSession, { action: "status" }, ACCESS_REFRESH_TIMEOUT_MS);
       const body = await response.json();
       if (!response.ok) throw new Error(body.error || "Could not refresh managed usage.");
       if (requestId === accessRequestId.current) {
@@ -63,7 +66,9 @@ export function useGretelAuth() {
       return body as GretelAccess;
     } catch (caught) {
       if (requestId === accessRequestId.current) {
-        setAccessError(caught instanceof Error ? caught.message : "Could not refresh managed usage.");
+        setAccessError(caught instanceof Error && caught.name === "TimeoutError"
+          ? "The usage request timed out. Try again."
+          : caught instanceof Error ? caught.message : "Could not refresh managed usage.");
       }
       throw caught;
     } finally {
@@ -266,10 +271,11 @@ export function useGretelAuth() {
   };
 }
 
-function invokeGateway(session: Session, body: Record<string, unknown>) {
+function invokeGateway(session: Session, body: Record<string, unknown>, timeoutMs?: number) {
   return fetch(SUPABASE_EMBED_FUNCTION_URL, {
     method: "POST",
     cache: "no-store",
+    signal: timeoutMs ? AbortSignal.timeout(timeoutMs) : undefined,
     headers: {
       Authorization: `Bearer ${session.access_token}`,
       apikey: SUPABASE_PUBLISHABLE_KEY,

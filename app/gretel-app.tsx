@@ -376,7 +376,7 @@ export default function Home() {
 
   useEffect(() => {
     if (showSettings && auth.session) void auth.refreshAccess().catch(() => undefined);
-  }, [showSettings, auth.session, auth.refreshAccess]);
+  }, [showSettings, auth.session?.access_token, auth.refreshAccess]);
 
   useEffect(() => {
     function applyRoute() {
