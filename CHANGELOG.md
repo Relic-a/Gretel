@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.5 — 2026-09-23
+
+- Fix managed usage refreshing repeatedly after authentication updates.
+- Refine the Settings account and usage display, including a usage meter and clearer refresh states.
+- Show a focused confirmation dialog when closing Settings with unsaved access changes.
+
 ## 0.7.4 — 2026-09-23
 
 - Make managed embedding access a saved choice, show current usage with refresh and error states, and warn before discarding unsaved settings.

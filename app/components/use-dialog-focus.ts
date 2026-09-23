@@ -12,12 +12,15 @@ const focusableSelector = [
 export function useDialogFocus(
   dialogRef: RefObject<HTMLElement | null>,
   dismissible: boolean,
-  onDismiss: () => void
+  onDismiss: () => void,
+  active = true
 ) {
   const dismissibleRef = useRef(dismissible);
   const onDismissRef = useRef(onDismiss);
+  const activeRef = useRef(active);
   dismissibleRef.current = dismissible;
   onDismissRef.current = onDismiss;
+  activeRef.current = active;
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -39,7 +42,7 @@ export function useDialogFocus(
     });
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.defaultPrevented) return;
+      if (event.defaultPrevented || !activeRef.current) return;
 
       if (event.key === "Escape" && dismissibleRef.current) {
         event.preventDefault();

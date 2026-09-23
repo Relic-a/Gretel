@@ -23,11 +23,56 @@ type SettingsModalProps = {
   onSignOut: () => void;
 };
 
+function UnsavedConfirm(props: { saving: boolean; onDiscard: () => void; onKeepEditing: () => void }) {
+  const dialogRef = useRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef, true, props.onKeepEditing);
+
+  return (
+    <div
+      className="modal-backdrop confirm-backdrop"
+      onPointerDown={(event) => {
+        if (event.target === event.currentTarget) props.onKeepEditing();
+      }}
+    >
+      <section
+        ref={dialogRef}
+        className="confirm-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby="settings-unsaved-title"
+        aria-describedby="settings-unsaved-copy"
+        tabIndex={-1}
+      >
+        <h2 id="settings-unsaved-title">Save your changes?</h2>
+        <p id="settings-unsaved-copy">Your access choice will return to the saved setting if you leave now.</p>
+        <div className="confirm-actions">
+          <button type="button" className="confirm-keep" onClick={props.onKeepEditing}>Keep editing</button>
+          <button type="button" className="confirm-discard" onClick={props.onDiscard}>Discard changes</button>
+          <button type="submit" className="confirm-save" disabled={props.saving}>
+            {props.saving ? "Saving…" : "Save and close"}
+          </button>
+        </div>
+      </section>
+    </div>
+  );
+}
+
 export function SettingsModal(props: SettingsModalProps) {
   const dialogRef = useRef<HTMLElement>(null);
   const [draft, setDraft] = useState<UserSettings>(props.settings);
   const [confirmClose, setConfirmClose] = useState(false);
   const dirty = JSON.stringify(draft) !== JSON.stringify(props.settings);
+  const access = props.access;
+  const accountLabel = props.account?.isAnonymous
+    ? "Access-code session"
+    : props.account?.email || "Google account";
+  const accessStale = Boolean(props.accessError) || props.accessRefreshing;
+  const usagePercent = access && access.monthlyInputLimit > 0
+    ? Math.min(100, Math.max(0, Math.round((access.usedInputs / access.monthlyInputLimit) * 100)))
+    : 0;
+  const updatedLabel = props.accessUpdatedAt
+    ? new Date(props.accessUpdatedAt).toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })
+    : "";
   const close = () => {
     if (props.saving) return;
     if (confirmClose) {
@@ -40,7 +85,7 @@ export function SettingsModal(props: SettingsModalProps) {
     }
     props.onClose();
   };
-  useDialogFocus(dialogRef, true, close);
+  useDialogFocus(dialogRef, !confirmClose, close, !confirmClose);
 
   return (
     <div
@@ -66,15 +111,11 @@ export function SettingsModal(props: SettingsModalProps) {
 
         <form onSubmit={(event) => props.onSubmit(event, draft)} className="setup-form">
           {confirmClose && dirty && (
-            <div className="settings-unsaved" role="alert">
-              <strong>Save your changes?</strong>
-              <p>Your access choice will return to the saved setting if you leave now.</p>
-              <div>
-                <button type="submit" disabled={props.saving}>Save and close</button>
-                <button type="button" onClick={props.onClose}>Discard changes</button>
-                <button type="button" onClick={() => setConfirmClose(false)}>Keep editing</button>
-              </div>
-            </div>
+            <UnsavedConfirm
+              saving={props.saving}
+              onDiscard={props.onClose}
+              onKeepEditing={() => setConfirmClose(false)}
+            />
           )}
           <div className="embedding-source-setting">
             <div>
@@ -109,23 +150,63 @@ export function SettingsModal(props: SettingsModalProps) {
           </div>
 
           {props.account && (
-            <div className="account-setting">
-              <div>
-                <span>{props.account.isAnonymous ? "Access-code session" : props.account.email || "Google account"}</span>
-                <small>
-                  {props.access?.active
-                    ? `${props.accessError || props.accessRefreshing ? "Last known: " : ""}${props.access.usedInputs.toLocaleString()} used · ${props.access.remainingInputs.toLocaleString()} of ${props.access.monthlyInputLimit.toLocaleString()} remaining this month`
-                    : props.accessError ? "Managed usage is unavailable." : props.accessRefreshing ? "Loading managed usage…" : "Managed access is not active."}
-                </small>
-                {props.accessError && <small className="error" role="status">Usage could not refresh: {props.accessError}</small>}
-                {props.accessUpdatedAt && !props.accessError && <small>Updated {new Date(props.accessUpdatedAt).toLocaleTimeString()}</small>}
-                {draft.embeddingMode === "byok" && <small>Managed usage is paused while your OpenRouter key is selected.</small>}
-                {props.access?.active && <small>Cached inputs do not use your monthly allowance.</small>}
+            <div className="account-card">
+              <div className="account-card-head">
+                <div className="account-identity">
+                  <span className="account-email" title={accountLabel}>{accountLabel}</span>
+                  {access?.active && (
+                    <span className={`account-badge${accessStale ? " is-stale" : ""}`}>
+                      {accessStale ? "Last known" : "Managed access"}
+                    </span>
+                  )}
+                </div>
+                <button type="button" className="account-signout" onClick={props.onSignOut} disabled={props.authPending}>
+                  Sign out
+                </button>
               </div>
-              <button type="button" onClick={props.onRefreshAccess} disabled={props.accessRefreshing}>
-                {props.accessRefreshing ? "Refreshing…" : "Refresh usage"}
-              </button>
-              <button type="button" onClick={props.onSignOut} disabled={props.authPending}>Sign out</button>
+
+              {access?.active ? (
+                <>
+                  <div className="usage-figures">
+                    <strong>{access.remainingInputs.toLocaleString()}</strong>
+                    <span>of {access.monthlyInputLimit.toLocaleString()} embeddings left this month</span>
+                  </div>
+                  <div
+                    className="usage-meter"
+                    role="progressbar"
+                    aria-label="Monthly embedding usage"
+                    aria-valuemin={0}
+                    aria-valuemax={access.monthlyInputLimit}
+                    aria-valuenow={Math.min(access.usedInputs, access.monthlyInputLimit)}
+                  >
+                    <span style={{ width: `${usagePercent}%` }} />
+                  </div>
+                  <div className="usage-foot">
+                    <span>{access.usedInputs.toLocaleString()} used</span>
+                    {updatedLabel && <span className="usage-updated">Updated {updatedLabel}</span>}
+                    <button
+                      type="button"
+                      className="usage-refresh"
+                      onClick={props.onRefreshAccess}
+                      disabled={props.accessRefreshing}
+                    >
+                      {props.accessRefreshing ? "Refreshing…" : "Refresh"}
+                    </button>
+                  </div>
+                  {draft.embeddingMode === "byok" && (
+                    <p className="account-note">Managed usage is paused while your OpenRouter key is selected.</p>
+                  )}
+                  <p className="account-note subtle">Cached inputs don’t count toward your monthly allowance.</p>
+                </>
+              ) : (
+                <p className="account-note">
+                  {props.accessRefreshing ? "Loading managed usage…" : "Managed access is not active."}
+                </p>
+              )}
+
+              {props.accessError && (
+                <p className="account-note error" role="status">Usage could not refresh: {props.accessError}</p>
+              )}
             </div>
           )}
 

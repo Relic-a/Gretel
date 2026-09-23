@@ -14,4 +14,3 @@ export function withManagedAuth<T>(request: Request, callback: () => T): T {
 export function getManagedAccessToken() {
   return storage.getStore()?.accessToken || "";
 }
-
