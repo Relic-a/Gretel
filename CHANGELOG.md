@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.4 — 2026-09-23
+
+- Make managed embedding access a saved choice, show current usage with refresh and error states, and warn before discarding unsaved settings.
+- Let the desktop window shrink to the single-column layout and keep controls usable at narrow widths.
+- Warm the Linux release build cache on `main` and use faster RPM compression, with a release-time payload check.
+
 ## 0.7.3 — 2026-09-20
 
 - Keep managed-access sessions signed in across desktop restarts by storing Supabase authentication in app-scoped Tauri storage instead of random-port browser storage.
