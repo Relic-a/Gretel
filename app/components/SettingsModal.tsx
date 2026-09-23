@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useRef } from "react";
+import { FormEvent, useRef, useState } from "react";
 
 import type { UserSettings } from "../types";
 import type { GretelAccess } from "./use-gretel-auth";
@@ -11,24 +11,42 @@ type SettingsModalProps = {
   saving: boolean;
   error: string;
   onClose: () => void;
-  onSubmit: (event: FormEvent) => void;
-  onChange: (settings: UserSettings) => void;
+  onSubmit: (event: FormEvent, settings: UserSettings) => void;
   account: { email?: string; isAnonymous?: boolean } | null;
   access: GretelAccess | null;
   authPending: boolean;
+  accessRefreshing: boolean;
+  accessError: string;
+  accessUpdatedAt: number | null;
+  onRefreshAccess: () => void;
   onGoogle: () => void;
   onSignOut: () => void;
 };
 
 export function SettingsModal(props: SettingsModalProps) {
   const dialogRef = useRef<HTMLElement>(null);
-  useDialogFocus(dialogRef, true, props.onClose);
+  const [draft, setDraft] = useState<UserSettings>(props.settings);
+  const [confirmClose, setConfirmClose] = useState(false);
+  const dirty = JSON.stringify(draft) !== JSON.stringify(props.settings);
+  const close = () => {
+    if (props.saving) return;
+    if (confirmClose) {
+      setConfirmClose(false);
+      return;
+    }
+    if (dirty) {
+      setConfirmClose(true);
+      return;
+    }
+    props.onClose();
+  };
+  useDialogFocus(dialogRef, true, close);
 
   return (
     <div
       className="modal-backdrop"
       onPointerDown={(event) => {
-        if (event.target === event.currentTarget) props.onClose();
+        if (event.target === event.currentTarget) close();
       }}
     >
       <section
@@ -41,12 +59,23 @@ export function SettingsModal(props: SettingsModalProps) {
       >
         <div className="modal-head">
           <h1 id="settings-dialog-title">Settings</h1>
-          <button type="button" className="icon-button" onClick={props.onClose}>
+          <button type="button" className="icon-button" onClick={close}>
             Close
           </button>
         </div>
 
-        <form onSubmit={props.onSubmit} className="setup-form">
+        <form onSubmit={(event) => props.onSubmit(event, draft)} className="setup-form">
+          {confirmClose && dirty && (
+            <div className="settings-unsaved" role="alert">
+              <strong>Save your changes?</strong>
+              <p>Your access choice will return to the saved setting if you leave now.</p>
+              <div>
+                <button type="submit" disabled={props.saving}>Save and close</button>
+                <button type="button" onClick={props.onClose}>Discard changes</button>
+                <button type="button" onClick={() => setConfirmClose(false)}>Keep editing</button>
+              </div>
+            </div>
+          )}
           <div className="embedding-source-setting">
             <div>
               <h2>Embedding access</h2>
@@ -56,10 +85,10 @@ export function SettingsModal(props: SettingsModalProps) {
               <button
                 type="button"
                 role="radio"
-                aria-checked={props.settings.embeddingMode !== "byok"}
-                className={props.settings.embeddingMode !== "byok" ? "active" : ""}
+                aria-checked={draft.embeddingMode !== "byok"}
+                className={draft.embeddingMode !== "byok" ? "active" : ""}
                 onClick={() => props.account
-                  ? props.onChange({ ...props.settings, embeddingMode: "managed" })
+                  ? setDraft({ ...draft, embeddingMode: "managed" })
                   : props.onGoogle()}
                 disabled={props.authPending}
               >
@@ -69,9 +98,9 @@ export function SettingsModal(props: SettingsModalProps) {
               <button
                 type="button"
                 role="radio"
-                aria-checked={props.settings.embeddingMode === "byok"}
-                className={props.settings.embeddingMode === "byok" ? "active" : ""}
-                onClick={() => props.onChange({ ...props.settings, embeddingMode: "byok" })}
+                aria-checked={draft.embeddingMode === "byok"}
+                className={draft.embeddingMode === "byok" ? "active" : ""}
+                onClick={() => setDraft({ ...draft, embeddingMode: "byok" })}
               >
                 <span>My OpenRouter key</span>
                 <small>You cover provider usage</small>
@@ -85,34 +114,41 @@ export function SettingsModal(props: SettingsModalProps) {
                 <span>{props.account.isAnonymous ? "Access-code session" : props.account.email || "Google account"}</span>
                 <small>
                   {props.access?.active
-                    ? `${props.access.remainingInputs.toLocaleString()} of ${props.access.monthlyInputLimit.toLocaleString()} managed inputs remaining this month`
-                    : "Managed access is not active."}
+                    ? `${props.accessError || props.accessRefreshing ? "Last known: " : ""}${props.access.usedInputs.toLocaleString()} used · ${props.access.remainingInputs.toLocaleString()} of ${props.access.monthlyInputLimit.toLocaleString()} remaining this month`
+                    : props.accessError ? "Managed usage is unavailable." : props.accessRefreshing ? "Loading managed usage…" : "Managed access is not active."}
                 </small>
+                {props.accessError && <small className="error" role="status">Usage could not refresh: {props.accessError}</small>}
+                {props.accessUpdatedAt && !props.accessError && <small>Updated {new Date(props.accessUpdatedAt).toLocaleTimeString()}</small>}
+                {draft.embeddingMode === "byok" && <small>Managed usage is paused while your OpenRouter key is selected.</small>}
+                {props.access?.active && <small>Cached inputs do not use your monthly allowance.</small>}
               </div>
+              <button type="button" onClick={props.onRefreshAccess} disabled={props.accessRefreshing}>
+                {props.accessRefreshing ? "Refreshing…" : "Refresh usage"}
+              </button>
               <button type="button" onClick={props.onSignOut} disabled={props.authPending}>Sign out</button>
             </div>
           )}
 
-          <p className="modal-copy">Your OpenRouter key remains an optional fallback and is stored only on this computer.</p>
+          <p className="modal-copy">Only the selected access method is used. Your OpenRouter key stays on this computer when saved.</p>
 
           <label>
             <span>OpenRouter API key</span>
             <small>Stored locally as plain text in <code>data/user-settings.json</code>. Use a dedicated key with a spending limit.</small>
             <input
               type="password"
-              autoFocus={props.settings.embeddingMode === "byok"}
+              autoFocus={draft.embeddingMode === "byok"}
               autoComplete="off"
               maxLength={512}
               spellCheck={false}
-              value={props.settings.openRouterApiKey === "set" ? "" : props.settings.openRouterApiKey || ""}
+              value={draft.openRouterApiKey === "set" ? "" : draft.openRouterApiKey || ""}
               onChange={(event) =>
-                props.onChange({
-                  ...props.settings,
+                setDraft({
+                  ...draft,
                   openRouterApiKey: event.target.value
                 })
               }
-              placeholder={props.settings.openRouterApiKey === "set" ? "API key already saved" : "sk-or-v1-..."}
-              disabled={props.settings.embeddingMode !== "byok"}
+              placeholder={draft.openRouterApiKey === "set" ? "API key already saved" : "sk-or-v1-..."}
+              disabled={draft.embeddingMode !== "byok"}
             />
           </label>
 
@@ -124,10 +160,10 @@ export function SettingsModal(props: SettingsModalProps) {
               autoComplete="off"
               maxLength={200}
               spellCheck={false}
-              value={props.settings.openRouterModel || ""}
+              value={draft.openRouterModel || ""}
               onChange={(event) =>
-                props.onChange({
-                  ...props.settings,
+                setDraft({
+                  ...draft,
                   openRouterModel: event.target.value
                 })
               }
@@ -143,10 +179,10 @@ export function SettingsModal(props: SettingsModalProps) {
             <label className="toggle-control">
               <input
                 type="checkbox"
-                checked={props.settings.developerAnalytics === true}
+                checked={draft.developerAnalytics === true}
                 onChange={(event) =>
-                  props.onChange({
-                    ...props.settings,
+                  setDraft({
+                    ...draft,
                     developerAnalytics: event.target.checked
                   })
                 }
@@ -172,7 +208,7 @@ export function SettingsModal(props: SettingsModalProps) {
           </div>
 
           <button type="submit" disabled={props.saving}>
-            {props.saving ? "Saving..." : "Save settings"}
+            {props.saving ? "Saving..." : dirty ? "Save changes" : "Close settings"}
           </button>
           {props.error && <p className="error">{props.error}</p>}
         </form>

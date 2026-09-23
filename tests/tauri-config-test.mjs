@@ -33,6 +33,8 @@ assert.equal(
 );
 assert.equal(config.build.frontendDist, "frontend");
 assert.equal(config.app.windows[0].decorations, false);
+assert.ok(config.app.windows[0].minWidth < 560, "Tauri must allow the narrow single-column layout");
+assert.ok(config.app.windows[0].minHeight <= 480, "Tauri must allow compact screens");
 assert.equal(config.app.withGlobalTauri, true);
 assert.deepEqual(config.plugins["deep-link"].desktop.schemes, ["gretel"]);
 assert.equal(typeof config.app.security.csp, "string");

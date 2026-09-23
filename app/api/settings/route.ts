@@ -30,6 +30,9 @@ export async function POST(request: Request) {
     setUserSettings({
       openRouterApiKey,
       openRouterModel: typeof body.openRouterModel === "string" ? body.openRouterModel : "",
+      embeddingMode: body.embeddingMode === "managed" || body.embeddingMode === "byok"
+        ? body.embeddingMode
+        : current.embeddingMode,
       developerAnalytics: body.developerAnalytics === true
     });
 
@@ -43,6 +46,7 @@ function toClientSettings(settings: ReturnType<typeof getUserSettings>) {
   return {
     openRouterApiKey: settings.openRouterApiKey ? "set" : "",
     openRouterModel: settings.openRouterModel || "",
+    embeddingMode: settings.embeddingMode || (settings.openRouterApiKey ? "byok" : "managed"),
     developerAnalytics: settings.developerAnalytics === true
   };
 }

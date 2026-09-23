@@ -86,6 +86,7 @@ jobs:
         with:
           workspaces: src-tauri
           shared-key: release-linux
+          cache-workspace-crates: true
       - name: Install Linux packaging dependencies
         run: |
           sudo apt-get update
@@ -122,6 +123,7 @@ jobs:
           done
 
           rpm_requirements=$(rpm --query --package --requires "${rpms[0]}")
+          test "$(rpm --query --package --queryformat '%{PAYLOADCOMPRESSOR}' "${rpms[0]}")" = zstd
           for dependency in gstreamer1-plugins-base gstreamer1-plugins-good gstreamer1-plugins-bad-free gstreamer1-plugin-openh264; do
             grep -Fxq "$dependency" <<< "$rpm_requirements"
           done

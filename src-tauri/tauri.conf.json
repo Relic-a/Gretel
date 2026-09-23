@@ -17,8 +17,8 @@
         "title": "Gretel",
         "width": 1280,
         "height": 900,
-        "minWidth": 960,
-        "minHeight": 700,
+        "minWidth": 480,
+        "minHeight": 480,
         "decorations": false,
         "shadow": true,
         "backgroundColor": "#0a0a0c",
@@ -61,6 +61,10 @@
         ]
       },
       "rpm": {
+        "compression": {
+          "type": "zstd",
+          "level": 3
+        },
         "depends": [
           "gstreamer1-plugins-base",
           "gstreamer1-plugins-good",

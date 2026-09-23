@@ -375,15 +375,6 @@ export default function Home() {
   }, [auth.ready]);
 
   useEffect(() => {
-    if (!booted || auth.access?.active !== true || settings.embeddingMode || settings.openRouterApiKey === "set") {
-      return;
-    }
-    const nextSettings = { ...settings, embeddingMode: "managed" as const };
-    setSettings(nextSettings);
-    void persistSettings(nextSettings).catch(() => undefined);
-  }, [auth.access?.active, booted, settings]);
-
-  useEffect(() => {
     if (showSettings && auth.session) void auth.refreshAccess().catch(() => undefined);
   }, [showSettings, auth.session, auth.refreshAccess]);
 
@@ -694,13 +685,21 @@ export default function Home() {
     return nextSettings as UserSettings;
   }
 
-  async function saveSettings(event: FormEvent) {
+  async function saveSettings(event: FormEvent, nextSettings: UserSettings) {
     event.preventDefault();
     setSettingsError("");
+    if (JSON.stringify(nextSettings) === JSON.stringify(settings)) {
+      setShowSettings(false);
+      return;
+    }
+    if (nextSettings.embeddingMode === "byok" && !nextSettings.openRouterApiKey) {
+      setSettingsError("Enter an OpenRouter API key before switching to your key.");
+      return;
+    }
     setSavingSettings(true);
 
     try {
-      const data = await persistSettings(settings);
+      const data = await persistSettings(nextSettings);
       setSettings(data);
       setShowSettings(false);
     } catch (caught) {
@@ -724,7 +723,6 @@ export default function Home() {
   async function useOwnOpenRouterKey() {
     auth.setError("");
     const nextSettings = { ...settings, embeddingMode: "byok" as const };
-    setSettings(nextSettings);
     try {
       setSettings(await persistSettings(nextSettings));
       if (profiles.length > 0) setShowSettings(true);
@@ -2042,12 +2040,15 @@ export default function Home() {
             setSettingsError("");
           }}
           onSubmit={saveSettings}
-          onChange={setSettings}
           account={auth.session ? {
             email: auth.session.user.email,
             isAnonymous: auth.session.user.is_anonymous
           } : null}
           access={auth.access}
+          accessRefreshing={auth.accessRefreshing}
+          accessError={auth.accessError}
+          accessUpdatedAt={auth.accessUpdatedAt}
+          onRefreshAccess={() => void auth.refreshAccess().catch(() => undefined)}
           authPending={auth.pending}
           onGoogle={() => void auth.signInWithGoogle()}
           onSignOut={() => void auth.signOut()}

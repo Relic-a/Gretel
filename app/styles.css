@@ -83,6 +83,11 @@ button {
   color: inherit;
 }
 
+/* Keep icon geometry intact when labels and controls compete for space. */
+.lucide {
+  flex-shrink: 0;
+}
+
 button:disabled {
   cursor: wait;
   opacity: 0.7;
@@ -1945,7 +1950,7 @@ img.avatar {
 
 .account-setting {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 16px;
   padding: 14px;
@@ -1978,6 +1983,30 @@ img.avatar {
   border-radius: var(--radius-control);
   color: var(--color-muted);
   font-weight: 750;
+}
+
+.settings-unsaved {
+  padding: 14px;
+  border: 1px solid var(--color-brand);
+  border-radius: var(--radius-control);
+  background: var(--color-brand-soft);
+}
+
+.settings-unsaved p {
+  margin: 6px 0 12px;
+  color: var(--color-muted);
+}
+
+.settings-unsaved > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-unsaved button {
+  padding: 8px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
 }
 
 @keyframes access-panel-in {
@@ -3692,16 +3721,6 @@ button.saved-chip.small {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 
-  /* The four-column top bar cannot fit its own controls below ~1030px. Without
-     this the action row outgrew its track and the profile button was crushed
-     down to a 0px-wide sliver whose hit box no longer matched what you see.
-     Compact the action cluster here, before the bottom tab bar takes over. */
-  .topbar {
-    grid-template-columns: auto minmax(170px, 1fr) minmax(150px, 240px) max-content;
-    gap: 12px;
-    padding: 0 14px;
-  }
-
   .topbar-actions {
     gap: 8px;
   }
@@ -3714,20 +3733,6 @@ button.saved-chip.small {
     flex: 0 0 auto;
   }
 
-  .topbar-actions .profile-button-name,
-  .topbar-actions .profile-chevron {
-    display: none;
-  }
-
-  .topbar-actions .profile-button {
-    width: 46px;
-    max-width: 46px;
-    padding: 0 6px;
-    justify-content: center;
-  }
-}
-
-@media (max-width: 860px) {
   :root {
     --topbar-height: 64px;
   }
@@ -3805,6 +3810,7 @@ button.saved-chip.small {
 
   .topbar-actions .profile-button {
     width: 42px;
+    max-width: 42px;
     padding: 0 6px;
     justify-content: center;
   }

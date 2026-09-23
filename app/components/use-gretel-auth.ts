@@ -22,29 +22,53 @@ export type GretelAccess = {
 export function useGretelAuth() {
   const [session, setSession] = useState<Session | null>(null);
   const [access, setAccess] = useState<GretelAccess | null>(null);
+  const [accessError, setAccessError] = useState("");
+  const [accessRefreshing, setAccessRefreshing] = useState(false);
+  const [accessUpdatedAt, setAccessUpdatedAt] = useState<number | null>(null);
   const [ready, setReady] = useState(false);
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const callbackInFlight = useRef(false);
   const handledCallbackCodes = useRef(new Set<string>());
+  const accessRequestId = useRef(0);
 
   const refreshAccess = useCallback(async (nextSession?: Session | null) => {
-    const currentSession = nextSession === undefined
-      ? (await getSupabaseClient().auth.getSession()).data.session
-      : nextSession;
-    setSession(currentSession);
-    persistAccessToken(currentSession?.access_token || "");
+    const requestId = ++accessRequestId.current;
+    setAccessRefreshing(true);
+    try {
+      const currentSession = nextSession === undefined
+        ? (await getSupabaseClient().auth.getSession()).data.session
+        : nextSession;
+      if (requestId === accessRequestId.current) {
+        setSession(currentSession);
+        persistAccessToken(currentSession?.access_token || "");
+      }
+      if (!currentSession) {
+        if (requestId === accessRequestId.current) {
+          setAccess(null);
+          setAccessError("");
+          setAccessUpdatedAt(null);
+        }
+        return null;
+      }
 
-    if (!currentSession) {
-      setAccess(null);
-      return null;
+      const response = await invokeGateway(currentSession, { action: "status" });
+      const body = await response.json();
+      if (!response.ok) throw new Error(body.error || "Could not refresh managed usage.");
+      if (requestId === accessRequestId.current) {
+        setAccess(body);
+        setAccessError("");
+        setAccessUpdatedAt(Date.now());
+      }
+      return body as GretelAccess;
+    } catch (caught) {
+      if (requestId === accessRequestId.current) {
+        setAccessError(caught instanceof Error ? caught.message : "Could not refresh managed usage.");
+      }
+      throw caught;
+    } finally {
+      if (requestId === accessRequestId.current) setAccessRefreshing(false);
     }
-
-    const response = await invokeGateway(currentSession, { action: "status" });
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error || "Could not verify your Gretel access.");
-    setAccess(body);
-    return body as GretelAccess;
   }, []);
 
   const handleCallbackUrl = useCallback(async (callbackUrl: string) => {
@@ -213,9 +237,13 @@ export function useGretelAuth() {
     setError("");
     try {
       await getSupabaseClient().auth.signOut();
+      accessRequestId.current += 1;
       persistAccessToken("");
       setSession(null);
       setAccess(null);
+      setAccessError("");
+      setAccessRefreshing(false);
+      setAccessUpdatedAt(null);
     } finally {
       setPending(false);
     }
@@ -224,6 +252,9 @@ export function useGretelAuth() {
   return {
     session,
     access,
+    accessError,
+    accessRefreshing,
+    accessUpdatedAt,
     ready,
     pending,
     error,
@@ -238,6 +269,7 @@ export function useGretelAuth() {
 function invokeGateway(session: Session, body: Record<string, unknown>) {
   return fetch(SUPABASE_EMBED_FUNCTION_URL, {
     method: "POST",
+    cache: "no-store",
     headers: {
       Authorization: `Bearer ${session.access_token}`,
       apikey: SUPABASE_PUBLISHABLE_KEY,

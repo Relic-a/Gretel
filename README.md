@@ -179,6 +179,7 @@ npm run dist:mac
 Notes:
 
 - Linux release builds compile once and produce verified `.deb`, `.rpm`, and AppImage artifacts; the Arch package is then derived from that exact `.deb` artifact. Publication is blocked unless every supported platform package is present. The native packages declare the GStreamer demuxer and software-decoder plugins needed by WebKitGTK; the AppImage bundles its media framework.
+- For a release from `main`, push the version commit and wait for **Warm Linux release cache** to finish before pushing its tag. The tag build can then restore the compiled Linux binary and dependencies from the default-branch cache. The RPM uses zstd level 3 to shorten packaging; the release workflow verifies the payload codec before publication. A tag from another commit still builds normally, but may miss this cache.
 - Linux source/development environments must provide WebKitGTK plus GStreamer's base, good, bad, and libav plugin sets. The package names vary by distribution.
 - Windows builds produce `.exe` installers. Prerelease builds use Tauri's NSIS target because MSI only accepts numeric prerelease identifiers.
 - macOS builds require macOS for best results.
