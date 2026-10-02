@@ -95,4 +95,21 @@ for (const bundleName of bundleFiles) {
   }
 }
 
+// YouTube now nests video details inside ItemSection in structured descriptions.
+// Accept that renderer instead of dropping it with a parser type-mismatch warning.
+const descriptionPath = path.join(youtubeiDir, "dist/src/parser/classes/StructuredDescriptionContent.js");
+if (fs.existsSync(descriptionPath)) {
+  let content = fs.readFileSync(descriptionPath, "utf8");
+  if (!content.includes("import ItemSection from './ItemSection.js'")) {
+    if (!content.includes("ExpandableMetadata, MerchandiseShelf")) {
+      throw new Error("StructuredDescriptionContent patch target changed; review YouTube.js compatibility.");
+    }
+    content = "import ItemSection from './ItemSection.js';\n" + content.replace(
+      "ExpandableMetadata, MerchandiseShelf", "ExpandableMetadata, MerchandiseShelf, ItemSection"
+    );
+    fs.writeFileSync(descriptionPath, content, "utf8");
+    patchedCount++;
+  }
+}
+
 console.log(`[patch-dependencies] Finished applying patches (${patchedCount} file(s) updated).`);

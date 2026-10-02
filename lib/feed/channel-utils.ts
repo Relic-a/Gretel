@@ -44,29 +44,32 @@ export function getChannelVideoItems(page: unknown): unknown[] {
     return [];
   }
 
-  if ("videos" in page && Array.isArray(page.videos)) {
-    return page.videos;
-  }
-
-  const richGridVideos = getRichGridVideos(page);
-
-  if (richGridVideos.length > 0) {
-    return richGridVideos;
-  }
-
-  if ("on_response_received_actions_memo" in page) {
-    const memo = page.on_response_received_actions_memo;
-
-    if (memo instanceof Map) {
-      const richItems = memo.get("RichItem");
-
-      if (Array.isArray(richItems)) {
-        return richItems.flatMap((item) => getContentItem(item));
-      }
+  // Feed.videos in youtubei.js 17 omits modern LockupView video cards.
+  // Merge all supported page shapes, including filtered/continuation memos.
+  const candidates: unknown[] = [];
+  if ("videos" in page && Array.isArray(page.videos)) candidates.push(...page.videos);
+  candidates.push(...getRichGridVideos(page));
+  const source = page as Record<string, unknown>;
+  const parsed = source.page as Record<string, unknown> | undefined;
+  for (const memo of [source.memo, source.on_response_received_actions_memo,
+    parsed?.contents_memo, parsed?.on_response_received_actions_memo,
+    parsed?.on_response_received_endpoints_memo, parsed?.on_response_received_commands_memo]) {
+    if (!(memo instanceof Map)) continue;
+    for (const type of ["RichItem", "LockupView"]) {
+      const items = memo.get(type);
+      if (Array.isArray(items)) candidates.push(...items.flatMap(item =>
+        type === "RichItem" ? getContentItem(item) : [item]));
     }
   }
-
-  return [];
+  const seen = new Set<string>();
+  return candidates.filter(item => {
+    if (!item || typeof item !== "object") return false;
+    if ("content_type" in item && item.content_type !== "VIDEO") return false;
+    const id = getVideoId(item);
+    if (!id || seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
 }
 
 function getRichGridVideos(page: unknown): unknown[] {

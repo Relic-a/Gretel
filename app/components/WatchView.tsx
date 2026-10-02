@@ -110,6 +110,7 @@ type WatchViewProps = {
   feedbackPendingAction?: WatchFeedbackAction | null;
   onAddChannel: (channel: string) => void;
   onRemoveChannel: (channel: string) => void;
+  onOpenChannel?: (video: FeedVideo) => void;
   onPlaybackStateChange?: (playing: boolean) => void;
   onTimeUpdate?: (currentTime: number, duration: number) => void;
   queuedVideoIds: Set<string>;
@@ -506,7 +507,7 @@ export function WatchView(props: WatchViewProps) {
         <div className="watch-meta">
           <h1>{props.activeVideo.title}</h1>
           <div className="watch-actions-row">
-            <div className="watch-channel">
+            <button type="button" className="watch-channel channel-link" onClick={() => props.onOpenChannel?.(props.activeVideo)} aria-label={`Open channel ${props.activeVideo.author}`}>
               {props.activeVideo.channelAvatarUrl ? (
                 <img className="avatar large" src={props.activeVideo.channelAvatarUrl} alt="" />
               ) : (
@@ -516,7 +517,7 @@ export function WatchView(props: WatchViewProps) {
                 <strong>{props.activeVideo.author}</strong>
                 <span>{formatPublished(props.activeVideo)}</span>
               </div>
-            </div>
+            </button>
             <button
               type="button"
               className="subscribe-button"

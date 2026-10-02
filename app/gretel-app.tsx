@@ -9,6 +9,8 @@ import { SettingsModal } from "./components/SettingsModal";
 import { AuthGate } from "./components/AuthGate";
 import { useGretelAuth } from "./components/use-gretel-auth";
 import { TopBar } from "./components/TopBar";
+import { ChannelsView, ChannelHeading } from "./components/ChannelsView";
+import { useChannelBrowser } from "./components/use-channel-browser";
 import { FeedView } from "./components/FeedView";
 import { OrganizeDialog, SavedWorkspace, type OrganizeDraft, type SavedFilter } from "./components/SavedWorkspace";
 import { useSavedCollections, type SavedCollectionsResult } from "./components/use-saved-collections";
@@ -72,7 +74,7 @@ type CachedFeed = FeedResponse & {
   channels?: string[];
   channelSort?: string;
 };
-type Section = "home" | "saved" | "history";
+type Section = "home" | "saved" | "history" | "channels";
 
 export default function Home() {
   const auth = useGretelAuth();
@@ -92,6 +94,8 @@ export default function Home() {
   const [feed, setFeed] = useState<FeedResponse | null>(null);
   const [config, setConfig] = useState<PublicGretelConfig | null>(null);
   const [section, setSection] = useState<Section>("home");
+  const [openedChannel, setOpenedChannel] = useState<ChannelResult | null>(null);
+  const channelBrowser = useChannelBrowser(profileId, section === "channels" ? openedChannel?.id || openedChannel?.name || null : null, authedFetch);
   const [savedVideos, setSavedVideos] = useState<FeedVideo[]>([]);
   const [historyVideos, setHistoryVideos] = useState<FeedVideo[]>([]);
   const [historyQuery, setHistoryQuery] = useState("");
@@ -226,6 +230,7 @@ export default function Home() {
   const showAccessGate = booted && !byokEnabled && auth.access?.active !== true;
   const homeVideos = feed?.videos || [];
   const sectionVideos = searchResults ?? (
+    section === "channels" ? channelBrowser.result?.videos || [] :
     section === "saved" ? savedVideos : section === "history" ? historyVideos : homeVideos
   );
   const historyQueryNormalized = normalize(historyQuery.trim());
@@ -328,6 +333,7 @@ export default function Home() {
       setChannels(nextChannels);
       setBooted(true);
       setSection(route.section);
+      setOpenedChannel(route.channel ? { id: route.channel, name: route.channelName || route.channel } : null);
       pendingVideoIdRef.current = route.videoId;
 
       if (stashedActiveVideo) {
@@ -384,6 +390,7 @@ export default function Home() {
       const stashedActiveVideo = readStashedActiveVideo(route.videoId);
       pendingVideoIdRef.current = route.videoId;
       setSection(route.section);
+      setOpenedChannel(route.channel ? { id: route.channel, name: route.channelName || route.channel } : null);
 
       if (stashedActiveVideo) {
         setActiveVideo(stashedActiveVideo);
@@ -840,6 +847,35 @@ export default function Home() {
     writeRoute("home");
   }
 
+  function openChannels() {
+    resetSearchRequest();
+    setSection("channels");
+    setOpenedChannel(null);
+    setActiveVideo(null);
+    setSearchResults(null);
+    setSearchedQuery("");
+    setError("");
+    writeRoute("channels");
+    window.scrollTo({ top: 0 });
+  }
+
+  function openChannel(channel: ChannelResult) {
+    channelBrowser.reset();
+    resetSearchRequest();
+    setSection("channels");
+    setOpenedChannel(channel);
+    setActiveVideo(null);
+    setSearchResults(null);
+    setSearchedQuery("");
+    setError("");
+    writeRoute("channels", undefined, channel);
+    window.scrollTo({ top: 0 });
+  }
+
+  function openVideoChannel(video: FeedVideo) {
+    openChannel({ id: video.channelId || "", name: video.author, thumbnailUrl: video.channelAvatarUrl });
+  }
+
   function openHome() {
     resetSearchRequest();
     setError("");
@@ -1138,6 +1174,10 @@ export default function Home() {
         }
         return;
       }
+      if (section === "channels") {
+        if (openedChannel) channelBrowser.refresh();
+        return;
+      }
       if (section === "saved") {
         await loadSavedVideos(profileId);
         return;
@@ -1154,7 +1194,7 @@ export default function Home() {
     } finally {
       setIsRefreshing(false);
     }
-  }, [profileId, searchQuery, searchedQuery, searchResults, section, tags, channels, feed]);
+  }, [profileId, searchQuery, searchedQuery, searchResults, section, tags, channels, feed, openedChannel, channelBrowser.refresh]);
 
   useEffect(() => {
     function handleRefreshShortcut(event: KeyboardEvent) {
@@ -1674,6 +1714,7 @@ export default function Home() {
         onHome={openHome}
         onSaved={openSaved}
         onHistory={openHistory}
+        onChannels={openChannels}
         onSearchQueryChange={handleSearchQueryChange}
         onSearch={submitSearch}
         onRefresh={() => void refreshVideos()}
@@ -1887,6 +1928,7 @@ export default function Home() {
           onFeedback={submitContentFeedback}
           onAddChannel={addChannel}
           onRemoveChannel={removeChannel}
+          onOpenChannel={openVideoChannel}
           onPlaybackStateChange={(playing) => {
             isPlayingRef.current = playing;
           }}
@@ -1899,6 +1941,25 @@ export default function Home() {
       )}
 
       {error && !manageProfiles && !needsProfile && <p className="error page-error">{error}</p>}
+
+      {booted && section === "channels" && !activeVideo && searchResults === null && (
+        openedChannel ? <>
+          <ChannelHeading channel={channelBrowser.result?.channel || openedChannel}
+            sorts={channelBrowser.result?.sorts || []} sort={channelBrowser.sort} filter={channelBrowser.filter}
+            loading={channelBrowser.loading} onRefresh={channelBrowser.refresh} onBack={openChannels} onSort={channelBrowser.setSort} onFilter={channelBrowser.setFilter} />
+          {channelBrowser.error && <div className="feed-view channel-error" role="alert"><p className="error">{channelBrowser.error}</p><button type="button" className="action-button" onClick={channelBrowser.retry}>Try again</button></div>}
+          <FeedView title="" subtitle="" videos={channelBrowser.result?.videos || []}
+            subscriptions={subscriptions} savedVideoIds={savedVideoIds} likedVideoIds={likedVideoIds}
+            queuedVideoIds={queuedVideoIds} queuedPlaylistIds={queuedPlaylistIds}
+            loading={channelBrowser.loading} canAskForMore={Boolean(channelBrowser.result?.cursor) && !channelBrowser.error}
+            autoLoadMore={false} onLoadMore={channelBrowser.loadMore} onSelectVideo={openVideo}
+            onSaveVideo={saveVideo} onLikeVideo={likeVideo} onEnqueueVideo={handleEnqueueVideo}
+            onAddChannel={addChannel} onRemoveChannel={removeChannel} onOpenChannel={openVideoChannel}
+            emptyMessage={!channelBrowser.result || channelBrowser.error ? "" : channelBrowser.filter ? "No videos on this page match your interests. Turn off filtering or load more videos." : channelBrowser.result.cursor ? "No videos on this page. Load more to keep browsing." : "No public videos are available on this channel."} />
+        </> : <ChannelsView channels={channels} knownChannels={
+          [...homeVideos, ...savedVideos, ...historyVideos].map(video => ({ id: video.channelId || "", name: video.author, thumbnailUrl: video.channelAvatarUrl }))
+        } onOpen={openChannel} />
+      )}
 
       {booted && section === "saved" && !activeVideo && searchResults === null && (
         <SavedWorkspace
@@ -1945,7 +2006,7 @@ export default function Home() {
         />
       )}
 
-      {booted && !searching && (searchResults !== null || section !== "saved") && (visibleVideos.length > 0 || (loading && section === "home") || (section === "history" && historyVideos.length > 0)) && !activeVideo && (
+      {booted && !searching && (searchResults !== null || (section !== "saved" && section !== "channels")) && (visibleVideos.length > 0 || (loading && section === "home") || (section === "history" && historyVideos.length > 0)) && !activeVideo && (
         <FeedView
           title={searchResults !== null ? `Search results for “${searchedQuery || searchQuery.trim()}”` : section === "history" ? "History" : ""}
           subtitle={
@@ -1979,6 +2040,7 @@ export default function Home() {
           onVideoImpression={section === "home" ? recordVideoImpression : undefined}
           onAddChannel={addChannel}
           onRemoveChannel={removeChannel}
+          onOpenChannel={openVideoChannel}
           searchValue={section === "history" ? historyQuery : undefined}
           onSearchChange={section === "history" ? setHistoryQuery : undefined}
           searchPlaceholder="Search history"
@@ -2377,24 +2439,34 @@ function secondsToDuration(totalSeconds: number) {
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
 }
 
-function readRouteFromUrl(): { section: Section; videoId: string | null } {
+function readRouteFromUrl(): { section: Section; videoId: string | null; channel: string | null; channelName: string | null } {
   const params = new URLSearchParams(window.location.search);
   const sectionParam = params.get("section");
   const section: Section =
-    sectionParam === "saved" || sectionParam === "history" ? sectionParam : "home";
+    sectionParam === "saved" || sectionParam === "history" || sectionParam === "channels" ? sectionParam : "home";
 
   return {
     section,
-    videoId: params.get("video")
+    videoId: params.get("video"),
+    channel: params.get("channel"),
+    channelName: params.get("channelName")
   };
 }
 
-function writeRoute(section: Section, videoId?: string) {
+function writeRoute(section: Section, videoId?: string, channel?: ChannelResult) {
   try {
     const params = new URLSearchParams();
 
     if (section !== "home") {
       params.set("section", section);
+    }
+
+    if (section === "channels") {
+      const current = new URLSearchParams(window.location.search);
+      const channelKey = channel ? channel.id || channel.name : videoId ? current.get("channel") : null;
+      const channelName = channel ? channel.name : videoId ? current.get("channelName") : null;
+      if (channelKey) params.set("channel", channelKey);
+      if (channelName) params.set("channelName", channelName);
     }
 
     if (videoId) {

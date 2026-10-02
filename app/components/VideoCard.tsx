@@ -24,6 +24,7 @@ type VideoCardProps = {
   onImpression?: (video: FeedVideo) => void;
   onAddChannel: (channel: string) => void;
   onRemoveChannel: (channel: string) => void;
+  onOpenChannel?: (video: FeedVideo) => void;
 };
 
 export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
@@ -138,7 +139,7 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
             onEnqueueVideo={props.onEnqueueVideo}
           />
         </div>
-        <div className="channel-line">
+        <button type="button" className="channel-line channel-link" disabled={!props.onOpenChannel} onClick={() => props.onOpenChannel?.(props.video)} aria-label={`Open channel ${props.video.author}`}>
           {props.video.channelAvatarUrl ? (
             <img className="avatar" src={props.video.channelAvatarUrl} alt="" loading="lazy" />
           ) : (
@@ -147,7 +148,7 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
           <span className="channel-name" title={props.video.author}>
             {props.video.author}
           </span>
-        </div>
+        </button>
         {props.showSubscribe && (
           <button
             type="button"

@@ -220,11 +220,9 @@ export function getDuration(video: unknown) {
 }
 
 export function getViewCount(video: unknown) {
-  if (!video || typeof video !== "object" || !("view_count" in video)) {
-    return 0;
-  }
-
-  const text = getText(video.view_count);
+  if (!video || typeof video !== "object") return 0;
+  const text = "view_count" in video ? getText(video.view_count)
+    : getMetadataTexts(video).find(text => /\bviews?\b/i.test(text) || /^\d[\d,.]*\s*[kmb]?$/i.test(text)) || "";
   const match = text.match(/([\d,.]+)\s*([kmb])?/i);
 
   if (!match) {
@@ -253,7 +251,8 @@ export function getPublishedText(video: unknown) {
 
 export function getPublishedAt(video: unknown) {
   const text = getPublishedText(video);
-  const match = text.match(/(\d+)\s+(second|minute|hour|day|week|month|year)s?\s+ago/i);
+  const match = text.match(/(\d+)\s*(second|minute|hour|day|week|month|year)s?\s+ago/i)
+    || text.match(/(\d+)\s*(mo|s|m|h|d|w|y)\s+ago/i);
 
   if (!match) {
     return 0;
@@ -269,7 +268,8 @@ export function getPublishedAt(video: unknown) {
     day,
     week: 7 * day,
     month: 30 * day,
-    year: 365 * day
+    year: 365 * day,
+    s: 1000, m: 60 * 1000, h: 60 * 60 * 1000, d: day, w: 7 * day, mo: 30 * day, y: 365 * day
   };
 
   return Date.now() - amount * multipliers[unit];

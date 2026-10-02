@@ -207,7 +207,7 @@ button:disabled {
   inset: var(--window-titlebar-height) 0 auto;
   z-index: 20;
   display: grid;
-  grid-template-columns: auto minmax(280px, 1fr) minmax(220px, 420px) max-content;
+  grid-template-columns: auto max-content minmax(160px, 1fr) max-content;
   align-items: stretch;
   height: var(--topbar-height);
   gap: clamp(12px, 2vw, 24px);
@@ -240,7 +240,7 @@ button:disabled {
 .section-tabs {
   display: flex;
   justify-content: center;
-  gap: clamp(8px, 1.8vw, 28px);
+  gap: clamp(4px, .8vw, 12px);
   min-width: 0;
 }
 
@@ -4952,3 +4952,51 @@ button.saved-chip.small {
     transition: none;
   }
 }
+
+/* Channel browsing keeps the feed grid and gives channel controls their own hierarchy. */
+.channel-link { text-align: left; color: inherit; }
+.channel-link:hover .channel-name, .channel-link:hover strong { color: var(--color-brand-strong); }
+.channel-link:disabled { cursor: default; }
+.channel-directory-heading { gap: 24px; flex-wrap: wrap; }
+.channel-directory-heading h1 { display: flex; align-items: center; gap: 12px; }
+.channel-directory-heading h1 .channel-count { color: var(--color-text); background: var(--color-surface-soft); font-size: .85rem; padding: 4px 8px; font-weight: 400; }
+.channel-directory { display: grid; grid-template-columns: repeat(auto-fill, minmax(270px, 1fr)); column-gap: 32px; }
+.channel-directory-item { display: flex; align-items: center; gap: 16px; min-height: 104px; padding: 20px 12px; border-bottom: 1px solid var(--color-border); text-align: left; min-width: 0; transition: background 160ms ease-out; }
+.channel-directory-item:hover { background: var(--color-surface); }
+.channel-directory-copy { display: grid; gap: 6px; min-width: 0; flex: 1; }
+.channel-directory-copy strong { font-size: .95rem; font-weight: 600; overflow-wrap: anywhere; }
+.channel-directory-copy > span { color: var(--color-muted); font-size: .75rem; }
+.channel-directory-arrow { color: var(--color-muted); }
+.channel-directory-item:hover .channel-directory-arrow { color: var(--color-brand-strong); }
+.channel-avatar { position: relative; flex-shrink: 0; overflow: hidden; background: var(--color-surface-soft); color: var(--color-text); }
+.channel-avatar img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.channel-heading { padding-bottom: 0; }
+.channel-navigation { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.channel-back, .channel-refresh { display: inline-flex; align-items: center; gap: 8px; min-height: 44px; color: var(--color-muted); padding: 8px 0; font-size: .8rem; }
+.channel-back:hover, .channel-refresh:hover { color: var(--color-text); }
+.channel-heading-row { margin: 28px 0 32px; }
+.channel-identity { display: flex; align-items: center; gap: 20px; min-width: 0; }
+.channel-identity .avatar { flex-basis: 72px; width: 72px; height: 72px; font-size: 1.5rem; }
+.channel-identity h1 { margin: 0; font-size: clamp(1.4rem, 3vw, 2rem); line-height: 1.25; overflow-wrap: anywhere; }
+.channel-identity p { margin: 8px 0 0; color: var(--color-muted); font-size: .8rem; }
+.channel-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap; padding: 16px 0; border-block: 1px solid var(--color-border); }
+.channel-sorts { display: flex; gap: 4px; flex-wrap: wrap; }
+.channel-sorts button { min-height: 44px; padding: 10px 18px; font-size: .8rem; color: var(--color-muted); }
+.channel-sorts button:hover { color: var(--color-text); background: var(--color-surface); }
+.channel-sorts button[aria-pressed="true"] { background: var(--color-surface-soft); color: var(--color-text); }
+.channel-filter { display: inline-flex; align-items: center; gap: 10px; min-height: 44px; position: relative; font-size: .8rem; cursor: pointer; }
+.channel-filter input { position: absolute; width: 36px; height: 22px; opacity: 0; margin: 0; }
+.channel-switch-track { pointer-events: none; width: 36px; height: 22px; border-radius: 12px; background: var(--color-border-strong); padding: 3px; flex-shrink: 0; }
+.channel-switch-track::after { content: ""; display: block; width: 16px; height: 16px; border-radius: 50%; background: var(--color-text); transition: transform 160ms ease-out; }
+.channel-filter input:checked + .channel-switch-track { background: var(--color-brand); }
+.channel-filter input:checked + .channel-switch-track::after { transform: translateX(14px); }
+.channel-filter input:focus-visible + .channel-switch-track, .channels-view button:focus-visible, .channel-heading button:focus-visible, .channel-error button:focus-visible { outline: 2px solid var(--color-brand-strong); outline-offset: 4px; }
+.channel-filter-copy { color: var(--color-muted); font-size: .75rem; line-height: 1.6; margin: 12px 0 24px; }
+.channel-empty { display: grid; justify-items: center; text-align: center; gap: 16px; padding: 64px 24px; border-block: 1px solid var(--color-border); }
+.channel-empty > svg { color: var(--color-muted); }
+.channel-empty h2 { font-size: 1.1rem; margin: 0; }
+.channel-empty p { color: var(--color-muted); max-width: 48ch; line-height: 1.7; margin: 0; }
+.channel-error { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 16px; background: var(--color-danger-soft); }
+.channel-error .error { margin: 0; }
+@media (max-width: 700px) { .channel-directory { grid-template-columns: 1fr; } .channel-toolbar { align-items: flex-start; gap: 12px; } .channel-identity .avatar { flex-basis: 56px; width: 56px; height: 56px; } .channel-sorts button { padding-inline: 12px; } }
+@media (prefers-reduced-motion: reduce) { .channel-switch-track::after, .channel-directory-item { transition: none; } }

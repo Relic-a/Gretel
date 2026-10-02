@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Activity, Bookmark, ChevronDown, History, Home, ListVideo, Loader2, RefreshCw, Search, Settings } from "lucide-react";
+import { Activity, Bookmark, ChevronDown, History, Home, ListVideo, Loader2, RefreshCw, Search, Settings, Users } from "lucide-react";
 
 import type { Profile } from "../types";
 import { usePopoverDismissal } from "./use-popover-dismissal";
@@ -7,7 +7,7 @@ import { usePopoverDismissal } from "./use-popover-dismissal";
 type TopBarProps = {
   activeProfile?: Profile;
   profiles: Profile[];
-  activeSection: "home" | "saved" | "history";
+  activeSection: "home" | "saved" | "history" | "channels";
   showProfileMenu: boolean;
   developerAnalytics: boolean;
   searchQuery: string;
@@ -16,6 +16,7 @@ type TopBarProps = {
   onHome: () => void;
   onSaved: () => void;
   onHistory: () => void;
+  onChannels: () => void;
   onSearchQueryChange: (query: string) => void;
   onSearch: (event: React.FormEvent<HTMLFormElement>) => void;
   onRefresh: () => void;
@@ -49,6 +50,9 @@ export function TopBar(props: TopBarProps) {
       <nav className="section-tabs" aria-label="Video sections">
         <button type="button" className={props.activeSection === "home" ? "active" : ""} onClick={props.onHome}>
           <Home aria-hidden="true" size={19} /> Home
+        </button>
+        <button type="button" className={props.activeSection === "channels" ? "active" : ""} onClick={props.onChannels}>
+          <Users aria-hidden="true" size={19} /> Channels
         </button>
         <button type="button" className={props.activeSection === "saved" ? "active" : ""} onClick={props.onSaved}>
           <Bookmark aria-hidden="true" size={19} /> Saved

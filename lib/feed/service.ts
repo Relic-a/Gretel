@@ -1759,3 +1759,23 @@ function ensureProfileCurrent(profileId: string, expectedUpdatedAt?: number) {
     throw new FeedProfileStaleError();
   }
 }
+
+// Channel browsing preserves YouTube's order and performs no learning or pool expansion.
+export async function filterChannelPage(profileId: string, videos: FeedVideo[], observation: FeedObservation) {
+  const profile = getProfile(profileId);
+  if (!profile) throw new Error("Select a profile.");
+  const poolKey = createFeedPoolKey({ tags: createQueries(profile.tags || []), channels: profile.channels || [], channelSort: "mixed" });
+  const topics = getTopicCentroids(profileId, poolKey);
+  const centroid = getCentroid(profileId, poolKey)?.current || [];
+  const centroids: TopicCentroid[] = topics.length ? topics.map(tc => ({ topic: tc.topic, vector: tc.current }))
+    : centroid.length ? [{ topic: "default", vector: centroid }] : [];
+  if (!centroids.some(tc => tc.vector.length)) throw new Error("Build your Home feed before filtering by interests.");
+  const end = beginProfileOperation(profileId);
+  try {
+    const embeddings = await embedVideos(profileId, videos, observation, "user_search");
+    if (!videos.every(video => embeddings.has(video.id))) throw new Error("Interest filtering failed. Try again.");
+    const admitted = new Set(scoreByTopicCentroids(videos, embeddings, centroids, "tagSearch")
+      .filter(video => (video.similarityScore || 0) >= getGretelConfig().feed.similarityThreshold).map(video => video.id));
+    return filterFeedbackVideos(videos.filter(video => admitted.has(video.id)), getContentFeedback(profileId));
+  } finally { end(); }
+}

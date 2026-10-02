@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.8.0 — 2026-10-02
+
+- Add a Channels workspace for browsing subscriptions and opening a channel directly from video cards or playback.
+- Browse channel videos with available sort options, explicit pagination, refresh, and optional filtering by profile interests.
+- Support modern YouTube channel cards, sorting controls, compact view counts, publication times, and structured descriptions.
+- Keep recorded video impressions successful when optional recommendation expansion fails, and carry managed authentication into expansion requests.
+
 ## 0.7.5 — 2026-09-23
 
 - Fix managed usage refreshing repeatedly after authentication updates.

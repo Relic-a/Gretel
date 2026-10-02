@@ -34,6 +34,8 @@ type FeedViewProps = {
   onVideoImpression?: (video: FeedVideo) => void;
   onAddChannel: (channel: string) => void;
   onRemoveChannel: (channel: string) => void;
+  onOpenChannel?: (video: FeedVideo) => void;
+  autoLoadMore?: boolean;
   searchValue?: string;
   onSearchChange?: (value: string) => void;
   searchPlaceholder?: string;
@@ -60,6 +62,7 @@ export function FeedView(props: FeedViewProps) {
   }, [props.canAskForMore, props.loading, props.onLoadMore]);
 
   useEffect(() => {
+    if (props.autoLoadMore === false) return;
     const loader = loaderRef.current;
 
     if (!loader) {
@@ -79,7 +82,7 @@ export function FeedView(props: FeedViewProps) {
 
     observer.observe(loader);
     return () => observer.disconnect();
-  }, [loadMore]);
+  }, [loadMore, props.autoLoadMore]);
 
   useEffect(() => {
     let scrollEndTimer = 0;
@@ -113,7 +116,7 @@ export function FeedView(props: FeedViewProps) {
         />
       )}
 
-      <div className="feed-heading">
+      {(props.title || props.onSearchChange) && <div className="feed-heading">
         {props.title && (
           <div>
             <h1>{props.title} {props.title && <span aria-hidden="true">✦</span>}</h1>
@@ -142,7 +145,7 @@ export function FeedView(props: FeedViewProps) {
             ) : null}
           </form>
         )}
-      </div>
+      </div>}
 
       {props.videos.length === 0 && !props.loading ? (
         props.emptyMessage ? <p className="empty-state">{props.emptyMessage}</p> : null
@@ -176,6 +179,7 @@ export function FeedView(props: FeedViewProps) {
                 onImpression={props.onVideoImpression}
                 onAddChannel={props.onAddChannel}
                 onRemoveChannel={props.onRemoveChannel}
+                onOpenChannel={props.onOpenChannel}
               />
             );
           })}
@@ -187,6 +191,7 @@ export function FeedView(props: FeedViewProps) {
       )}
 
       <div ref={loaderRef} className="feed-loader">
+        {props.autoLoadMore === false && props.canAskForMore && !props.loading && <button type="button" className="action-button" onClick={loadMore}>Load more videos</button>}
         {props.loading && props.videos.length > 0 && <LoaderCircle className="spinner" size={20} aria-hidden="true" />}
         <span className="loader-copy">
           {props.loading && props.videos.length > 0 ? "Loading more videos..." : ""}
