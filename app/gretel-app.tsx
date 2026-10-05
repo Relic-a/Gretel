@@ -176,17 +176,6 @@ export default function Home() {
     return () => window.clearTimeout(timer);
   }, [playlistNotice]);
   useEffect(() => {
-    if (!openPlaylist) return;
-    function dismissPlaylistWhenOutside(event: PointerEvent) {
-      const target = event.target;
-      if (!(target instanceof Element)) return;
-      if (target.closest(".playlist-panel") || target.closest("[data-playlist-card]")) return;
-      closePlaylist();
-    }
-    document.addEventListener("pointerdown", dismissPlaylistWhenOutside);
-    return () => document.removeEventListener("pointerdown", dismissPlaylistWhenOutside);
-  }, [openPlaylist]);
-  useEffect(() => {
     function dismissOpenDetails(event: PointerEvent) {
       const target = event.target as Node;
       document.querySelectorAll<HTMLDetailsElement>("details[open]").forEach((details) => {
@@ -848,6 +837,7 @@ export default function Home() {
   }
 
   function openChannels() {
+    closePlaylist();
     resetSearchRequest();
     setSection("channels");
     setOpenedChannel(null);
@@ -860,6 +850,7 @@ export default function Home() {
   }
 
   function openChannel(channel: ChannelResult) {
+    closePlaylist();
     channelBrowser.reset();
     resetSearchRequest();
     setSection("channels");
@@ -877,6 +868,7 @@ export default function Home() {
   }
 
   function openHome() {
+    closePlaylist();
     resetSearchRequest();
     setError("");
     setSection("home");
@@ -912,6 +904,7 @@ export default function Home() {
   }
 
   async function openSaved() {
+    closePlaylist();
     resetSearchRequest();
     setError("");
     setSection("saved");
@@ -931,6 +924,7 @@ export default function Home() {
   }
 
   async function openHistory() {
+    closePlaylist();
     resetSearchRequest();
     setError("");
     setSection("history");
@@ -1375,7 +1369,7 @@ export default function Home() {
     setPlaylistError("");
   }
 
-  async function fetchPlaylistDetails(playlist: FeedVideo) {
+  async function fetchPlaylistDetails(playlist: FeedVideo): Promise<PlaylistDetails | null> {
     const requestId = playlistRequestIdRef.current + 1;
     playlistRequestIdRef.current = requestId;
     setPlaylistLoading(true);
@@ -1391,23 +1385,26 @@ export default function Home() {
       const data = await response.json();
 
       if (requestId !== playlistRequestIdRef.current) {
-        return;
+        return null;
       }
       if (!response.ok) {
         throw new Error(data.error || "Could not load this playlist.");
       }
 
-      setPlaylistDetails({
+      const details: PlaylistDetails = {
         playlistId: typeof data.playlistId === "string" ? data.playlistId : playlist.id,
         videos: Array.isArray(data.videos) ? data.videos : [],
         autoplayVideoIds: Array.isArray(data.autoplayVideoIds) ? data.autoplayVideoIds : []
-      });
+      };
+      setPlaylistDetails(details);
+      return details;
     } catch (caught) {
       if (requestId !== playlistRequestIdRef.current) {
-        return;
+        return null;
       }
       setPlaylistDetails(null);
       setPlaylistError(caught instanceof Error ? caught.message : "Could not load this playlist.");
+      return null;
     } finally {
       if (requestId === playlistRequestIdRef.current) {
         setPlaylistLoading(false);
@@ -1419,7 +1416,10 @@ export default function Home() {
     setOpenPlaylist(playlist);
     setPlaylistDetails(null);
     setQueueOpen(false);
-    await fetchPlaylistDetails(playlist);
+    const details = await fetchPlaylistDetails(playlist);
+    const firstVideo = details?.videos.find((video) => video.id === details.autoplayVideoIds[0])
+      || details?.videos[0];
+    if (firstVideo) openVideo(firstVideo);
   }
 
   function dismissFeedbackNotice() {
@@ -1686,6 +1686,24 @@ export default function Home() {
     void queue.refresh();
   }, [queue]);
 
+  const playlistPanel = openPlaylist ? (
+    <PlaylistPanel
+      playlist={openPlaylist}
+      details={playlistDetails}
+      nextVideoId={playlistNextVideoId}
+      loading={playlistLoading}
+      error={playlistError}
+      activeVideoId={activeVideo?.id || ""}
+      saved={savedVideoIds.has(openPlaylist.id)}
+      queued={queuedPlaylistIds.has(openPlaylist.playlistId || openPlaylist.id)}
+      onSelectVideo={openVideo}
+      onPlayAll={(video) => openVideo(video)}
+      onToggleSave={() => void saveVideo(openPlaylist)}
+      onEnqueue={() => handleEnqueueVideo(openPlaylist)}
+      onRetry={() => void openPlaylistDetails(openPlaylist)}
+    />
+  ) : null;
+
   if (showAccessGate) {
     return (
       <main className="app-shell">
@@ -1721,6 +1739,7 @@ export default function Home() {
         onToggleProfileMenu={() => setShowProfileMenu(!showProfileMenu)}
         onCloseProfileMenu={() => setShowProfileMenu(false)}
         onSelectProfile={(nextProfileId) => {
+          closePlaylist();
           resetSearchRequest();
           feedRequestIdRef.current += 1;
           setLoading(false);
@@ -1802,25 +1821,6 @@ export default function Home() {
 
       {playlistNotice && !queueOpen && (
         <div className="feedback-toast queued" role="status" aria-live="polite"><div className="feedback-toast-copy"><strong>Playlist added to queue</strong><span>Its videos are queued in playlist order.</span></div><button className="feedback-toast-retry" onClick={() => { setPlaylistNotice(false); setQueueOpen(true); }}>View queue</button><button className="feedback-toast-dismiss" aria-label="Dismiss playlist queue notice" onClick={() => setPlaylistNotice(false)}><X size={15} /></button></div>
-      )}
-
-      {openPlaylist && (
-        <PlaylistPanel
-          playlist={openPlaylist}
-          details={playlistDetails}
-          nextVideoId={playlistNextVideoId}
-          loading={playlistLoading}
-          error={playlistError}
-          activeVideoId={activeVideo?.id || ""}
-          saved={savedVideoIds.has(openPlaylist.id)}
-          queued={queuedPlaylistIds.has(openPlaylist.playlistId || openPlaylist.id)}
-          onSelectVideo={openVideo}
-          onPlayAll={(video) => openVideo(video)}
-          onToggleSave={() => void saveVideo(openPlaylist)}
-          onEnqueue={() => handleEnqueueVideo(openPlaylist)}
-          onRetry={() => void fetchPlaylistDetails(openPlaylist)}
-          onClose={closePlaylist}
-        />
       )}
 
       {saveNotice && !saveDialog && (
@@ -1908,10 +1908,15 @@ export default function Home() {
         </p>
       )}
 
+      {!activeVideo && playlistPanel && (
+        <div className="playlist-preview">{playlistPanel}</div>
+      )}
+
       {activeVideo && (
         <WatchView
           key={activeVideo.id}
           activeVideo={activeVideo}
+          playlistPanel={playlistPanel}
           sideVideos={sideVideos}
           loadingFeed={loading}
           canLoadMoreSideVideos={canAskForMore}

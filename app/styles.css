@@ -1669,6 +1669,13 @@ img.avatar {
   font-size: 0.82rem;
 }
 
+.watch-sidebar {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+  gap: 24px;
+}
+
 .side-list {
   display: grid;
   align-content: start;
@@ -4751,20 +4758,19 @@ button.saved-chip.small {
 
 /* Dedicated playlist side panel ------------------------------------------ */
 
+.playlist-preview {
+  width: min(100%, 720px);
+  margin: 0 auto 28px;
+}
+
 .playlist-panel {
-  position: fixed;
-  z-index: 30;
-  right: 18px;
-  top: calc(var(--window-titlebar-height) + var(--topbar-height) + 10px);
-  width: min(390px, calc(100vw - 36px));
-  max-height: calc(100dvh - var(--window-titlebar-height) - var(--topbar-height) - 28px);
   display: flex;
   flex-direction: column;
+  min-width: 0;
   overflow: hidden;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 14px;
-  box-shadow: 0 16px 42px rgb(10 15 30 / 0.2);
+  border-radius: var(--radius-card);
 }
 
 .playlist-head {
@@ -4905,6 +4911,7 @@ button.saved-chip.small {
   min-height: 0;
   margin: 0;
   padding: 8px;
+  max-height: min(50dvh, 480px);
   overflow-y: auto;
 }
 
@@ -5010,15 +5017,6 @@ button.saved-chip.small {
 }
 
 @media (max-width: 560px) {
-  .playlist-panel {
-    top: auto;
-    right: 0;
-    bottom: 0;
-    width: 100%;
-    max-height: min(80dvh, 640px);
-    border-radius: 16px 16px 0 0;
-  }
-
   .playlist-item {
     grid-template-columns: 20px 84px minmax(0, 1fr);
   }

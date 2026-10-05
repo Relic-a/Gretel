@@ -1,6 +1,6 @@
 "use client";
 
-import { Bookmark, ListPlus, Loader2, Play, RotateCcw, X } from "lucide-react";
+import { Bookmark, ListPlus, Loader2, Play, RotateCcw } from "lucide-react";
 
 import type { FeedVideo, PlaylistDetails } from "../types";
 import { handleThumbnailError, thumbnailFor } from "./video-utils";
@@ -19,7 +19,6 @@ type PlaylistPanelProps = {
   onToggleSave: () => void;
   onEnqueue: () => void;
   onRetry: () => void;
-  onClose: () => void;
 };
 
 export function PlaylistPanel(props: PlaylistPanelProps) {
@@ -38,14 +37,6 @@ export function PlaylistPanel(props: PlaylistPanelProps) {
           <h2 title={props.playlist.title}>{props.playlist.title}</h2>
           <span className="playlist-author">{props.playlist.author}</span>
         </div>
-        <button
-          type="button"
-          className="queue-close"
-          aria-label="Close playlist"
-          onClick={props.onClose}
-        >
-          <X size={18} aria-hidden="true" />
-        </button>
       </div>
 
       <div className="playlist-actions">
