@@ -65,6 +65,9 @@ export type YTPlayerInstance = {
   getCurrentTime: () => number;
   getDuration: () => number;
   getPlayerState: () => number;
+  getPlaybackRate: () => number;
+  setPlaybackRate: (rate: number) => void;
+  getAvailablePlaybackRates: () => number[];
   loadVideoById: (videoId: string, startSeconds?: number) => void;
   destroy: () => void;
   getIframe: () => HTMLIFrameElement;
@@ -136,6 +139,7 @@ type YtComment = {
 export function WatchView(props: WatchViewProps) {
   const sidePageSize = 12;
   const playerContainerRef = useRef<HTMLDivElement | null>(null);
+  const playerShellRef = useRef<HTMLDivElement | null>(null);
   const playerRef = useRef<YTPlayerInstance | null>(null);
   const timePollIntervalRef = useRef<number | null>(null);
 
@@ -150,6 +154,7 @@ export function WatchView(props: WatchViewProps) {
   const [page, setPage] = useState(0);
   const [commentsLoaded, setCommentsLoaded] = useState(false);
   const [playerError, setPlayerError] = useState<YouTubePlayerErrorInfo | null>(null);
+  const [speedBoostActive, setSpeedBoostActive] = useState(false);
   const sentinelRef = useRef<HTMLDivElement | null>(null);
   const sideSentinelRef = useRef<HTMLDivElement | null>(null);
   const commentsSectionRef = useRef<HTMLDivElement | null>(null);
@@ -166,6 +171,107 @@ export function WatchView(props: WatchViewProps) {
 
   useEffect(() => {
     let destroyed = false;
+    let ready = false;
+    let spaceDown = false;
+    let heldSpace = false;
+    let holdTimer: number | null = null;
+    let previousRate: number | null = null;
+    let seekTarget: number | null = null;
+    let lastSeekAt = 0;
+
+    // Keep native controls, typing, and modal keyboard navigation independent.
+    const interactiveSelector = 'input, textarea, select, button, a[href], summary, iframe, [contenteditable]:not([contenteditable="false"]), [role="button"], [role="slider"], [role="textbox"], [role="combobox"], [role="listbox"], [role="menu"], [role="menuitem"], [role="tab"], [role="tree"], [role="grid"]';
+    function shortcutsBlocked(target: EventTarget | null) {
+      return Boolean(document.querySelector('[aria-modal="true"]')) ||
+        (target instanceof Element && Boolean(target.closest(interactiveSelector)));
+    }
+
+    function releaseSpace() {
+      if (holdTimer !== null) window.clearTimeout(holdTimer);
+      holdTimer = null;
+      spaceDown = false;
+      heldSpace = false;
+      const rate = previousRate;
+      previousRate = null;
+      if (rate !== null) {
+        try { playerRef.current?.setPlaybackRate(rate); } catch {}
+      }
+      setSpeedBoostActive(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.defaultPrevented || event.isComposing || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey ||
+          shortcutsBlocked(event.target) || !ready || !playerRef.current) return;
+      const player = playerRef.current;
+      if (event.code === "Space") {
+        event.preventDefault();
+        if (spaceDown || event.repeat) return;
+        spaceDown = true;
+        holdTimer = window.setTimeout(() => {
+          holdTimer = null;
+          if (!spaceDown) return;
+          if (shortcutsBlocked(document.activeElement)) {
+            releaseSpace();
+            return;
+          }
+          heldSpace = true;
+          try {
+            if (player.getPlayerState() !== window.YT?.PlayerState.PLAYING ||
+                !player.getAvailablePlaybackRates().includes(2)) return;
+            previousRate = player.getPlaybackRate();
+            player.setPlaybackRate(2);
+            setSpeedBoostActive(true);
+          } catch { releaseSpace(); }
+        }, 350);
+      } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+        event.preventDefault();
+        try {
+          const currentTime = player.getCurrentTime();
+          const duration = player.getDuration();
+          // API time updates lag behind repeated key events; accumulate quick seeks.
+          const now = performance.now();
+          const start = seekTarget !== null && now - lastSeekAt < 500 ? seekTarget : currentTime;
+          const next = Math.max(0, start + (event.key === "ArrowRight" ? 5 : -5));
+          seekTarget = duration > 0 ? Math.min(duration, next) : next;
+          lastSeekAt = now;
+          player.seekTo(seekTarget, true);
+          props.onTimeUpdate?.(seekTarget, duration);
+        } catch { seekTarget = null; }
+      }
+    }
+
+    function handleKeyUp(event: KeyboardEvent) {
+      if (event.code !== "Space" || !spaceDown) return;
+      event.preventDefault();
+      const togglePlayback = !heldSpace && !event.isComposing && !event.altKey && !event.ctrlKey &&
+        !event.metaKey && !event.shiftKey && !shortcutsBlocked(event.target);
+      releaseSpace();
+      if (togglePlayback && ready && playerRef.current) {
+        try {
+          const player = playerRef.current;
+          const state = player.getPlayerState();
+          if (state === window.YT?.PlayerState.PLAYING || state === window.YT?.PlayerState.BUFFERING) {
+            player.pauseVideo();
+          } else {
+            player.playVideo();
+          }
+        } catch {}
+      }
+    }
+
+    function handleVisibilityChange() {
+      if (document.hidden) releaseSpace();
+    }
+
+    function handleFocusChange(event: FocusEvent) {
+      if (shortcutsBlocked(event.target)) releaseSpace();
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("keyup", handleKeyUp);
+    window.addEventListener("blur", releaseSpace);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    document.addEventListener("focusin", handleFocusChange);
 
     setDescription("");
     setDescriptionExpanded(false);
@@ -224,6 +330,10 @@ export function WatchView(props: WatchViewProps) {
           events: {
             onReady: (event) => {
               if (destroyed) return;
+              ready = true;
+              if (document.activeElement === document.body) {
+                playerShellRef.current?.focus({ preventScroll: true });
+              }
               try {
                 const duration = event.target.getDuration();
                 const currentTime = event.target.getCurrentTime();
@@ -235,6 +345,7 @@ export function WatchView(props: WatchViewProps) {
             onStateChange: (event) => {
               if (destroyed) return;
               if (event.data === window.YT?.PlayerState.ENDED) {
+                releaseSpace();
                 stopPolling();
                 props.onPlaybackStateChange?.(false);
                 try {
@@ -244,9 +355,11 @@ export function WatchView(props: WatchViewProps) {
                 return;
               }
               const isPlaying = (event.data === window.YT?.PlayerState.PLAYING);
+              if (event.data === window.YT?.PlayerState.PAUSED) releaseSpace();
               props.onPlaybackStateChange?.(isPlaying);
 
               if (isPlaying && playerRef.current) {
+                ready = true;
                 setPlayerError(null);
                 startPolling(playerRef.current);
               } else {
@@ -262,6 +375,8 @@ export function WatchView(props: WatchViewProps) {
             },
             onError: (event) => {
               if (destroyed) return;
+              ready = false;
+              releaseSpace();
 
               const playerFailure = describeYouTubePlayerError(event.data);
               let playerUrl: string | undefined;
@@ -302,6 +417,13 @@ export function WatchView(props: WatchViewProps) {
 
     return () => {
       destroyed = true;
+      ready = false;
+      releaseSpace();
+      window.removeEventListener("keydown", handleKeyDown);
+      window.removeEventListener("keyup", handleKeyUp);
+      window.removeEventListener("blur", releaseSpace);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      document.removeEventListener("focusin", handleFocusChange);
       stopPolling();
       if (playerRef.current) {
         try {
@@ -486,11 +608,12 @@ export function WatchView(props: WatchViewProps) {
   return (
     <section className="watch-layout open">
       <div className="watch-player">
-        <div className="player-shell">
+        <div className="player-shell" ref={playerShellRef} tabIndex={0} role="group" aria-label="Video player" aria-keyshortcuts="Space ArrowLeft ArrowRight">
           <div
             ref={playerContainerRef}
             style={{ width: "100%", height: "100%", border: 0 }}
           />
+          {speedBoostActive && <div className="player-speed-boost" role="status">2× speed</div>}
           {playerError && (
             <div className="player-fallback" role="alert">
               <CircleAlert aria-hidden="true" size={30} />

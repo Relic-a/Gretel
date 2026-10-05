@@ -1326,6 +1326,23 @@ img.avatar {
   background: #05060a;
 }
 
+.player-shell:focus-visible {
+  outline: 2px solid var(--color-brand-strong);
+  outline-offset: 3px;
+}
+
+.player-speed-boost {
+  position: absolute;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 14px;
+  background: rgb(0 0 0 / 0.85);
+  color: #fff;
+  font-size: 0.875rem;
+  pointer-events: none;
+}
+
 .player-fallback {
   position: absolute;
   inset: 0;
