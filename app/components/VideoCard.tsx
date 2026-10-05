@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { Bookmark, ListPlus, ListVideo, PlaySquare } from "lucide-react";
+import { ListVideo, PlaySquare } from "lucide-react";
 
 import type { FeedVideo } from "../types";
 import type { CardFeedbackAction } from "./VideoActions";
@@ -62,38 +62,6 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
   return (
     <article ref={cardRef} className={cardClasses} data-playlist-card={isPlaylist ? "" : undefined}>
       <div className="thumbnail-wrap">
-        {/* One-tap actions: Save and Queue live on the thumbnail so the common
-            cases never require opening the ⋮ menu. */}
-        <div className="card-quick-actions">
-          {props.onEnqueueVideo && (
-            <button
-              type="button"
-              className={props.queued ? "quick-action queued" : "quick-action"}
-              aria-label={
-                props.queued
-                  ? isPlaylist
-                    ? `Playlist ${props.video.title} is queued`
-                    : `${props.video.title} is queued`
-                  : isPlaylist
-                    ? `Queue all videos in ${props.video.title}`
-                    : `Queue ${props.video.title}`
-              }
-              title={props.queued ? "In your queue" : isPlaylist ? "Add playlist to queue" : "Add to queue"}
-              onClick={() => props.onEnqueueVideo?.(props.video)}
-            >
-              {props.queued ? <ListVideo aria-hidden="true" size={16} /> : <ListPlus aria-hidden="true" size={16} />}
-            </button>
-          )}
-          <button
-            type="button"
-            className={props.saved ? "quick-action saved" : "quick-action"}
-            aria-label={props.saved ? `Remove ${props.video.title} from saved` : `Save ${props.video.title}`}
-            title={props.saved ? "Saved" : "Save"}
-            onClick={() => props.onSaveVideo(props.video)}
-          >
-            <Bookmark aria-hidden="true" size={16} fill={props.saved ? "currentColor" : "none"} />
-          </button>
-        </div>
         <button
           type="button"
           className="thumbnail-button"

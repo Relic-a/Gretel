@@ -1,8 +1,9 @@
 import { useRef } from "react";
-import { BellOff, EyeOff, LoaderCircle, MoreVertical, ThumbsDown } from "lucide-react";
+import { BellOff, Bookmark, EyeOff, ListPlus, ListVideo, LoaderCircle, MoreVertical, ThumbsDown } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import type { FeedVideo } from "../types";
 import { usePopoverDismissal } from "./use-popover-dismissal";
+import { isPlaylistCard } from "./video-utils";
 
 export type CardFeedbackAction = "notInterested" | "hideVideo" | "muteChannel";
 
@@ -29,6 +30,7 @@ export function VideoActions(props: VideoActionsProps) {
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
   const classes = ["video-actions", props.className].filter(Boolean).join(" ");
   const busy = props.pendingAction != null;
+  const isPlaylist = isPlaylistCard(props.video);
 
   function closeMenu() {
     const details = detailsRef.current as HTMLDetailsElement | null;
@@ -75,6 +77,37 @@ export function VideoActions(props: VideoActionsProps) {
         <MoreVertical aria-hidden="true" size={18} />
       </summary>
       <div className="actions-popover" role="menu" aria-label={`Actions for ${props.video.title}`}>
+        {props.onEnqueueVideo && (
+          <button
+            type="button"
+            role="menuitem"
+            aria-label={props.queued ? `${props.video.title} is queued` : isPlaylist ? `Queue all videos in ${props.video.title}` : `Queue ${props.video.title}`}
+            onClick={() => {
+              props.onEnqueueVideo?.(props.video);
+              closeMenu();
+            }}
+          >
+            {props.queued ? <ListVideo aria-hidden="true" size={16} /> : <ListPlus aria-hidden="true" size={16} />}
+            <span>{props.queued ? "In your queue" : isPlaylist ? "Add playlist to queue" : "Add to queue"}</span>
+          </button>
+        )}
+        {props.onSaveVideo && (
+          <button
+            type="button"
+            role="menuitem"
+            aria-label={props.saved ? `Remove ${props.video.title} from saved` : `Save ${props.video.title}`}
+            onClick={() => {
+              props.onSaveVideo?.(props.video);
+              closeMenu();
+            }}
+          >
+            <Bookmark aria-hidden="true" size={16} fill={props.saved ? "currentColor" : "none"} />
+            <span>{props.saved ? "Remove from saved" : "Save"}</span>
+          </button>
+        )}
+        {props.onFeedback && (props.onEnqueueVideo || props.onSaveVideo) && (
+          <div className="actions-separator" role="separator" />
+        )}
         {props.onFeedback && (
           <>
             <button
