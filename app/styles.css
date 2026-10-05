@@ -802,7 +802,7 @@ body:has(.app-shell) {
 .side-video-row {
   position: relative;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
 }
@@ -826,8 +826,8 @@ body:has(.app-shell) {
 
 @media (max-width: 1024px) {
   .side-feedback-menu .actions-popover {
-    right: auto;
-    left: 0;
+    right: 0;
+    left: auto;
   }
 }
 
@@ -4585,7 +4585,7 @@ button.saved-chip.small {
 
 .side-video-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 8px;
   align-items: center;
   min-width: 0;

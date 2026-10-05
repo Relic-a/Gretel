@@ -21,6 +21,7 @@ import { isTauri } from "@tauri-apps/api/core";
 import { openUrl } from "@tauri-apps/plugin-opener";
 
 import type { FeedVideo } from "../types";
+import { VideoActions } from "./VideoActions";
 import { formatPublished, handleThumbnailError, isPlaylistCard, normalize, thumbnailFor, authedHeaders } from "./video-utils";
 import {
   describeYouTubePlayerError,
@@ -715,6 +716,7 @@ export function WatchView(props: WatchViewProps) {
             const queued = isPlaylist
               ? props.queuedPlaylistIds?.has(video.playlistId || video.id) === true
               : props.queuedVideoIds.has(video.id);
+            const sideSaved = props.savedVideoIds.has(video.id);
             return (
             <div className="side-video-row" key={video.id}>
               <button type="button" className="side-video" onClick={() => props.onSelectVideo(video)} aria-label={isPlaylist ? `Open playlist ${video.title} by ${video.author}` : `Play ${video.title} by ${video.author}`}>
@@ -740,36 +742,16 @@ export function WatchView(props: WatchViewProps) {
                   <small>{formatPublished(video)}</small>
                 </span>
               </button>
-              <button
-                type="button"
-                className={queued ? "queue-icon-button queued" : "queue-icon-button"}
-                onClick={() => props.onEnqueueVideo(video)}
-                aria-label={queued ? `${video.title} is queued` : isPlaylist ? `Queue all videos in ${video.title}` : `Queue ${video.title}`}
-                title={queued ? "Already queued" : isPlaylist ? "Add playlist to queue" : "Add to queue"}
-              >
-                <ListPlus aria-hidden="true" size={16} />
-              </button>
-              {props.onFeedback && (
-                <details className="video-actions side-feedback-menu">
-                  <summary aria-label={`Recommendations feedback for ${video.title}`}>
-                    <MoreVertical aria-hidden="true" size={16} />
-                  </summary>
-                  <div className="actions-popover" role="menu" aria-label={`Feedback for ${video.title}`}>
-                    <button type="button" role="menuitem" disabled={props.feedbackPendingAction != null} title="Show fewer videos like this" onClick={() => props.onFeedback?.("notInterested", video)}>
-                      <ThumbsDown aria-hidden="true" size={16} />
-                      <span>Not interested</span>
-                    </button>
-                    <button type="button" role="menuitem" disabled={props.feedbackPendingAction != null} title="Removes this video from feeds now" onClick={() => props.onFeedback?.("hideVideo", video)}>
-                      <EyeOff aria-hidden="true" size={16} />
-                      <span>Hide from feed</span>
-                    </button>
-                    <button type="button" role="menuitem" disabled={props.feedbackPendingAction != null} className="actions-danger" title={`Don't recommend videos from ${video.author}`} onClick={() => window.confirm(`Don't recommend videos from ${video.author}?`) && props.onFeedback?.("muteChannel", video)}>
-                      <BellOff aria-hidden="true" size={16} />
-                      <span>Don't recommend channel</span>
-                    </button>
-                  </div>
-                </details>
-              )}
+              <VideoActions
+                className="side-feedback-menu"
+                video={video}
+                saved={sideSaved}
+                queued={queued}
+                pendingAction={props.feedbackPendingAction}
+                onSaveVideo={props.onSaveVideo}
+                onEnqueueVideo={props.onEnqueueVideo}
+                onFeedback={props.onFeedback}
+              />
             </div>
           );})}
           <div ref={sideSentinelRef} className="side-sentinel">
