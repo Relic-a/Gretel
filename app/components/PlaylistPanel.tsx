@@ -14,9 +14,11 @@ type PlaylistPanelProps = {
   activeVideoId: string;
   saved: boolean;
   queued: boolean;
+  savedVideoIds: Set<string>;
   onSelectVideo: (video: FeedVideo) => void;
   onPlayAll: (video: FeedVideo) => void;
   onToggleSave: () => void;
+  onSaveVideo: (video: FeedVideo) => void;
   onEnqueue: () => void;
   onRetry: () => void;
 };
@@ -98,6 +100,7 @@ export function PlaylistPanel(props: PlaylistPanelProps) {
           {videos.map((video, index) => {
             const isCurrent = video.id === props.activeVideoId;
             const isNext = !isCurrent && video.id === props.nextVideoId;
+            const videoSaved = props.savedVideoIds.has(video.id);
             return (
               <li
                 key={video.id}
@@ -129,6 +132,15 @@ export function PlaylistPanel(props: PlaylistPanelProps) {
                   <strong title={video.title}>{video.title}</strong>
                   <small title={video.author}>{video.author}</small>
                   {isNext && <em className="playlist-next-tag">Up next</em>}
+                </button>
+                <button
+                  type="button"
+                  className={videoSaved ? "queue-icon-button saved" : "queue-icon-button"}
+                  onClick={() => props.onSaveVideo(video)}
+                  aria-label={videoSaved ? `Remove ${video.title} from saved` : `Save ${video.title}`}
+                  title={videoSaved ? "Saved" : "Save"}
+                >
+                  <Bookmark aria-hidden="true" size={15} fill={videoSaved ? "currentColor" : "none"} />
                 </button>
               </li>
             );

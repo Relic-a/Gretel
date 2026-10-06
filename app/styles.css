@@ -4546,7 +4546,8 @@ button.saved-chip.small {
   color: var(--color-danger);
 }
 
-.queue-icon-button.queued {
+.queue-icon-button.queued,
+.queue-icon-button.saved {
   border-color: var(--color-brand);
   background: var(--color-brand-soft);
   color: var(--color-brand-strong);
@@ -4876,7 +4877,7 @@ button.saved-chip.small {
 
 .playlist-item {
   display: grid;
-  grid-template-columns: 22px 96px minmax(0, 1fr);
+  grid-template-columns: 22px 96px minmax(0, 1fr) auto;
   align-items: center;
   gap: 9px;
   padding: 6px;
@@ -4977,7 +4978,7 @@ button.saved-chip.small {
 
 @media (max-width: 560px) {
   .playlist-item {
-    grid-template-columns: 20px 84px minmax(0, 1fr);
+    grid-template-columns: 20px 84px minmax(0, 1fr) auto;
   }
 }
 

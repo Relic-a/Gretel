@@ -1696,9 +1696,11 @@ export default function Home() {
       activeVideoId={activeVideo?.id || ""}
       saved={savedVideoIds.has(openPlaylist.id)}
       queued={queuedPlaylistIds.has(openPlaylist.playlistId || openPlaylist.id)}
+      savedVideoIds={savedVideoIds}
       onSelectVideo={openVideo}
       onPlayAll={(video) => openVideo(video)}
       onToggleSave={() => void saveVideo(openPlaylist)}
+      onSaveVideo={(video) => void saveVideo(video)}
       onEnqueue={() => handleEnqueueVideo(openPlaylist)}
       onRetry={() => void openPlaylistDetails(openPlaylist)}
     />

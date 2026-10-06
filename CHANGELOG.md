@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.1 — 2026-10-05
+
+- Add YouTube-style playback keyboard shortcuts.
+- Keep the playlist panel in the watch sidebar and automatically open the first playlist video.
+- Save individual videos directly from the playlist panel.
+- Move video queue and save actions into dropdown menus.
+- Refine typography and balance video metadata contrast.
+
 ## 0.8.0 — 2026-10-02
 
 - Add a Channels workspace for browsing subscriptions and opening a channel directly from video cards or playback.
