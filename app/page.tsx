@@ -148,10 +148,11 @@ export default function LandingPage() {
                 </div>
                 <Image
                   className="app-frame-image"
-                  src="/landing/app-feed.webp"
-                  alt="The Gretel desktop app showing a ranked feed of YouTube video cards with a profile selector and topic filters."
-                  width={1600}
-                  height={1067}
+                  src="/landing/gretel-showcase.gif"
+                  alt="Gretel showing profile creation, the video feed, video playback, and switching profiles."
+                  width={960}
+                  height={600}
+                  unoptimized
                   loading="eager"
                   fetchPriority="high"
                   sizes="(max-width: 900px) 100vw, 620px"

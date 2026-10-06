@@ -8,7 +8,7 @@ Gretel is a local desktop app for building focused YouTube feeds around separate
 
 From an empty install: create a profile, seed it with topics and channels, watch Gretel build and rank the feed, then save, queue and organise what you find.
 
-![Gretel showcase: profile setup, feed browsing, playback, queue ordering, and saved-video organization](docs/showcase/gretel-showcase-steps.gif)
+![Gretel showcase: profile creation, feed browsing, video playback, and profile switching](docs/showcase/gretel-showcase-steps.gif)
 
 ## Install the beta
 
