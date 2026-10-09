@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { GretelMark, GithubMark } from "./brand-marks";
-import { RELEASES_URL } from "./landing-data";
 
 const links = [
   { href: "#how-it-works", label: "How it works" },
@@ -25,7 +24,7 @@ export function SiteHeader() {
         </nav>
 
         <div className="site-header-actions">
-          <a className="ghost-link" href={RELEASES_URL} rel="noreferrer">
+          <a className="ghost-link" href="https://github.com/Relic-a/Gretel" rel="noreferrer">
             <GithubMark size={16} />
             <span>GitHub</span>
           </a>
