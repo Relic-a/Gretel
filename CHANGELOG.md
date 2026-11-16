@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.8.3 — 2026-11-16
+
+- Refine typography, layout, and navigation across the app.
+- Improve video metadata and channel browsing, and add swipe navigation through history.
+- Update the landing page showcase and correct its GitHub link.
+
 ## 0.8.2 — 2026-10-05
 
 - Cap the header search bar width on large desktop windows while keeping it responsive at smaller sizes.
