@@ -8,6 +8,7 @@ import {
   getDuration,
   getPublishedAt,
   getPublishedText,
+  getSubscriberCountText,
   getThumbnailUrl,
   getTitle,
   getViewCount
@@ -53,6 +54,7 @@ export async function GET(request: Request) {
       publishedText: getPublishedText(source),
       publishedAt: getPublishedAt(source),
       viewCount: getViewCount(source),
+      subscriberCountText: getSubscriberCountText(info.secondary_info?.owner),
       channelKey: normalizeChannelKey(author),
       channelId
     }], async (missingChannelId) => getChannelAvatarUrl(await youtube.getChannel(missingChannelId)));

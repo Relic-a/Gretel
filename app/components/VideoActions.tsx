@@ -36,6 +36,7 @@ export function VideoActions(props: VideoActionsProps) {
     const details = detailsRef.current as HTMLDetailsElement | null;
     if (details?.open) {
       details.open = false;
+      if (details.contains(document.activeElement)) details.querySelector("summary")?.focus();
     }
   }
 
@@ -69,18 +70,14 @@ export function VideoActions(props: VideoActionsProps) {
         className={classes}
         ref={detailsRef}
         onKeyDown={handleKeyDown}
-        onToggle={(event) => {
-        void event;
-        }}
       >
       <summary aria-label={`Video actions for ${props.video.title}`}>
         <MoreVertical aria-hidden="true" size={18} />
       </summary>
-      <div className="actions-popover" role="menu" aria-label={`Actions for ${props.video.title}`}>
+      <div className="actions-popover" role="group" aria-label={`Actions for ${props.video.title}`}>
         {props.onEnqueueVideo && (
           <button
             type="button"
-            role="menuitem"
             aria-label={props.queued ? `${props.video.title} is queued` : isPlaylist ? `Queue all videos in ${props.video.title}` : `Queue ${props.video.title}`}
             onClick={() => {
               props.onEnqueueVideo?.(props.video);
@@ -94,7 +91,6 @@ export function VideoActions(props: VideoActionsProps) {
         {props.onSaveVideo && (
           <button
             type="button"
-            role="menuitem"
             aria-label={props.saved ? `Remove ${props.video.title} from saved` : `Save ${props.video.title}`}
             onClick={() => {
               props.onSaveVideo?.(props.video);
@@ -112,7 +108,6 @@ export function VideoActions(props: VideoActionsProps) {
           <>
             <button
               type="button"
-              role="menuitem"
               disabled={busy}
               aria-busy={props.pendingAction === "notInterested"}
               aria-label={`${feedbackLabels.notInterested}: show fewer videos like ${props.video.title}`}
@@ -128,7 +123,6 @@ export function VideoActions(props: VideoActionsProps) {
             </button>
             <button
               type="button"
-              role="menuitem"
               disabled={busy}
               aria-busy={props.pendingAction === "hideVideo"}
               aria-label={`${feedbackLabels.hideVideo}: remove ${props.video.title} from feeds now`}
@@ -144,7 +138,6 @@ export function VideoActions(props: VideoActionsProps) {
             </button>
             <button
               type="button"
-              role="menuitem"
               disabled={busy}
               aria-busy={props.pendingAction === "muteChannel"}
               aria-label={`Don't recommend channel ${props.video.author}`}

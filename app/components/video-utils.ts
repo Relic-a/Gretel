@@ -59,6 +59,53 @@ export function formatPublished(video: FeedVideo) {
   return video.duration || "";
 }
 
+const compactCount = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
+
+export function formatViewCount(value?: number) {
+  if (value === undefined || !Number.isFinite(value) || value < 0) {
+    return "";
+  }
+
+  return `${compactCount.format(Math.round(value))} ${value === 1 ? "view" : "views"}`;
+}
+
+/**
+ * The card meta line. YouTube shows age and view count there, never the
+ * duration — the duration already sits on the artwork, so repeating it under
+ * the title is the same number twice on one card.
+ */
+export function formatCardMeta(video: FeedVideo) {
+  const published = video.publishedText
+    ? video.publishedText
+    : video.publishedAt
+      ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(video.publishedAt)
+      : "";
+
+  return [published, formatViewCount(video.viewCount)].filter(Boolean).join(" · ");
+}
+
+/** How far you got, as a percentage for the resume bar. 0 hides the bar. */
+export function watchProgressPercent(video: FeedVideo) {
+  const ratio = video.watchTimeRatio || 0;
+
+  if (ratio <= 0.02) {
+    return 0;
+  }
+
+  return Math.min(100, Math.round(ratio * 100));
+}
+
+/** Why Gretel put this card here, from the recommendation trail it came in on. */
+export function cardReason(video: FeedVideo) {
+  const parent = video.parent_title;
+
+  if (!parent || parent === video.title) {
+    return "";
+  }
+
+  return `from “${parent}”`;
+}
+
 export function normalize(value: string) {
   return value.replace(/\s+/g, " ").trim().toLowerCase();
 }

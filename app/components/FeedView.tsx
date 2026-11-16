@@ -119,7 +119,7 @@ export function FeedView(props: FeedViewProps) {
       {(props.title || props.onSearchChange) && <div className="feed-heading">
         {props.title && (
           <div>
-            <h1>{props.title} {props.title && <span aria-hidden="true">✦</span>}</h1>
+            <h1>{props.title}</h1>
             <p>{props.subtitle}</p>
           </div>
         )}
@@ -183,7 +183,7 @@ export function FeedView(props: FeedViewProps) {
               />
             );
           })}
-          {props.loading &&
+          {props.loading && !isInitialBuild &&
             Array.from({ length: props.videos.length === 0 ? 8 : 4 }).map((_, index) => (
               <VideoCardSkeleton key={`feed-skeleton-${index}`} />
             ))}
@@ -194,7 +194,7 @@ export function FeedView(props: FeedViewProps) {
         {props.autoLoadMore === false && props.canAskForMore && !props.loading && <button type="button" className="action-button" onClick={loadMore}>Load more videos</button>}
         {props.loading && props.videos.length > 0 && <LoaderCircle className="spinner" size={20} aria-hidden="true" />}
         <span className="loader-copy">
-          {props.loading && props.videos.length > 0 ? "Loading more videos..." : ""}
+          {props.loading && props.videos.length > 0 ? props.isBuilding ? "Finding fresh videos…" : "Loading more videos..." : ""}
         </span>
       </div>
     </section>

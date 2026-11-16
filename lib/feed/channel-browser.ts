@@ -3,13 +3,13 @@ import { ChannelPager } from "./channel-pager";
 import { getYoutubeClient } from "./youtube-client";
 import { searchChannels } from "./youtube";
 import { getChannelIdFromInput, getChannelVideoItems } from "./channel-utils";
-import { getAuthorAvatarUrl, getChannelAvatarUrl, getChannelVideoAuthor, getDuration, getPublishedAt, getPublishedText, getThumbnailUrl, getTitle, getVideoId, getViewCount } from "./video-utils";
+import { getAuthorAvatarUrl, getChannelAvatarUrl, getChannelVideoAuthor, getDuration, getPublishedAt, getPublishedText, getSubscriberCountText, getThumbnailUrl, getTitle, getVideoId, getViewCount } from "./video-utils";
 import { rememberChannelAvatar } from "./channel-avatar-cache";
 import type { FeedVideo } from "./types";
 
 type Channel = Awaited<ReturnType<Awaited<ReturnType<typeof getYoutubeClient>>["getChannel"]>>;
 type Page = Channel | Awaited<ReturnType<Channel["getContinuation"]>> | Awaited<ReturnType<Channel["applyFilter"]>>;
-type Entry = { id: string; time: number; pager: ChannelPager<FeedVideo, Page>; channel?: { id: string; name: string; thumbnailUrl?: string }; sorts: string[] };
+type Entry = { id: string; time: number; pager: ChannelPager<FeedVideo, Page>; channel?: { id: string; name: string; thumbnailUrl?: string; subscriberCountText?: string }; sorts: string[] };
 const cache = new Map<string, Entry>();
 const ttl = 10 * 60_000;
 const bases = new Map<string, { time: number; promise: Promise<{ channel: Channel; videos: Channel; id: string }> }>();
@@ -49,7 +49,7 @@ export async function browseChannel(profileId: string, input: string, sort = "",
         const { channel, videos, id: resolved } = await channelBase(profileId, input);
         const name = channel.metadata?.title || input;
         const thumbnailUrl = getChannelAvatarUrl(channel);
-        created.channel = { id: resolved, name, thumbnailUrl };
+        created.channel = { id: resolved, name, thumbnailUrl, subscriberCountText: getSubscriberCountText(channel) };
         rememberChannelAvatar({ channelId: resolved, channelName: name }, thumbnailUrl);
         if (!channel.has_videos) return channel;
         const chips = videos.memo?.getType(YTNodes.ChipBarView)[0]?.chips || [];
@@ -70,6 +70,7 @@ export async function browseChannel(profileId: string, input: string, sort = "",
           const id = getVideoId(video);
           return id ? [{ itemType: "video" as const, id, title: getTitle(video), author: getChannelVideoAuthor(video, channel.name),
             channelId: channel.id, channelAvatarUrl: getAuthorAvatarUrl(video) || channel.thumbnailUrl,
+            subscriberCountText: channel.subscriberCountText,
             duration: getDuration(video), query: channel.name, thumbnailUrl: getThumbnailUrl(video, id),
             thumbnailCacheUrl: `/api/thumbnails/${id}`, publishedText: getPublishedText(video),
             publishedAt: getPublishedAt(video), viewCount: getViewCount(video) }] : [];

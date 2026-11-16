@@ -8,9 +8,11 @@ import { ProfileModal } from "./components/ProfileModal";
 import { SettingsModal } from "./components/SettingsModal";
 import { AuthGate } from "./components/AuthGate";
 import { useGretelAuth } from "./components/use-gretel-auth";
+import { EmptyState } from "./components/EmptyState";
 import { TopBar } from "./components/TopBar";
 import { ChannelsView, ChannelHeading } from "./components/ChannelsView";
 import { useChannelBrowser } from "./components/use-channel-browser";
+import { useHistorySwipe } from "./components/use-history-swipe";
 import { FeedView } from "./components/FeedView";
 import { OrganizeDialog, SavedWorkspace, type OrganizeDraft, type SavedFilter } from "./components/SavedWorkspace";
 import { useSavedCollections, type SavedCollectionsResult } from "./components/use-saved-collections";
@@ -77,6 +79,7 @@ type CachedFeed = FeedResponse & {
 type Section = "home" | "saved" | "history" | "channels";
 
 export default function Home() {
+  useHistorySwipe();
   const auth = useGretelAuth();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [profileId, setProfileId] = useState("");
@@ -189,6 +192,11 @@ export default function Home() {
   }, []);
   useEffect(() => {
     if (!queueOpen) return;
+    const trigger = document.querySelector<HTMLButtonElement>("[data-queue-trigger]");
+    const frame = window.requestAnimationFrame(() => queueDrawerRef.current?.querySelector<HTMLButtonElement>(".queue-close")?.focus());
+    function dismissQueueOnEscape(event: KeyboardEvent) {
+      if (event.key === "Escape" && !event.defaultPrevented) setQueueOpen(false);
+    }
     function dismissQueueWhenOutside(event: PointerEvent) {
       const target = event.target;
       if (!(target instanceof Element)) return;
@@ -196,7 +204,13 @@ export default function Home() {
       setQueueOpen(false);
     }
     document.addEventListener("pointerdown", dismissQueueWhenOutside);
-    return () => document.removeEventListener("pointerdown", dismissQueueWhenOutside);
+    document.addEventListener("keydown", dismissQueueOnEscape);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      document.removeEventListener("pointerdown", dismissQueueWhenOutside);
+      document.removeEventListener("keydown", dismissQueueOnEscape);
+      if (document.activeElement === document.body || queueDrawerRef.current?.contains(document.activeElement)) trigger?.focus();
+    };
   }, [queueOpen]);
   const videoRef = useRef<HTMLIFrameElement | null>(null);
   const pendingVideoIdRef = useRef<string | null>(null);
@@ -864,7 +878,7 @@ export default function Home() {
   }
 
   function openVideoChannel(video: FeedVideo) {
-    openChannel({ id: video.channelId || "", name: video.author, thumbnailUrl: video.channelAvatarUrl });
+    openChannel({ id: video.channelId || "", name: video.author, thumbnailUrl: video.channelAvatarUrl, subscriberCountText: video.subscriberCountText });
   }
 
   function openHome() {
@@ -1094,7 +1108,6 @@ export default function Home() {
       setIsBuilding(true);
     }
     if (resetFeed && !servingOnly) {
-      setFeed(null);
       setFeedEnd(false);
     }
 
@@ -1947,7 +1960,7 @@ export default function Home() {
         />
       )}
 
-      {error && !manageProfiles && !needsProfile && <p className="error page-error">{error}</p>}
+      {error && !manageProfiles && !needsProfile && <div className="page-error" role="alert"><p className="error">{error}</p>{!activeVideo && <button type="button" className="action-button" disabled={loading || isRefreshing || searching} onClick={() => void refreshVideos()}>Try again</button>}</div>}
 
       {booted && section === "channels" && !activeVideo && searchResults === null && (
         openedChannel ? <>
@@ -1964,12 +1977,13 @@ export default function Home() {
             onAddChannel={addChannel} onRemoveChannel={removeChannel} onOpenChannel={openVideoChannel}
             emptyMessage={!channelBrowser.result || channelBrowser.error ? "" : channelBrowser.filter ? "No videos on this page match your interests. Turn off filtering or load more videos." : channelBrowser.result.cursor ? "No videos on this page. Load more to keep browsing." : "No public videos are available on this channel."} />
         </> : <ChannelsView channels={channels} knownChannels={
-          [...homeVideos, ...savedVideos, ...historyVideos].map(video => ({ id: video.channelId || "", name: video.author, thumbnailUrl: video.channelAvatarUrl }))
-        } onOpen={openChannel} />
+          [...homeVideos, ...savedVideos, ...historyVideos].map(video => ({ id: video.channelId || "", name: video.author, thumbnailUrl: video.channelAvatarUrl, subscriberCountText: video.subscriberCountText }))
+        } onOpen={openChannel} onBrowse={openHome} />
       )}
 
       {booted && section === "saved" && !activeVideo && searchResults === null && (
         <SavedWorkspace
+          onBrowse={openHome}
           items={savedItems}
           folders={savedFolders}
           tags={savedTags}
@@ -2056,7 +2070,7 @@ export default function Home() {
       )}
 
       {booted && !searching && searchResults === null && section === "history" && historyVideos.length === 0 && !activeVideo && (
-        <p className="empty-state">No watched videos yet.</p>
+        <><div className="feed-heading"><h1>History</h1></div><EmptyState title="No watched videos yet" actionLabel="Browse videos" onAction={openHome}>Videos you watch will appear here.</EmptyState></>
       )}
 
       {booted && searchResults !== null && searchResults.length === 0 && !searching && !activeVideo && (

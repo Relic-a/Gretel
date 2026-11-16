@@ -10,6 +10,7 @@ import {
   getAuthorAvatarUrl,
   getAuthorChannelId,
   getChannelAvatarUrl,
+  getSubscriberCountText,
   getChannelVideoAuthor,
   getDuration,
   getPublishedAt,
@@ -322,6 +323,7 @@ export type ChannelSearchResult = {
   id: string;
   name: string;
   thumbnailUrl: string;
+  subscriberCountText?: string;
 };
 
 type SearchCacheEntry = {
@@ -412,7 +414,7 @@ export async function searchChannels(query: string, profileId: string): Promise<
           avatarUrl = `https:${avatarUrl}`;
         }
         if (name) {
-          const directResults: ChannelSearchResult[] = [{ id: directId, name, thumbnailUrl: avatarUrl }];
+          const directResults: ChannelSearchResult[] = [{ id: directId, name, thumbnailUrl: avatarUrl, subscriberCountText: getSubscriberCountText(channel) }];
           if (avatarUrl) {
             rememberChannelAvatar({ channelId: directId, channelName: name }, avatarUrl);
           }
@@ -547,7 +549,8 @@ function channelsFromSearchResults(channels: unknown[] = []): ChannelSearchResul
     return [{
       id,
       name,
-      thumbnailUrl
+      thumbnailUrl,
+      subscriberCountText: getSubscriberCountText(channel)
     }];
   });
 }

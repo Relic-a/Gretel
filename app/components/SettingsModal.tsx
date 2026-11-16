@@ -119,34 +119,21 @@ export function SettingsModal(props: SettingsModalProps) {
           )}
           <div className="embedding-source-setting">
             <div>
-              <h2>Embedding access</h2>
+              <h2>Recommendation access</h2>
               <p>Use Gretel’s managed allowance or connect your own OpenRouter account.</p>
             </div>
-            <div className="embedding-source-options" role="radiogroup" aria-label="Embedding access">
-              <button
-                type="button"
-                role="radio"
-                aria-checked={draft.embeddingMode !== "byok"}
-                className={draft.embeddingMode !== "byok" ? "active" : ""}
-                onClick={() => props.account
-                  ? setDraft({ ...draft, embeddingMode: "managed" })
-                  : props.onGoogle()}
-                disabled={props.authPending}
-              >
-                <span>Managed by Gretel</span>
-                <small>{props.account ? "No API key required" : "Connect Google to use"}</small>
-              </button>
-              <button
-                type="button"
-                role="radio"
-                aria-checked={draft.embeddingMode === "byok"}
-                className={draft.embeddingMode === "byok" ? "active" : ""}
-                onClick={() => setDraft({ ...draft, embeddingMode: "byok" })}
-              >
-                <span>My OpenRouter key</span>
-                <small>You cover provider usage</small>
-              </button>
-            </div>
+            <fieldset className="embedding-source-options">
+              <legend className="sr-only">Recommendation access</legend>
+              <label className={draft.embeddingMode !== "byok" ? "active" : ""}>
+                <input type="radio" name="access-method" value="managed" checked={draft.embeddingMode !== "byok"}
+                  onChange={() => props.account ? setDraft({ ...draft, embeddingMode: "managed" }) : props.onGoogle()} disabled={props.authPending} />
+                <span>Managed by Gretel<small>{props.account ? "No API key required" : "Connect Google to use"}</small></span>
+              </label>
+              <label className={draft.embeddingMode === "byok" ? "active" : ""}>
+                <input type="radio" name="access-method" value="byok" checked={draft.embeddingMode === "byok"} onChange={() => setDraft({ ...draft, embeddingMode: "byok" })} />
+                <span>My OpenRouter key<small>You cover provider usage</small></span>
+              </label>
+            </fieldset>
           </div>
 
           {props.account && (
@@ -179,7 +166,7 @@ export function SettingsModal(props: SettingsModalProps) {
                     aria-valuemax={access.monthlyInputLimit}
                     aria-valuenow={Math.min(access.usedInputs, access.monthlyInputLimit)}
                   >
-                    <span style={{ width: `${usagePercent}%` }} />
+                    <span style={{ transform: `scaleX(${usagePercent / 100})` }} />
                   </div>
                   <div className="usage-foot">
                     <span>{access.usedInputs.toLocaleString()} used</span>
@@ -212,9 +199,9 @@ export function SettingsModal(props: SettingsModalProps) {
 
           <p className="modal-copy">Only the selected access method is used. Your OpenRouter key stays on this computer when saved.</p>
 
-          <label>
+          {draft.embeddingMode === "byok" && <label>
             <span>OpenRouter API key</span>
-            <small>Stored locally as plain text in <code>data/user-settings.json</code>. Use a dedicated key with a spending limit.</small>
+            <small>Stored locally as plain text. Use a dedicated key with a spending limit.</small>
             <input
               type="password"
               autoFocus={draft.embeddingMode === "byok"}
@@ -231,8 +218,12 @@ export function SettingsModal(props: SettingsModalProps) {
               placeholder={draft.openRouterApiKey === "set" ? "API key already saved" : "sk-or-v1-..."}
               disabled={draft.embeddingMode !== "byok"}
             />
-          </label>
+          </label>}
 
+          <details className="settings-advanced">
+            <summary>Advanced</summary>
+            <div className="settings-advanced-body">
+            <p className="modal-copy">Your key is stored in <code>data/user-settings.json</code>. Model defaults come from <code>config/gretel.config.json</code>.</p>
           <label>
             <span>OpenRouter model</span>
             <small>Optional override. Leave blank to keep the model from <code>config/gretel.config.json</code>.</small>
@@ -275,6 +266,9 @@ export function SettingsModal(props: SettingsModalProps) {
             </label>
           </div>
 
+            </div>
+          </details>
+
           <div className="developer-setting">
             <div>
               <span>App updates</span>
@@ -288,9 +282,9 @@ export function SettingsModal(props: SettingsModalProps) {
             </button>
           </div>
 
-          <button type="submit" disabled={props.saving}>
-            {props.saving ? "Saving..." : dirty ? "Save changes" : "Close settings"}
-          </button>
+          {dirty && <button type="submit" disabled={props.saving}>
+            {props.saving ? "Saving..." : "Save changes"}
+          </button>}
           {props.error && <p className="error">{props.error}</p>}
         </form>
       </section>

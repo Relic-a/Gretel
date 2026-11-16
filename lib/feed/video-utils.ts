@@ -184,7 +184,10 @@ export function getAuthor(video: unknown) {
 export function getChannelVideoAuthor(video: unknown, channelName: string) {
   const author = getAuthor(video);
 
-  if (!author || author === "N/A" || author === "Unknown channel") {
+  // Channel uploads omit the author in modern lockups. Their first metadata
+  // part can be a compact view count ("2.3M"), not a channel name.
+  if (!author || author === "N/A" || author === "Unknown channel" ||
+      /^(?:[\d,.]+\s*[kmb]?|no)\s*(?:views?)?$/i.test(author.trim())) {
     return channelName;
   }
 
@@ -220,20 +223,32 @@ export function getDuration(video: unknown) {
 }
 
 export function getViewCount(video: unknown) {
-  if (!video || typeof video !== "object") return 0;
+  if (!video || typeof video !== "object") return undefined;
   const text = "view_count" in video ? getText(video.view_count)
     : getMetadataTexts(video).find(text => /\bviews?\b/i.test(text) || /^\d[\d,.]*\s*[kmb]?$/i.test(text)) || "";
   const match = text.match(/([\d,.]+)\s*([kmb])?/i);
 
   if (!match) {
-    return 0;
+    return /^no views$/i.test(text.trim()) ? 0 : undefined;
   }
 
   const count = Number(match[1].replace(/,/g, ""));
   const suffix = (match[2] || "").toLowerCase();
   const multiplier = suffix === "b" ? 1_000_000_000 : suffix === "m" ? 1_000_000 : suffix === "k" ? 1_000 : 1;
 
-  return Number.isFinite(count) ? count * multiplier : 0;
+  return Number.isFinite(count) ? count * multiplier : undefined;
+}
+
+// Preserve YouTube's display text: subscriber totals are often rounded upstream.
+export function getSubscriberCountText(channel: unknown): string | undefined {
+  if (!channel || typeof channel !== "object") return undefined;
+  const source = channel as Record<string, unknown>;
+  const header = source.header && typeof source.header === "object"
+    ? source.header as Record<string, unknown> : source;
+  const content = header.content && typeof header.content === "object"
+    ? header.content : header;
+  const direct = getText(source.subscriber_count) || getText(header.subscribers);
+  return direct || getMetadataTexts({ metadata: content }).find(text => /\bsubscribers?\b/i.test(text));
 }
 
 export function getPublishedText(video: unknown) {

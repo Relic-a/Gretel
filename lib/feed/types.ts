@@ -13,6 +13,7 @@ export type FeedVideo = {
   publishedText?: string;
   publishedAt?: number;
   viewCount?: number;
+  subscriberCountText?: string;
   sourceNodeId?: FeedNodeId;
   sourceNodeLabel?: string;
   channelKey?: string;

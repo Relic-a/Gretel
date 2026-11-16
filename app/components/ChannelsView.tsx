@@ -1,8 +1,9 @@
+import { EmptyState } from "./EmptyState";
 import { useState } from "react";
 import { ArrowLeft, ArrowUpRight, RefreshCw, Search, Tv, X } from "lucide-react";
 import type { ChannelResult } from "../types";
 
-export function ChannelsView(props: { channels: string[]; knownChannels: ChannelResult[]; onOpen: (channel: ChannelResult) => void }) {
+export function ChannelsView(props: { channels: string[]; knownChannels: ChannelResult[]; onOpen: (channel: ChannelResult) => void; onBrowse: () => void }) {
   const [search, setSearch] = useState("");
   const channels = props.channels.map(name => props.knownChannels.find(item =>
     item.name.toLowerCase() === name.toLowerCase() || item.id === name) || { id: "", name });
@@ -16,10 +17,10 @@ export function ChannelsView(props: { channels: string[]; knownChannels: Channel
         {search && <button type="button" className="feed-search-clear" aria-label="Clear channel search" onClick={() => setSearch("")}><X size={16} /></button>}
       </div>}
     </div>
-    {channels.length === 0 ? <div className="channel-empty"><Tv size={32} aria-hidden="true" /><h2>Your channels will appear here</h2><p>Subscribe from a video or add channels in Manage profiles.</p></div> :
+    {channels.length === 0 ? <EmptyState title="Your channels will appear here" actionLabel="Browse videos" onAction={props.onBrowse}>Subscribe to channels from a video to find them here.</EmptyState> :
       visible.length === 0 ? <div className="channel-empty"><Search size={28} aria-hidden="true" /><h2>No matching channels</h2><p>Try another name or clear your search.</p><button type="button" className="action-button" onClick={() => setSearch("")}>Show all channels</button></div> :
       <div className="channel-directory">{visible.map(channel => <button type="button" key={channel.id || channel.name} className="channel-directory-item" onClick={() => props.onOpen(channel)}>
-        <ChannelAvatar channel={channel} /><span className="channel-directory-copy"><strong>{channel.name}</strong><span>Browse videos</span></span><ArrowUpRight className="channel-directory-arrow" size={18} aria-hidden="true" />
+        <ChannelAvatar channel={channel} /><span className="channel-directory-copy"><strong>{channel.name}</strong><span>{[channel.subscriberCountText, "Browse videos"].filter(Boolean).join(" · ")}</span></span><ArrowUpRight className="channel-directory-arrow" size={18} aria-hidden="true" />
       </button>)}</div>}
   </section>;
 }
@@ -31,7 +32,7 @@ export function ChannelHeading(props: { channel: ChannelResult; sorts: string[];
       <button type="button" className="channel-back" onClick={props.onBack}><ArrowLeft size={16} aria-hidden="true" /> All channels</button>
       <button type="button" className="channel-refresh" disabled={props.loading} onClick={props.onRefresh} aria-label="Refresh channel videos"><RefreshCw size={16} className={props.loading ? "spinner" : undefined} aria-hidden="true" /> Refresh</button>
     </div>
-    <div className="channel-heading-row"><div className="channel-identity"><ChannelAvatar channel={props.channel} /><div><h1>{props.channel.name}</h1><p>Channel videos</p></div></div></div>
+    <div className="channel-heading-row"><div className="channel-identity"><ChannelAvatar channel={props.channel} /><div><h1>{props.channel.name}</h1><p>{[props.channel.subscriberCountText, "Channel videos"].filter(Boolean).join(" · ")}</p></div></div></div>
     <div className="channel-toolbar">
       <div className="channel-sorts" role="group" aria-label="Sort channel videos">
         {(props.sorts.length ? props.sorts : ["Newest"]).map((sort, index) => <button type="button" key={sort}

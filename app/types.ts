@@ -11,6 +11,7 @@ export type FeedVideo = {
   publishedText?: string;
   publishedAt?: number;
   viewCount?: number;
+  subscriberCountText?: string;
   channelKey?: string;
   channelId?: string;
   parent_video_id?: string;
@@ -48,6 +49,7 @@ export type ChannelResult = {
   id: string;
   name: string;
   thumbnailUrl?: string;
+  subscriberCountText?: string;
 };
 
 export type FeedResponse = {

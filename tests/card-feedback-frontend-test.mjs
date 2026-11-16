@@ -11,7 +11,9 @@ test("Home video menu includes queue, save, and recommendation actions", () => {
   assert.match(source, /<Bookmark/);
   assert.match(source, /<ListPlus/);
   assert.match(source, /window\.confirm/);
-  assert.match(source, /role="menu"/);
+  assert.match(source, /<details/);
+  assert.match(source, /role="group"/);
+  assert.doesNotMatch(source, /role="menu(?:item)?"/);
   assert.match(source, /Escape/);
 });
 test("Save and queue are keyboard-discoverable dropdown actions", () => {

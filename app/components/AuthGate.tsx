@@ -28,8 +28,8 @@ export function AuthGate(props: AuthGateProps) {
           <i />
         </div>
         <div className="access-copy">
-          <h1 id="access-title">A better feed, without the setup tax.</h1>
-          <p>Sign in once and Gretel will handle semantic search securely. Your profiles and watch history stay on this computer.</p>
+          <h1 id="access-title">Set up your recommendations</h1>
+          <p>Sign in for managed recommendations or use your own OpenRouter key. Your profiles and watch history stay on this computer.</p>
         </div>
 
         <button className="google-auth-button" type="button" onClick={props.onGoogle} disabled={props.pending}>

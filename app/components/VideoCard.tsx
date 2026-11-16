@@ -5,7 +5,7 @@ import type { FeedVideo } from "../types";
 import type { CardFeedbackAction } from "./VideoActions";
 import { observeCardIntersection } from "./shared-intersection-observer";
 import { VideoActions } from "./VideoActions";
-import { formatPublished, handleThumbnailError, isPlaylistCard, thumbnailFor } from "./video-utils";
+import { formatCardMeta, handleThumbnailError, isPlaylistCard, thumbnailFor, watchProgressPercent, cardReason } from "./video-utils";
 
 type VideoCardProps = {
   video: FeedVideo;
@@ -34,6 +34,9 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
   videoRef.current = props.video;
   const isPlaylist = isPlaylistCard(props.video);
   const playlistCount = props.video.playlistVideoCount || 0;
+  const metaLine = formatCardMeta(props.video);
+  const reason = cardReason(props.video);
+  const progress = isPlaylist ? 0 : watchProgressPercent(props.video);
   const cardClasses = ["video-card", isPlaylist ? "playlist-card" : "", props.compact ? "compact" : ""]
     .filter(Boolean)
     .join(" ");
@@ -66,7 +69,7 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
           type="button"
           className="thumbnail-button"
           onClick={() => props.onSelectVideo(props.video)}
-          aria-label={isPlaylist ? `Open playlist ${props.video.title}` : undefined}
+          aria-label={isPlaylist ? `Open playlist ${props.video.title}` : `Play ${props.video.title}`}
         >
           <img
             src={thumbnailFor(props.video)}
@@ -91,6 +94,21 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
             <span className="duration-pill">{props.video.duration}</span>
           ) : null}
         </button>
+        {reason ? (
+          <details className="card-reason">
+            <summary aria-label={`Why this video: ${props.video.title}`}><span>Why this video</span></summary>
+            <p>{reason}</p>
+          </details>
+        ) : null}
+        {progress > 0 ? (
+          <span
+            className="watch-progress"
+            style={{ "--watch-progress": `${progress}%` } as React.CSSProperties}
+            aria-hidden="true"
+          >
+            <span />
+          </span>
+        ) : null}
       </div>
       <div className="video-meta">
         <div className="video-title-row">
@@ -107,14 +125,27 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
             onEnqueueVideo={props.onEnqueueVideo}
           />
         </div>
-        <button type="button" className="channel-line channel-link" disabled={!props.onOpenChannel} onClick={() => props.onOpenChannel?.(props.video)} aria-label={`Open channel ${props.video.author}`}>
+        <button
+          type="button"
+          className="video-byline channel-link"
+          disabled={!props.onOpenChannel}
+          onClick={() => props.onOpenChannel?.(props.video)}
+          aria-label={`Open channel ${props.video.author}`}
+        >
           {props.video.channelAvatarUrl ? (
             <img className="avatar" src={props.video.channelAvatarUrl} alt="" loading="lazy" />
           ) : (
-            <span className="avatar">{props.video.author.slice(0, 1).toUpperCase()}</span>
+            <span className="avatar" aria-hidden="true">
+              {props.video.author.slice(0, 1).toUpperCase()}
+            </span>
           )}
-          <span className="channel-name" title={props.video.author}>
-            {props.video.author}
+          <span className="byline-copy">
+            <span className="channel-name" title={props.video.author}>
+              {props.video.author}
+            </span>
+            <span className="published-line" title={metaLine}>
+              {isPlaylist && playlistCount > 0 ? `${playlistCount} videos · ${metaLine}` : metaLine}
+            </span>
           </span>
         </button>
         {props.showSubscribe && (
@@ -128,13 +159,6 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
             {props.subscribed ? "Unsubscribe" : "Subscribe"}
           </button>
         )}
-        <div className="published-line" title={formatPublished(props.video)}>
-          {isPlaylist
-            ? [playlistCount > 0 ? `${playlistCount} videos` : "Playlist", formatPublished(props.video)]
-                .filter(Boolean)
-                .join(" · ")
-            : formatPublished(props.video)}
-        </div>
       </div>
     </article>
   );

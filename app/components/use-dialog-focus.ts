@@ -6,6 +6,7 @@ const focusableSelector = [
   "select:not([disabled])",
   "textarea:not([disabled])",
   "a[href]",
+  "summary",
   "[tabindex]:not([tabindex='-1'])"
 ].join(",");
 
@@ -33,7 +34,10 @@ export function useDialogFocus(
 
     const getFocusableElements = () =>
       Array.from(dialogElement.querySelectorAll<HTMLElement>(focusableSelector)).filter(
-        (element) => element.getAttribute("aria-hidden") !== "true"
+        (element) => element.getAttribute("aria-hidden") !== "true" &&
+          !element.closest("[inert], [hidden], [aria-hidden='true']") &&
+          element.tabIndex >= 0 && element.getClientRects().length > 0 &&
+          getComputedStyle(element).visibility !== "hidden"
       );
 
     const animationFrame = window.requestAnimationFrame(() => {

@@ -1,3 +1,5 @@
+import { useId } from "react";
+
 export type TagEditorProps = {
   label: string;
   helperText?: string;
@@ -16,18 +18,21 @@ export type TagEditorProps = {
 };
 
 export function TagEditor(props: TagEditorProps) {
+  const inputId = useId();
   return (
     <div ref={props.containerRef} className="tag-editor">
-      <span className="tag-label">{props.label}</span>
-      {props.helperText && <small className="tag-help">{props.helperText}</small>}
+      <label className="tag-label" htmlFor={inputId}>{props.label}</label>
+      {props.helperText && <small id={`${inputId}-help`} className="tag-help">{props.helperText}</small>}
       <div className="tag-input-container">
         <div className="tag-input">
           {props.values.map((value) => (
-            <button type="button" key={value} onClick={() => props.removeValue(value)}>
+            <button type="button" key={value} aria-label={`Remove ${value}`} onClick={() => props.removeValue(value)}>
               {value}
             </button>
           ))}
           <input
+            id={inputId}
+            aria-describedby={props.helperText ? `${inputId}-help` : undefined}
             ref={props.inputRef}
             maxLength={80}
             value={props.draft}

@@ -22,7 +22,7 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 
 import type { FeedVideo } from "../types";
 import { VideoActions } from "./VideoActions";
-import { formatPublished, handleThumbnailError, isPlaylistCard, normalize, thumbnailFor, authedHeaders } from "./video-utils";
+import { formatCardMeta, formatPublished, handleThumbnailError, isPlaylistCard, normalize, thumbnailFor, authedHeaders } from "./video-utils";
 import {
   describeYouTubePlayerError,
   type YouTubePlayerErrorInfo,
@@ -144,6 +144,7 @@ export function WatchView(props: WatchViewProps) {
   const timePollIntervalRef = useRef<number | null>(null);
 
   const [description, setDescription] = useState("");
+  const [videoMetadata, setVideoMetadata] = useState<FeedVideo | null>(null);
   const [descriptionExpanded, setDescriptionExpanded] = useState(false);
   const [displayLimit, setDisplayLimit] = useState(sidePageSize);
   const [comments, setComments] = useState<YtComment[]>([]);
@@ -168,6 +169,24 @@ export function WatchView(props: WatchViewProps) {
   const liked = props.likedVideoIds.has(props.activeVideo.id);
 
   const visibleSideVideos = props.sideVideos.slice(0, displayLimit);
+  const displayVideo = videoMetadata?.id === props.activeVideo.id
+    ? { ...props.activeVideo, viewCount: videoMetadata.viewCount ?? props.activeVideo.viewCount,
+        subscriberCountText: videoMetadata.subscriberCountText ?? props.activeVideo.subscriberCountText }
+    : props.activeVideo;
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (!props.profileId || (props.activeVideo.subscriberCountText && props.activeVideo.viewCount !== undefined)) return;
+    const params = new URLSearchParams({ videoId: props.activeVideo.id, profileId: props.profileId });
+    void fetch(`/api/video-info?${params}`, { headers: authedHeaders(), signal: controller.signal })
+      .then(async response => {
+        if (!response.ok) return;
+        const data = await response.json();
+        if (!controller.signal.aborted && data.video?.id === props.activeVideo.id) setVideoMetadata(data.video);
+      })
+      .catch(() => undefined); // Counts are optional; playback remains independent.
+    return () => controller.abort();
+  }, [props.activeVideo.id, props.activeVideo.subscriberCountText, props.activeVideo.viewCount, props.profileId]);
 
   useEffect(() => {
     let destroyed = false;
@@ -636,11 +655,13 @@ export function WatchView(props: WatchViewProps) {
               {props.activeVideo.channelAvatarUrl ? (
                 <img className="avatar large" src={props.activeVideo.channelAvatarUrl} alt="" />
               ) : (
-                <span className="avatar large avatar-placeholder" />
+                <span className="avatar large avatar-placeholder" aria-hidden="true">
+                  {props.activeVideo.author.slice(0, 1).toUpperCase()}
+                </span>
               )}
               <div>
                 <strong>{props.activeVideo.author}</strong>
-                <span>{formatPublished(props.activeVideo)}</span>
+                <span>{[displayVideo.subscriberCountText, formatCardMeta(displayVideo) || formatPublished(displayVideo)].filter(Boolean).join(" · ")}</span>
               </div>
             </button>
             <button
@@ -862,7 +883,7 @@ export function WatchView(props: WatchViewProps) {
                 <span className="side-copy">
                   <strong>{video.title}</strong>
                   <small>{video.author}</small>
-                  <small>{formatPublished(video)}</small>
+                  <small>{formatCardMeta(video) || formatPublished(video)}</small>
                 </span>
               </button>
               <VideoActions

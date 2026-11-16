@@ -1,3 +1,5 @@
+import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { profileInitials } from "./profile-identity";
 import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ChannelResult, Profile, UserSettings } from "../types";
@@ -72,6 +74,7 @@ export function ProfileModal(props: ProfileModalProps) {
 
     return list;
   }, [props.needsOpenRouterKey]);
+  const [creating, setCreating] = useState(!props.manageProfiles);
   const [step, setStep] = useState(0);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const [channelResultsOpen, setChannelResultsOpen] = useState(true);
@@ -79,6 +82,13 @@ export function ProfileModal(props: ProfileModalProps) {
   const channelEditorRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   useDialogFocus(dialogRef, props.feedOpen, props.onClose);
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      if (creating) dialogRef.current?.querySelector<HTMLInputElement>(".wizard-body input")?.focus();
+      else dialogRef.current?.querySelector<HTMLButtonElement>(".profile-list-head button")?.focus();
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [creating, step]);
   usePopoverDismissal(channelEditorRef, () => setChannelResultsOpen(false), channelResultsOpen);
 
   useEffect(() => {
@@ -192,7 +202,7 @@ export function ProfileModal(props: ProfileModalProps) {
         tabIndex={-1}
       >
         <div className="modal-head">
-          <h1 id="profile-dialog-title">{props.manageProfiles ? "Manage profiles" : "Create a profile"}</h1>
+          <h1 id="profile-dialog-title">{props.manageProfiles && !creating ? "Manage profiles" : "Create a profile"}</h1>
           {props.feedOpen && (
             <button type="button" className="icon-button" onClick={props.onClose}>
               Close
@@ -200,21 +210,23 @@ export function ProfileModal(props: ProfileModalProps) {
           )}
         </div>
 
-        {props.manageProfiles && (
+        {props.manageProfiles && !creating && (
           <div className="profile-list">
-            <strong>Your profiles ({props.profiles.length})</strong>
+            <div className="profile-list-head"><strong>Your profiles ({props.profiles.length})</strong><button type="button" className="action-button" onClick={() => { setStep(0); setCreating(true); }}><Plus size={16} aria-hidden="true" /> New profile</button></div>
+            <div className="profile-list-scroll">
             {props.profiles.map((profile) => (
               <div className="profile-row" key={profile.id}>
-                <span><span className="profile-avatar small" aria-hidden="true" />{profile.name}</span>
+                <span><span className="profile-avatar small" aria-hidden="true">{profileInitials(profile.name)}</span>{profile.name}</span>
                 <button type="button" className="icon-button danger-icon" onClick={() => props.onDeleteProfile(profile.id)} aria-label={`Delete ${profile.name}`}>
-                  ⌫
+                  <Trash2 size={17} aria-hidden="true" />
                 </button>
               </div>
             ))}
+            </div>
           </div>
         )}
 
-        {props.loading ? (
+        {creating && (props.loading ? (
           <FeedBuildProgress
             variant="compact"
             profileName={props.profileName}
@@ -224,6 +236,7 @@ export function ProfileModal(props: ProfileModalProps) {
           />
         ) : (
           <form onSubmit={handleSubmit} className="setup-form">
+            {props.manageProfiles && <button type="button" className="wizard-back" onClick={() => setCreating(false)}><ArrowLeft size={16} aria-hidden="true" /> Back to profiles</button>}
             <ol className="wizard-tracker" aria-label="Setup steps">
               {steps.map((entry, index) => (
                 <li
@@ -409,7 +422,7 @@ export function ProfileModal(props: ProfileModalProps) {
 
             {props.error && <p className="error">{props.error}</p>}
           </form>
-        )}
+        ))}
       </section>
     </div>
   );

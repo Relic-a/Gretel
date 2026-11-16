@@ -49,7 +49,8 @@ function browserFixture(chips = false, modern = false) {
   const helpers = {
     getVideoId: video => video.id, getTitle: video => video.id, getDuration: () => "1:00", getPublishedAt: () => 1,
     getPublishedText: () => "today", getThumbnailUrl: () => "thumb", getViewCount: () => 3,
-    getAuthorAvatarUrl: () => undefined, getChannelAvatarUrl: () => "avatar", getChannelVideoAuthor: (_, name) => name
+    getAuthorAvatarUrl: () => undefined, getChannelAvatarUrl: () => "avatar", getChannelVideoAuthor: (_, name) => name,
+    getSubscriberCountText: () => "12.3K subscribers"
   };
   const { browseChannel } = module("lib/feed/channel-browser.ts", {
     "youtubei.js": { YTNodes: { ChipBarView: class {} }, YT: { ChannelListContinuation: class { constructor(_, response) { Object.assign(this, response); } } } },
@@ -64,6 +65,8 @@ test("channel browsing defaults to recency, skips ID resolution, and caches raw 
   const { browseChannel, counts } = browserFixture();
   const [a, b] = await Promise.all([browseChannel("p", "UCexample"), browseChannel("p", "UCexample")]);
   assert.equal(a.videos[0].id, "newest"); assert.equal(a.channel.id, "UCexample");
+  assert.equal(a.channel.subscriberCountText, "12.3K subscribers");
+  assert.equal(a.videos[0].subscriberCountText, "12.3K subscribers");
   assert.equal(a.cursor.session, b.cursor.session);
   assert.deepEqual(counts(), { fetches: 1, continuations: 0, searches: 0, sorts: 0 });
   const page = await browseChannel("p", "UCexample", "", a.cursor);
@@ -120,6 +123,19 @@ test("channel endpoint filters only on explicit opt-in and rejects malformed inp
 });
 
 const videoUtils = module("lib/feed/video-utils.ts", { "./config": { getGretelConfig: () => ({}) } });
+test("subscriber counts support search, legacy headers, modern headers, and video owners", () => {
+  assert.equal(videoUtils.getSubscriberCountText({ subscriber_count: "12.3K subscribers" }), "12.3K subscribers");
+  assert.equal(videoUtils.getSubscriberCountText({ header: { subscribers: { text: "1 subscriber" } } }), "1 subscriber");
+  const metadata_rows = [{ metadata_parts: [{ text: "@example" }, { text: "2M subscribers" }, { text: "600 videos" }] }];
+  assert.equal(videoUtils.getSubscriberCountText({ header: { content: { metadata: { metadata_rows } } } }), "2M subscribers");
+  assert.equal(videoUtils.getSubscriberCountText({}), undefined);
+});
+test("view counts distinguish unavailable counts from real zero views", () => {
+  assert.equal(videoUtils.getViewCount({}), undefined);
+  assert.equal(videoUtils.getViewCount({ view_count: 0 }), 0);
+  assert.equal(videoUtils.getViewCount({ view_count: "No views" }), 0);
+  assert.equal(videoUtils.getViewCount({ view_count: "1,234 views" }), 1234);
+});
 const { getChannelVideoItems } = module("lib/feed/channel-utils.ts", { "./video-utils": videoUtils });
 test("modern channel cards survive an empty legacy getter and mixed pages without duplicates", () => {
   const video = { content_id: "modern", content_type: "VIDEO" };
@@ -180,4 +196,13 @@ test("compact modern metadata preserves view counts and publication time", () =>
   assert.equal(videoUtils.getViewCount(card), 64000);
   assert.equal(videoUtils.getPublishedText(card), "5d ago");
   assert.ok(Math.abs(videoUtils.getPublishedAt(card) - (Date.now() - 5 * 86400000)) < 1000);
+});
+
+
+test("channel upload metadata never becomes a numeric channel name", () => {
+  for (const count of ["2.3M", "64K", "1,234", "2.3M views", "No views"]) {
+    const card = { metadata: { metadata: { metadata_rows: [{ metadata_parts: [{ text: count }, { text: "5d ago" }] }] } } };
+    assert.equal(videoUtils.getChannelVideoAuthor(card, "Fireship"), "Fireship");
+  }
+  assert.equal(videoUtils.getChannelVideoAuthor({ author: { name: "3Blue1Brown" } }, "Fallback"), "3Blue1Brown");
 });
