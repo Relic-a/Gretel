@@ -1,4 +1,4 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { BellOff, Bookmark, EyeOff, ListPlus, ListVideo, LoaderCircle, MoreVertical, ThumbsDown } from "lucide-react";
 import type { KeyboardEvent } from "react";
 import type { FeedVideo } from "../types";
@@ -28,6 +28,7 @@ const feedbackLabels: Record<CardFeedbackAction, string> = {
 
 export function VideoActions(props: VideoActionsProps) {
   const detailsRef = useRef<HTMLDetailsElement | null>(null);
+  const [open, setOpen] = useState(false);
   const classes = ["video-actions", props.className].filter(Boolean).join(" ");
   const busy = props.pendingAction != null;
   const isPlaylist = isPlaylistCard(props.video);
@@ -40,7 +41,7 @@ export function VideoActions(props: VideoActionsProps) {
     }
   }
 
-  usePopoverDismissal(detailsRef, closeMenu);
+  usePopoverDismissal(detailsRef, closeMenu, open);
 
   function handleFeedback(action: CardFeedbackAction) {
     if (busy) {
@@ -70,11 +71,12 @@ export function VideoActions(props: VideoActionsProps) {
         className={classes}
         ref={detailsRef}
         onKeyDown={handleKeyDown}
+        onToggle={(event) => setOpen(event.currentTarget.open)}
       >
       <summary aria-label={`Video actions for ${props.video.title}`}>
         <MoreVertical aria-hidden="true" size={18} />
       </summary>
-      <div className="actions-popover" role="group" aria-label={`Actions for ${props.video.title}`}>
+      {open && <div className="actions-popover" role="group" aria-label={`Actions for ${props.video.title}`}>
         {props.onEnqueueVideo && (
           <button
             type="button"
@@ -154,7 +156,7 @@ export function VideoActions(props: VideoActionsProps) {
             </button>
           </>
         )}
-      </div>
+      </div>}
     </details>
     </>
   );
