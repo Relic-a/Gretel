@@ -109,7 +109,6 @@ export default function Home() {
   const [savedVideoIds, setSavedVideoIds] = useState<Set<string>>(new Set());
   const [likedVideoIds, setLikedVideoIds] = useState<Set<string>>(new Set());
   const [activeVideo, setActiveVideo] = useState<FeedVideo | null>(null);
-  const [searchQuery, setSearchQuery] = useState("");
   const [searchedQuery, setSearchedQuery] = useState("");
   const [searchResults, setSearchResults] = useState<FeedVideo[] | null>(null);
   const [searching, setSearching] = useState(false);
@@ -1175,10 +1174,7 @@ export default function Home() {
     setIsRefreshing(true);
     try {
       if (searchResults !== null) {
-        const query = (searchedQuery || searchQuery).trim();
-        if (query) {
-          await searchForVideos(query);
-        }
+        await searchForVideos(searchedQuery);
         return;
       }
       if (section === "channels") {
@@ -1201,7 +1197,7 @@ export default function Home() {
     } finally {
       setIsRefreshing(false);
     }
-  }, [profileId, searchQuery, searchedQuery, searchResults, section, tags, channels, feed, openedChannel, channelBrowser.refresh]);
+  }, [profileId, searchedQuery, searchResults, section, tags, channels, feed, openedChannel, channelBrowser.refresh]);
 
   useEffect(() => {
     function handleRefreshShortcut(event: KeyboardEvent) {
@@ -1215,7 +1211,7 @@ export default function Home() {
     return () => window.removeEventListener("keydown", handleRefreshShortcut);
   }, [refreshVideos]);
 
-  async function searchForVideos(query = searchQuery.trim()) {
+  async function searchForVideos(query: string) {
     const trimmed = query.trim();
     if (!profileId || trimmed.length < 2) return;
 
@@ -1289,20 +1285,10 @@ export default function Home() {
     }
   }
 
-  function handleSearchQueryChange(value: string) {
-    setSearchQuery(value);
-    if (value.trim().length === 0) {
-      resetSearchRequest();
-      if (searchResults !== null) {
-        setSearchResults(null);
-      }
-      setSearchedQuery("");
-    }
-  }
-
-  function submitSearch(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    void searchForVideos();
+  function clearSearch() {
+    resetSearchRequest();
+    setSearchResults(null);
+    setSearchedQuery("");
   }
 
   function addNewProfileTag(value: string) {
@@ -1545,10 +1531,7 @@ export default function Home() {
 
       // Refresh feed state so the pool refills behind the optimistic removal.
       if (searchResults !== null) {
-        const query = (searchedQuery || searchQuery).trim();
-        if (query) {
-          await searchForVideos(query);
-        }
+        await searchForVideos(searchedQuery);
       } else if (section === "home") {
         await requestFeed({ resetFeed: true, buildIfMissing: true });
       }
@@ -1741,15 +1724,14 @@ export default function Home() {
         activeSection={section}
         showProfileMenu={showProfileMenu}
         developerAnalytics={settings.developerAnalytics === true}
-        searchQuery={searchQuery}
         searching={searching}
         refreshing={isRefreshing}
         onHome={openHome}
         onSaved={openSaved}
         onHistory={openHistory}
         onChannels={openChannels}
-        onSearchQueryChange={handleSearchQueryChange}
-        onSearch={submitSearch}
+        onClearSearch={clearSearch}
+        onSearch={searchForVideos}
         onRefresh={() => void refreshVideos()}
         onToggleProfileMenu={() => setShowProfileMenu(!showProfileMenu)}
         onCloseProfileMenu={() => setShowProfileMenu(false)}
@@ -2029,7 +2011,7 @@ export default function Home() {
 
       {booted && !searching && (searchResults !== null || (section !== "saved" && section !== "channels")) && (visibleVideos.length > 0 || (loading && section === "home") || (section === "history" && historyVideos.length > 0)) && !activeVideo && (
         <FeedView
-          title={searchResults !== null ? `Search results for “${searchedQuery || searchQuery.trim()}”` : section === "history" ? "History" : ""}
+          title={searchResults !== null ? `Search results for “${searchedQuery}”` : section === "history" ? "History" : ""}
           subtitle={
             searchResults !== null
               ? "Results are filtered against this profile’s interests."

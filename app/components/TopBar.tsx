@@ -11,15 +11,14 @@ type TopBarProps = {
   activeSection: "home" | "saved" | "history" | "channels";
   showProfileMenu: boolean;
   developerAnalytics: boolean;
-  searchQuery: string;
   searching: boolean;
   refreshing: boolean;
   onHome: () => void;
   onSaved: () => void;
   onHistory: () => void;
   onChannels: () => void;
-  onSearchQueryChange: (query: string) => void;
-  onSearch: (event: React.FormEvent<HTMLFormElement>) => void;
+  onClearSearch: () => void;
+  onSearch: (query: string) => void;
   onRefresh: () => void;
   onToggleProfileMenu: () => void;
   onSelectProfile: (profileId: string) => void;
@@ -33,6 +32,7 @@ type TopBarProps = {
 
 export function TopBar(props: TopBarProps) {
   const [isReady, setIsReady] = useState(false);
+  const [searchDraft, setSearchDraft] = useState("");
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   usePopoverDismissal(profileMenuRef, () => {
     props.onCloseProfileMenu();
@@ -47,6 +47,11 @@ export function TopBar(props: TopBarProps) {
   }, []);
 
   if (!isReady) return null;
+
+  function updateSearchDraft(value: string) {
+    setSearchDraft(value);
+    if (!value.trim()) props.onClearSearch();
+  }
 
   const renderNavigation = (mobile: boolean) => (
       <nav className={`section-tabs ${mobile ? "mobile-tabs" : "desktop-tabs"}`} aria-label="Video sections">
@@ -72,7 +77,10 @@ export function TopBar(props: TopBarProps) {
         Gretel
       </button>
       {renderNavigation(false)}
-      <form className="topbar-search" role="search" onSubmit={props.onSearch}>
+      <form className="topbar-search" role="search" onSubmit={(event) => {
+        event.preventDefault();
+        props.onSearch(searchDraft);
+      }}>
         {props.searching ? (
           <Loader2 aria-hidden="true" size={17} className="spin" />
         ) : (
@@ -80,11 +88,11 @@ export function TopBar(props: TopBarProps) {
         )}
         <input
           type="search"
-          value={props.searchQuery}
-          onChange={(event) => props.onSearchQueryChange(event.target.value)}
+          value={searchDraft}
+          onChange={(event) => updateSearchDraft(event.target.value)}
           onKeyDown={(event) => {
             if (event.key === "Escape") {
-              props.onSearchQueryChange("");
+              updateSearchDraft("");
             }
           }}
           placeholder="Search videos"
