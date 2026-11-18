@@ -69,6 +69,7 @@ function authedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Resp
 const clientStateKey = "gretel.clientState.v2";
 const feedCachePrefix = "gretel.feedCache.v1";
 const activeVideoSessionKey = "gretel.activeVideo.v1";
+const historyPageSize = 48;
 const starterTagSuggestions = ["AI engineering", "TypeScript", "product design"];
 
 type CachedFeed = FeedResponse & {
@@ -102,6 +103,7 @@ export default function Home() {
   const [savedVideos, setSavedVideos] = useState<FeedVideo[]>([]);
   const [historyVideos, setHistoryVideos] = useState<FeedVideo[]>([]);
   const [historyQuery, setHistoryQuery] = useState("");
+  const [historyPage, setHistoryPage] = useState(0);
   const savedCollections = useSavedCollections(profileId, authedFetch);
   const savedItems = savedCollections.state.items;
   const savedFolders = savedCollections.state.folders;
@@ -242,8 +244,10 @@ export default function Home() {
         normalize(`${video.title} ${video.author}`).includes(historyQueryNormalized)
       )
     : historyVideos;
-  const visibleVideos =
-    section === "history" && searchResults === null ? matchedHistoryVideos : sectionVideos;
+  const isHistoryView = section === "history" && searchResults === null;
+  const visibleVideos = isHistoryView ? matchedHistoryVideos : sectionVideos;
+  const historyPageCount = Math.ceil(matchedHistoryVideos.length / historyPageSize);
+  const visibleHistoryPage = Math.min(historyPage, Math.max(0, historyPageCount - 1));
   const sideVideos = orderedSideVideos(visibleVideos, activeVideo, feed?.upNextByVideoId);
   const playlistNextVideoId = useMemo(() => {
     const autoplayIds = playlistDetails?.autoplayVideoIds || [];
@@ -810,6 +814,7 @@ export default function Home() {
       setSection("home");
       setSavedVideos([]);
       setHistoryVideos([]);
+      setHistoryPage(0);
       setSavedVideoIds(new Set());
       setLikedVideoIds(new Set());
       clearCachedFeed(data.profileId || "");
@@ -845,6 +850,7 @@ export default function Home() {
     setActiveVideo(null);
     setSavedVideos([]);
     setHistoryVideos([]);
+    setHistoryPage(0);
     setSavedVideoIds(new Set());
     setLikedVideoIds(new Set());
     writeRoute("home");
@@ -1778,6 +1784,7 @@ export default function Home() {
           writeRoute("home");
           setSavedVideos([]);
           setHistoryVideos([]);
+          setHistoryPage(0);
           setSavedVideoIds(new Set());
           setLikedVideoIds(new Set());
           void loadSavedVideos(nextProfileId).catch((caught) =>
@@ -2037,7 +2044,9 @@ export default function Home() {
               ? "Videos that crossed your watch threshold."
               : ""
           }
-          videos={visibleVideos}
+          videos={isHistoryView
+            ? matchedHistoryVideos.slice(visibleHistoryPage * historyPageSize, (visibleHistoryPage + 1) * historyPageSize)
+            : visibleVideos}
           subscriptions={subscriptions}
           savedVideoIds={savedVideoIds}
           likedVideoIds={likedVideoIds}
@@ -2063,7 +2072,15 @@ export default function Home() {
           onRemoveChannel={removeChannel}
           onOpenChannel={openVideoChannel}
           searchValue={section === "history" ? historyQuery : undefined}
-          onSearchChange={section === "history" ? setHistoryQuery : undefined}
+          onSearchChange={section === "history" ? (query) => {
+            setHistoryQuery(query);
+            setHistoryPage(0);
+          } : undefined}
+          pagination={isHistoryView && historyPageCount > 1 ? {
+            page: visibleHistoryPage,
+            pageCount: historyPageCount,
+            onPageChange: setHistoryPage
+          } : undefined}
           searchPlaceholder="Search history"
           emptyMessage="No watched videos match your search."
         />
