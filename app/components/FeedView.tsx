@@ -40,11 +40,23 @@ type FeedViewProps = {
   onSearchChange?: (value: string) => void;
   searchPlaceholder?: string;
   emptyMessage?: string;
+  pagination?: {
+    page: number;
+    pageCount: number;
+    onPageChange: (page: number) => void;
+  };
 };
 
 export function FeedView(props: FeedViewProps) {
   const loaderRef = useRef<HTMLDivElement | null>(null);
   const loadMoreRequestedRef = useRef(false);
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
+  const pagination = props.pagination;
+
+  function changePage(page: number) {
+    pagination?.onPageChange(page);
+    headingRef.current?.focus();
+  }
 
   useEffect(() => {
     if (!props.loading) {
@@ -119,7 +131,7 @@ export function FeedView(props: FeedViewProps) {
       {(props.title || props.onSearchChange) && <div className="feed-heading">
         {props.title && (
           <div>
-            <h1>{props.title}</h1>
+            <h1 ref={headingRef} tabIndex={pagination ? -1 : undefined}>{props.title}</h1>
             <p>{props.subtitle}</p>
           </div>
         )}
@@ -191,6 +203,17 @@ export function FeedView(props: FeedViewProps) {
       )}
 
       <div ref={loaderRef} className="feed-loader">
+        {pagination && (
+          <nav className="history-pagination" aria-label="History pages">
+            <button type="button" className="secondary-button" disabled={pagination.page === 0} onClick={() => changePage(pagination.page - 1)}>
+              Previous page
+            </button>
+            <span>Page {pagination.page + 1} of {pagination.pageCount}</span>
+            <button type="button" className="secondary-button" disabled={pagination.page + 1 === pagination.pageCount} onClick={() => changePage(pagination.page + 1)}>
+              Next page
+            </button>
+          </nav>
+        )}
         {props.autoLoadMore === false && props.canAskForMore && !props.loading && <button type="button" className="action-button" onClick={loadMore}>Load more videos</button>}
         {props.loading && props.videos.length > 0 && <LoaderCircle className="spinner" size={20} aria-hidden="true" />}
         <span className="loader-copy">
