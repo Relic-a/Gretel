@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import "./styles.css";
-import "./landing.css";
 import { siteUrl } from "./site";
 
 const spaceMono = localFont({

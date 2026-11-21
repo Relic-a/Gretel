@@ -82,7 +82,12 @@ export default function Home() {
   useHistorySwipe();
   const auth = useGretelAuth();
   const [profiles, setProfiles] = useState<Profile[]>([]);
-  const [profileId, setProfileId] = useState("");
+  const [profileId, setProfileIdState] = useState("");
+  const profileSelectionRef = useRef({ id: "" });
+  const setProfileId = useCallback((id: string) => {
+    if (profileSelectionRef.current.id !== id) profileSelectionRef.current = { id };
+    setProfileIdState(id);
+  }, []);
   const [profileName, setProfileName] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [channels, setChannels] = useState<string[]>([]);
@@ -349,11 +354,17 @@ export default function Home() {
       }
 
       if (selectedProfileId) {
-        await loadSavedVideos(selectedProfileId);
-        await loadLikedVideos(selectedProfileId);
+        const selection = profileSelectionRef.current;
+        const reportLibraryError = (caught: unknown) => {
+          if (!disposed && profileSelectionRef.current === selection) {
+            setError(caught instanceof Error ? caught.message : "Could not load your library.");
+          }
+        };
+        void loadSavedVideos(selectedProfileId).catch(reportLibraryError);
+        void loadLikedVideos(selectedProfileId).catch(reportLibraryError);
 
         if (route.section === "history") {
-          await loadHistoryVideos(selectedProfileId);
+          void loadHistoryVideos(selectedProfileId).catch(reportLibraryError);
         }
 
         const shouldRequestHomeFeed =
@@ -374,6 +385,7 @@ export default function Home() {
     }
 
     boot().catch((caught) => {
+      if (disposed) return;
       setError(caught instanceof Error ? caught.message : "Could not start Gretel.");
       setBooted(true);
     });
@@ -958,8 +970,9 @@ export default function Home() {
       return;
     }
 
+    const selection = profileSelectionRef.current;
     const body = await savedCollections.refresh(nextProfileId);
-    if (body) {
+    if (body && profileSelectionRef.current === selection && selection.id === nextProfileId) {
       syncSavedCollectionsSnapshot(body);
     }
   }
@@ -969,8 +982,11 @@ export default function Home() {
       return;
     }
 
+    const selection = profileSelectionRef.current;
     const response = await authedFetch(`/api/liked-videos?profileId=${encodeURIComponent(nextProfileId)}`);
     const data = await response.json();
+
+    if (profileSelectionRef.current !== selection || selection.id !== nextProfileId) return;
 
     if (!response.ok) {
       throw new Error(data.error || "Could not load liked videos.");
@@ -984,8 +1000,11 @@ export default function Home() {
       return;
     }
 
+    const selection = profileSelectionRef.current;
     const response = await authedFetch(`/api/history?profileId=${encodeURIComponent(nextProfileId)}`);
     const data = await response.json();
+
+    if (profileSelectionRef.current !== selection || selection.id !== nextProfileId) return;
 
     if (!response.ok) {
       throw new Error(data.error || "Could not load history.");

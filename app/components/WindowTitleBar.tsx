@@ -13,6 +13,7 @@ export function WindowTitleBar() {
 
     document.documentElement.classList.add("tauri-app");
     const appWindow = getCurrentWindow();
+    const isLinux = /Linux/i.test(navigator.userAgent);
     let disposed = false;
     let unlisten: (() => void) | undefined;
 
@@ -37,7 +38,7 @@ export function WindowTitleBar() {
     syncMaximized();
     void appWindow.onResized(() => {
       syncMaximized();
-      nudgeRepaint();
+      if (isLinux) nudgeRepaint();
     }).then((stopListening) => {
       if (disposed) stopListening();
       else unlisten = stopListening;

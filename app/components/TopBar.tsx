@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef } from "react";
 import { Activity, Bookmark, ChevronDown, History, Home, ListVideo, Loader2, RefreshCw, Search, Settings, Users } from "lucide-react";
 
 import { profileInitials } from "./profile-identity";
@@ -32,7 +32,6 @@ type TopBarProps = {
 };
 
 export function TopBar(props: TopBarProps) {
-  const [isReady, setIsReady] = useState(false);
   const profileMenuRef = useRef<HTMLDivElement | null>(null);
   usePopoverDismissal(profileMenuRef, () => {
     props.onCloseProfileMenu();
@@ -40,13 +39,6 @@ export function TopBar(props: TopBarProps) {
       profileMenuRef.current.querySelector<HTMLButtonElement>(".profile-button")?.focus();
     }
   }, props.showProfileMenu);
-
-  useEffect(() => {
-    // Only render full UI on client to prevent hydration errors.
-    setIsReady(true);
-  }, []);
-
-  if (!isReady) return null;
 
   const renderNavigation = (mobile: boolean) => (
       <nav className={`section-tabs ${mobile ? "mobile-tabs" : "desktop-tabs"}`} aria-label="Video sections">
