@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { WindowTitleBar } from "../components/WindowTitleBar";
+import "../styles.css";
 import { UpdateManager } from "../components/UpdateManager";
 
 export const metadata: Metadata = {
@@ -10,10 +10,9 @@ export const metadata: Metadata = {
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
-    <>
-      <WindowTitleBar />
+    <div className="desktop-workspace">
       {children}
       <UpdateManager />
-    </>
+    </div>
   );
 }

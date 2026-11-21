@@ -1,0 +1,54 @@
+:root {
+  color-scheme: dark;
+  --color-page: #0a0a0c;
+  --color-surface: #141416;
+  --color-surface-soft: #1d1d20;
+  --color-text: #e0e0e0;
+  --color-muted: #888888;
+  --color-faint: #555555;
+  --color-border: #2a2a2a;
+  --color-border-strong: #444444;
+  --color-brand: #e44232;
+  --color-brand-strong: #ff5242;
+  --color-brand-soft: #421a15;
+  --color-danger: #f65874;
+  --color-danger-soft: #3a161f;
+  --shadow-popover: 0 30px 80px rgb(0 0 0 / 0.8);
+  --shadow-card: 0 4px 20px rgb(0 0 0 / 0.4);
+  --radius-card: 0px;
+  --radius-control: 0px;
+  --window-titlebar-height: 0px;
+  --topbar-height: 76px;
+  --font-ui: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--color-page);
+  color: var(--color-text);
+  font-family: var(--font-space-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  letter-spacing: -0.02em;
+  background-image: linear-gradient(rgba(20, 20, 22, 0.8) 1px, transparent 1px), linear-gradient(90deg, rgba(20, 20, 22, 0.8) 1px, transparent 1px);
+  background-size: 40px 40px;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+/* Reset first: without an explicit surface every unstyled <button> would fall
+   back to the platform widget chrome (a silver "buttonface" slab with unreadable
+   label colour). Every button below opts into its own surface instead. */
+button {
+  border: 0;
+  cursor: pointer;
+  background: transparent;
+  color: inherit;
+}

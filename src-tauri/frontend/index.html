@@ -5,38 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Gretel</title>
     <style>
-      :root { color-scheme: dark; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
+      :root { color-scheme: dark; font-family: ui-sans-serif, system-ui, "Segoe UI", sans-serif; }
       * { box-sizing: border-box; }
       body {
         align-items: center;
-        background-color: #0a0a0c;
-        background-image: linear-gradient(rgb(20 20 22 / 0.8) 1px, transparent 1px), linear-gradient(90deg, rgb(20 20 22 / 0.8) 1px, transparent 1px);
-        background-size: 40px 40px;
-        color: #e0e0e0;
+        background-color: #0c0c0e;
+        color: #ececee;
         display: flex;
         height: 100vh;
         justify-content: center;
         margin: 0;
-        padding-top: 38px;
+        padding-top: 50px;
       }
-      .titlebar { align-items: stretch; background: #0d0d10; border-bottom: 1px solid #242429; color: #b8b8bd; display: flex; height: 38px; inset: 0 0 auto; justify-content: space-between; position: fixed; user-select: none; }
-      .drag-region { align-items: center; display: flex; flex: 1; gap: 9px; min-width: 0; padding-left: 12px; }
-      .app-mark { background: #e44232; box-shadow: 2px 2px 0 #481b17; color: white; display: grid; font-size: 0.68rem; font-weight: 900; height: 20px; line-height: 1; place-items: center; width: 20px; }
-      .window-title { font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
-      .controls { display: flex; height: 100%; }
-      .control { background: transparent; border: 0; color: #a4a4aa; cursor: pointer; display: grid; height: 100%; padding: 0; place-items: center; width: 46px; }
+      .titlebar { align-items: stretch; background: #0c0c0e; border-bottom: 1px solid rgb(255 255 255 / 0.07); color: #b8b8bd; display: flex; height: 50px; inset: 0 0 auto; justify-content: space-between; position: fixed; user-select: none; }
+      .drag-region { align-items: center; display: flex; flex: 1; gap: 9px; min-width: 0; padding-left: 24px; }
+      .app-mark { background: #e44232; border-radius: 5px; color: white; display: grid; font-size: 0.75rem; font-weight: 600; height: 20px; line-height: 1; place-items: center; width: 20px; }
+      .window-title { font-size: 0.9375rem; font-weight: 600; color: #ececee; }
+      .controls { display: flex; height: 100%; margin-right: 16px; }
+      .control { background: transparent; border: 0; color: #a4a4aa; cursor: pointer; display: grid; height: 100%; padding: 0; place-items: center; width: 34px; }
       .control:hover { background: #27272c; color: white; }
       .control.close:hover { background: #d63b32; }
       .control:focus-visible { outline: 2px solid #e44232; outline-offset: -2px; }
       .control svg { fill: none; stroke: currentColor; stroke-width: 1.6; }
       .restore { border: 1.5px solid currentColor; display: none; height: 9px; position: relative; width: 11px; }
-      .restore::before { background: #0d0d10; border: 1.5px solid currentColor; content: ""; height: 8px; left: 3px; position: absolute; top: -4px; width: 9px; }
+      .restore::before { background: #0c0c0e; border: 1.5px solid currentColor; content: ""; height: 8px; left: 3px; position: absolute; top: -4px; width: 9px; }
       .control:hover .restore::before { background: #27272c; }
       .startup { display: grid; justify-items: center; gap: 20px; }
-      .brand { color: #e44232; font-size: 2rem; font-weight: 900; letter-spacing: 0.1em; margin: 0; text-transform: uppercase; text-shadow: 2px 2px 0 #421a15; }
+      .brand { font-size: 1.375rem; font-weight: 500; margin: 0; }
       .indicator { background: #2a2a2a; height: 2px; overflow: hidden; width: 180px; }
       .indicator::after { animation: loading 1.1s ease-in-out infinite; background: #e44232; content: ""; display: block; height: 100%; width: 45%; }
-      #startup-status { color: #888; font-size: 0.75rem; margin: 0; max-width: min(520px, calc(100vw - 48px)); text-align: center; }
+      #startup-status { color: #94949c; font-size: 0.75rem; margin: 0; max-width: min(520px, calc(100vw - 48px)); text-align: center; }
       body[data-state="error"] .indicator { display: none; }
       body[data-state="error"] #startup-status { color: #f65874; }
       @keyframes loading { from { transform: translateX(-110%); } to { transform: translateX(330%); } }

@@ -10,6 +10,7 @@ import { AuthGate } from "./components/AuthGate";
 import { useGretelAuth } from "./components/use-gretel-auth";
 import { EmptyState } from "./components/EmptyState";
 import { TopBar } from "./components/TopBar";
+import { WindowTitleBar } from "./components/WindowTitleBar";
 import { ChannelsView, ChannelHeading } from "./components/ChannelsView";
 import { useChannelBrowser } from "./components/use-channel-browser";
 import { useHistorySwipe } from "./components/use-history-swipe";
@@ -69,7 +70,7 @@ function authedFetch(input: RequestInfo | URL, init?: RequestInit): Promise<Resp
 const clientStateKey = "gretel.clientState.v2";
 const feedCachePrefix = "gretel.feedCache.v1";
 const activeVideoSessionKey = "gretel.activeVideo.v1";
-const starterTagSuggestions = ["AI engineering", "TypeScript", "product design"];
+const starterTagSuggestions = ["AI engineering", "TypeScript", "Product design"];
 
 type CachedFeed = FeedResponse & {
   tags?: string[];
@@ -92,7 +93,7 @@ export default function Home() {
   const [tags, setTags] = useState<string[]>([]);
   const [channels, setChannels] = useState<string[]>([]);
   const [newProfileTags, setNewProfileTags] = useState<string[]>([]);
-  const [newProfileChannels, setNewProfileChannels] = useState<string[]>([]);
+  const [newProfileChannels, setNewProfileChannels] = useState<ChannelResult[]>([]);
   const [tagDraft, setTagDraft] = useState("");
   const [channelDraft, setChannelDraft] = useState("");
   const [channelResults, setChannelResults] = useState<ChannelResult[]>([]);
@@ -628,7 +629,7 @@ export default function Home() {
       return;
     }
 
-    // Keep currently matching results visible during typing to prevent flashing
+    // Keep matching results available during the debounce.
     setChannelResults((prev) => {
       if (prev.length === 0) {
         return prev;
@@ -637,7 +638,7 @@ export default function Home() {
       const matching = prev.filter((c) =>
         c.name.toLowerCase().replace(/\s+/g, "").includes(cleanNorm)
       );
-      return matching.length > 0 ? matching : prev;
+      return matching;
     });
 
     setIsSearchingChannels(true);
@@ -756,12 +757,14 @@ export default function Home() {
   async function createProfileAndBuild(event?: FormEvent) {
     event?.preventDefault();
 
-    if (!profileName.trim()) {
-      return;
-    }
+    if (loading) return;
 
-    const createdTags = newProfileTags;
-    const createdChannels = newProfileChannels;
+    const draftTopic = tagDraft.replace(/\s+/g, " ").trim();
+    const createdTags = draftTopic.length > 1 && !newProfileTags.some((tag) => normalize(tag) === normalize(draftTopic))
+      ? [...newProfileTags, draftTopic]
+      : newProfileTags;
+    const createdChannels = newProfileChannels.map((channel) => channel.name);
+    const name = (profileName.trim() || createdTags[0] || createdChannels[0] || "Main").slice(0, 60);
 
     const hasKey =
       Boolean(settings.openRouterApiKey) &&
@@ -798,7 +801,7 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          name: profileName,
+          name,
           tags: createdTags,
           channels: createdChannels
         })
@@ -812,6 +815,8 @@ export default function Home() {
       setProfiles(data.profiles || []);
       setProfileId(data.profileId || "");
       setProfileName("");
+      setTagDraft("");
+      setChannelDraft("");
       setTags(createdTags);
       setChannels(createdChannels);
       setNewProfileTags([]);
@@ -826,6 +831,11 @@ export default function Home() {
       setLikedVideoIds(new Set());
       clearCachedFeed(data.profileId || "");
       writeRoute("home");
+
+      if (createdTags.length === 0 && createdChannels.length === 0) {
+        setLoading(false);
+        return;
+      }
 
       setBuildingLabel("Finding videos for your feed...");
       await requestFeed({
@@ -1334,11 +1344,11 @@ export default function Home() {
     setTagDraft("");
   }
 
-  function addNewProfileChannel(value: string) {
-    const cleaned = value.replace(/\s+/g, " ").trim();
+  function addNewProfileChannel(channel: ChannelResult) {
+    const name = channel.name.replace(/\s+/g, " ").trim();
 
-    if (cleaned.length > 1 && !newProfileChannels.some((channel) => normalize(channel) === normalize(cleaned))) {
-      setNewProfileChannels([...newProfileChannels, cleaned]);
+    if (name.length > 1 && !newProfileChannels.some((entry) => normalize(entry.name) === normalize(name))) {
+      setNewProfileChannels([...newProfileChannels, { ...channel, name }]);
     }
 
     setChannelDraft("");
@@ -1346,7 +1356,7 @@ export default function Home() {
   }
 
   function removeNewProfileChannel(value: string) {
-    setNewProfileChannels(newProfileChannels.filter((channel) => normalize(channel) !== normalize(value)));
+    setNewProfileChannels(newProfileChannels.filter((channel) => normalize(channel.name) !== normalize(value)));
   }
 
   function addChannel(value: string) {
@@ -1740,7 +1750,8 @@ export default function Home() {
 
   if (showAccessGate) {
     return (
-      <main className="app-shell">
+      <main className="app-shell app-shell-access">
+        <WindowTitleBar />
         <AuthGate
           pending={auth.pending}
           error={auth.error}
@@ -2088,6 +2099,13 @@ export default function Home() {
         />
       )}
 
+      {booted && !loading && !searching && !activeVideo && activeProfile && !feed && !error &&
+        searchResults === null && section === "home" && tags.length === 0 && channels.length === 0 && (
+          <EmptyState title={`${activeProfile.name} is ready`} actionLabel="Search videos" onAction={() => document.querySelector<HTMLInputElement>(".topbar-search input")?.focus()}>
+            Search for videos to get started.
+          </EmptyState>
+        )}
+
       {booted && !searching && searchResults === null && section === "history" && historyVideos.length === 0 && !activeVideo && (
         <><div className="feed-heading"><h1>History</h1></div><EmptyState title="No watched videos yet" actionLabel="Browse videos" onAction={openHome}>Videos you watch will appear here.</EmptyState></>
       )}
@@ -2103,7 +2121,7 @@ export default function Home() {
       {(needsProfile || manageProfiles) && (
         <ProfileModal
           manageProfiles={manageProfiles}
-          feedOpen={Boolean(feed)}
+          feedOpen={Boolean(feed) || (manageProfiles && profiles.length > 0)}
           profiles={profiles}
           profileName={profileName}
           tags={newProfileTags}

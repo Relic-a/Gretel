@@ -1,69 +1,69 @@
-import { useId } from "react";
+import { X } from "lucide-react";
+import { useId, useRef } from "react";
 
-export type TagEditorProps = {
+type TagEditorProps = {
   label: string;
-  helperText?: string;
   values: string[];
   draft: string;
   setDraft: (value: string) => void;
   addValue: (value: string) => void;
   removeValue: (value: string) => void;
   placeholder: string;
-  suggestions?: string[];
-  dropdown?: React.ReactNode;
-  onKeyDown?: (event: React.KeyboardEvent<HTMLInputElement>) => void;
-  onFocus?: () => void;
-  inputRef?: React.Ref<HTMLInputElement>;
-  containerRef?: React.Ref<HTMLDivElement>;
+  suggestions: string[];
 };
 
 export function TagEditor(props: TagEditorProps) {
   const inputId = useId();
+  const inputRef = useRef<HTMLInputElement>(null);
+
   return (
-    <div ref={props.containerRef} className="tag-editor">
+    <div className="tag-editor">
       <label className="tag-label" htmlFor={inputId}>{props.label}</label>
-      {props.helperText && <small id={`${inputId}-help`} className="tag-help">{props.helperText}</small>}
-      <div className="tag-input-container">
-        <div className="tag-input">
-          {props.values.map((value) => (
-            <button type="button" key={value} aria-label={`Remove ${value}`} onClick={() => props.removeValue(value)}>
-              {value}
-            </button>
-          ))}
-          <input
-            id={inputId}
-            aria-describedby={props.helperText ? `${inputId}-help` : undefined}
-            ref={props.inputRef}
-            maxLength={80}
-            value={props.draft}
-            onChange={(event) => props.setDraft(event.target.value)}
-            onKeyDown={(event) => {
-              if (props.onKeyDown) {
-                props.onKeyDown(event);
-                if (event.defaultPrevented) {
-                  return;
-                }
-              }
-              if (event.key === "Enter" || event.key === ",") {
-                event.preventDefault();
-                props.addValue(props.draft);
-              }
+      <div className="tag-input">
+        {props.values.map((value) => (
+          <button
+            type="button"
+            key={value}
+            aria-label={`Remove ${value}`}
+            onClick={() => {
+              props.removeValue(value);
+              inputRef.current?.focus();
             }}
-            onFocus={props.onFocus}
-            onBlur={() => {
-              if (!props.dropdown) {
-                props.addValue(props.draft);
-              }
-            }}
-            placeholder={props.placeholder}
-          />
-        </div>
-        {props.dropdown}
+          >
+            {value} <X size={12} aria-hidden="true" />
+          </button>
+        ))}
+        <input
+          id={inputId}
+          ref={inputRef}
+          maxLength={80}
+          value={props.draft}
+          onChange={(event) => props.setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing) return;
+            if (event.key === "Backspace" && !props.draft && props.values.length > 0) {
+              event.preventDefault();
+              props.removeValue(props.values[props.values.length - 1]);
+            }
+            if (event.key === "Enter" || event.key === ",") {
+              event.preventDefault();
+              props.addValue(props.draft);
+            }
+          }}
+          placeholder={props.placeholder}
+        />
       </div>
-      {props.suggestions && props.suggestions.length > 0 && (
+      {props.suggestions.length > 0 && (
         <div className="suggestion-row">
           {props.suggestions.map((suggestion) => (
-            <button type="button" key={suggestion} onClick={() => props.addValue(suggestion)}>
+            <button
+              type="button"
+              key={suggestion}
+              onClick={() => {
+                props.addValue(suggestion);
+                inputRef.current?.focus();
+              }}
+            >
               + {suggestion}
             </button>
           ))}

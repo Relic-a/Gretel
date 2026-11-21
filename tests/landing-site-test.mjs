@@ -26,6 +26,7 @@ const footer = read("app/components/landing/SiteFooter.tsx");
 const rootLayout = read("app/layout.tsx");
 const appRoute = read("app/app/page.tsx");
 const appLayout = read("app/app/layout.tsx");
+const topBar = read("app/components/TopBar.tsx");
 const diagnosticsLayout = read("app/diagnostics/layout.tsx");
 const diagnosticsPage = read("app/diagnostics/page.tsx");
 const launcher = read("src-tauri/src/lib.rs");
@@ -41,7 +42,8 @@ assert.match(footer, /href="\/terms"/);
 assert.doesNotMatch(landing, /^"use client"/m, "landing page should stay a server component");
 assert.match(appRoute, /from "\.\.\/gretel-app"/, "the /app route should render the desktop UI");
 assert.doesNotMatch(rootLayout, /WindowTitleBar/, "the title bar must not wrap marketing or legal pages");
-assert.match(appLayout, /WindowTitleBar/);
+assert.match(appLayout, /desktop-workspace/);
+assert.match(topBar, /<WindowTitleBar inline \/>/, "the desktop header should include window controls");
 assert.match(diagnosticsLayout, /WindowTitleBar/, "diagnostics shares the desktop title bar");
 assert.doesNotMatch(diagnosticsPage, /href="\/"/, "diagnostics must not send users back to the marketing page");
 assert.match(

@@ -111,6 +111,15 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
         ) : null}
       </div>
       <div className="video-meta">
+        <div className="card-avatar" aria-hidden="true">
+          {props.video.channelAvatarUrl ? (
+            <img className="avatar" src={props.video.channelAvatarUrl} alt="" loading="lazy" />
+          ) : (
+            <span className="avatar">
+              {props.video.author.slice(0, 1).toUpperCase()}
+            </span>
+          )}
+        </div>
         <div className="video-title-row">
           <h2 title={props.video.title}>{props.video.title}</h2>
           <VideoActions
@@ -132,21 +141,12 @@ export const VideoCard = React.memo(function VideoCard(props: VideoCardProps) {
           onClick={() => props.onOpenChannel?.(props.video)}
           aria-label={`Open channel ${props.video.author}`}
         >
-          {props.video.channelAvatarUrl ? (
-            <img className="avatar" src={props.video.channelAvatarUrl} alt="" loading="lazy" />
-          ) : (
-            <span className="avatar" aria-hidden="true">
-              {props.video.author.slice(0, 1).toUpperCase()}
+          <span className="channel-name" title={props.video.author}>{props.video.author}</span>
+          {(metaLine || (isPlaylist && playlistCount > 0)) && (
+            <span className="published-line" title={metaLine}>
+              {isPlaylist && playlistCount > 0 ? `${playlistCount} videos${metaLine ? ` · ${metaLine}` : ""}` : metaLine}
             </span>
           )}
-          <span className="byline-copy">
-            <span className="channel-name" title={props.video.author}>
-              {props.video.author}
-            </span>
-            <span className="published-line" title={metaLine}>
-              {isPlaylist && playlistCount > 0 ? `${playlistCount} videos · ${metaLine}` : metaLine}
-            </span>
-          </span>
         </button>
         {props.showSubscribe && (
           <button

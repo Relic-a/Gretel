@@ -21,7 +21,7 @@
         "minHeight": 480,
         "decorations": false,
         "shadow": true,
-        "backgroundColor": "#0a0a0c",
+        "backgroundColor": "#0c0c0e",
         "url": "index.html"
       }
     ],

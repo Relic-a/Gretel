@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { Activity, Bookmark, ChevronDown, History, Home, ListVideo, Loader2, RefreshCw, Search, Settings, Users } from "lucide-react";
 
+import { WindowTitleBar } from "./WindowTitleBar";
 import { profileInitials } from "./profile-identity";
 import type { Profile } from "../types";
 import { usePopoverDismissal } from "./use-popover-dismissal";
@@ -61,6 +62,7 @@ export function TopBar(props: TopBarProps) {
     <>
     <header className="topbar">
       <button type="button" className="brand-button" onClick={props.onHome}>
+        <span className="brand-mark" aria-hidden="true">G</span>
         Gretel
       </button>
       {renderNavigation(false)}
@@ -127,6 +129,7 @@ export function TopBar(props: TopBarProps) {
             </div>
           )}
         </div>
+        <WindowTitleBar inline />
       </div>
     </header>
     {renderNavigation(true)}

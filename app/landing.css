@@ -869,3 +869,8 @@
     transition: none !important;
   }
 }
+
+.landing,
+.legal {
+  font-family: var(--font-space-mono), ui-monospace, monospace;
+}

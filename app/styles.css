@@ -1,27 +1,3 @@
-:root {
-  color-scheme: dark;
-  --color-page: #0a0a0c;
-  --color-surface: #141416;
-  --color-surface-soft: #1d1d20;
-  --color-text: #e0e0e0;
-  --color-muted: #888888;
-  --color-faint: #555555;
-  --color-border: #2a2a2a;
-  --color-border-strong: #444444;
-  --color-brand: #e44232;
-  --color-brand-strong: #ff5242;
-  --color-brand-soft: #421a15;
-  --color-danger: #f65874;
-  --color-danger-soft: #3a161f;
-  --shadow-popover: 0 30px 80px rgb(0 0 0 / 0.8);
-  --shadow-card: 0 4px 20px rgb(0 0 0 / 0.4);
-  --radius-card: 0px;
-  --radius-control: 0px;
-  --window-titlebar-height: 0px;
-  --topbar-height: 76px;
-  --font-ui: ui-sans-serif, system-ui, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-}
-
 .update-toast {
   align-items: center;
   background: rgba(20, 20, 24, 0.98);
@@ -54,37 +30,6 @@ html.tauri-app {
   --window-titlebar-height: 38px;
 }
 
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  background: var(--color-page);
-  color: var(--color-text);
-  font-family: var(--font-space-mono), ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
-  letter-spacing: -0.02em;
-  background-image: linear-gradient(rgba(20, 20, 22, 0.8) 1px, transparent 1px), linear-gradient(90deg, rgba(20, 20, 22, 0.8) 1px, transparent 1px);
-  background-size: 40px 40px;
-}
-
-button,
-input,
-select,
-textarea {
-  font: inherit;
-}
-
-/* Reset first: without an explicit surface every unstyled <button> would fall
-   back to the platform widget chrome (a silver "buttonface" slab with unreadable
-   label colour). Every button below opts into its own surface instead. */
-button {
-  border: 0;
-  cursor: pointer;
-  background: transparent;
-  color: inherit;
-}
-
 /* Keep icon geometry intact when labels and controls compete for space. */
 .lucide {
   flex-shrink: 0;
@@ -105,78 +50,73 @@ button:disabled {
   letter-spacing: 0;
 }
 
-/* Sans-serif keeps titles and supporting details quiet; mono is reserved for
-   the wordmark, ordering, and usage figures. */
 .app-shell :is(h1, h2, h3, strong, b) {
   font-weight: 500;
 }
 
 .app-shell :is(.queue-position, .playlist-position, .usage-figures strong) {
-  font-family: var(--font-space-mono), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
 }
 
-/* The app borrows YouTube's dark material language: a near-black page, one
-   neutral ramp, red reserved for brand/state, and 12px media corners. Values are
-   YouTube's own (#0f0f0f page, #272727 hover layer, #f1f1f1 / #aaa text,
-   #303030 hairlines) so the feed reads as a YouTube client at a glance. */
-body:has(.app-shell) {
-  --color-page: #0f0f0f;
-  --color-surface: #181818;
-  --color-surface-soft: #272727;
-  --color-surface-hi: #3f3f3f;
-  --color-text: #f1f1f1;
-  --color-muted: #aaaaaa;
-  --color-faint: #a0a0a0;
-  --color-border: #303030;
-  --color-border-strong: #4d4d4d;
+.desktop-workspace {
+  min-height: 100dvh;
+  background: var(--color-page);
+  color: var(--color-text);
+  --window-titlebar-height: 0px;
+  --color-page: #0c0c0e;
+  --color-surface: #141417;
+  --color-surface-soft: #1d1d21;
+  --color-surface-hi: #28282e;
+  --color-text: #ececee;
+  --color-muted: #94949c;
+  --color-faint: #82828a;
+  --color-border: rgb(255 255 255 / 0.07);
+  --color-border-strong: rgb(255 255 255 / 0.14);
   --radius-card: 12px;
-  --radius-media: 12px;
+  --radius-media: 10px;
   --radius-control: 8px;
   --radius-pill: 999px;
-  --topbar-height: 64px;
-  --type-title: 1.5rem;
+  --topbar-height: 50px;
+  --type-title: 1.25rem;
   --type-dialog: 1.25rem;
   --type-body: 1rem;
   --type-control: 0.875rem;
-  --type-meta: 0.875rem;
+  --type-meta: 0.8125rem;
   --type-number: 0.75rem;
   --line-title: 2rem;
   --line-body: 1.5rem;
-  --line-meta: 1.25rem;
+  --line-meta: 1.125rem;
   /* Media is the interface: one variable drives every feed grid. */
-  --space-inline: 12px;
-  --space-related: 8px;
-  --space-section: 24px;
-  --page-gutter: 32px;
-  --grid-min-col: 330px;
-  --grid-col-gap: 24px;
-  --grid-row-gap: 32px;
-  background-image: none;
-  background-size: 48px 48px;
+  --space-inline: 10px;
+  --space-related: 6px;
+  --space-section: 16px;
+  --page-gutter: 24px;
+  --grid-min-col: 276px;
+  --grid-col-gap: 16px;
+  --grid-row-gap: 24px;
   font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
   letter-spacing: 0;
   --shadow-popover: 0 16px 48px rgb(0 0 0 / 0.5);
 }
 
 /* Surfaces the browser draws for us still belong to the design system: the
    scrollbar, the selection, and the focus ring. YouTube themes all three. */
-html:has(body.app-shell),
-html:has(body.app-shell) body {
+.desktop-workspace {
   scrollbar-color: var(--color-border-strong) transparent;
   scrollbar-width: thin;
 }
 
-body:has(.app-shell) ::-webkit-scrollbar {
+.desktop-workspace ::-webkit-scrollbar {
   width: 14px;
   height: 14px;
 }
 
-body:has(.app-shell) ::-webkit-scrollbar-track {
+.desktop-workspace ::-webkit-scrollbar-track {
   background: transparent;
 }
 
-body:has(.app-shell) ::-webkit-scrollbar-thumb {
+.desktop-workspace ::-webkit-scrollbar-thumb {
   min-height: 56px;
   border: 4px solid transparent;
   border-radius: 9px;
@@ -184,17 +124,17 @@ body:has(.app-shell) ::-webkit-scrollbar-thumb {
   background-clip: content-box;
 }
 
-body:has(.app-shell) ::-webkit-scrollbar-thumb:hover {
+.desktop-workspace ::-webkit-scrollbar-thumb:hover {
   background-color: var(--color-muted);
 }
 
-body:has(.app-shell) ::selection {
+.desktop-workspace ::selection {
   background: rgb(228 66 50 / 0.34);
   color: #fff;
 }
 
-body:has(.app-shell) :focus-visible {
-  outline: 2px solid var(--color-brand-strong);
+.desktop-workspace :focus-visible {
+  outline: 2px solid rgb(255 255 255 / 0.56);
   outline-offset: 2px;
 }
 
@@ -222,6 +162,65 @@ body:has(.app-shell) :focus-visible {
   background: #0d0d10;
   border-bottom: 1px solid #242429;
   user-select: none;
+}
+
+.tauri-app .window-titlebar-inline {
+  position: static;
+  z-index: auto;
+  height: var(--topbar-height);
+  align-items: center;
+  background: transparent;
+  border: 0;
+  margin-inline-end: -8px;
+}
+
+.window-titlebar-inline .window-drag-region {
+  padding: 0;
+  min-width: 22px;
+  height: 100%;
+}
+
+.window-titlebar-inline .window-control {
+  width: 34px;
+}
+
+.tauri-app .app-shell-access {
+  --window-titlebar-height: var(--topbar-height);
+}
+
+.tauri-app .app-shell-access .window-titlebar {
+  padding-inline-end: 16px;
+  background: var(--color-page);
+  border-color: var(--color-border);
+}
+
+.app-shell-access .window-drag-region {
+  padding-inline-start: 24px;
+}
+
+.app-shell-access .window-app-mark {
+  border-radius: 5px;
+}
+
+.app-shell-access .window-title {
+  color: var(--color-text);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.app-shell-access .window-control {
+  width: 34px;
+}
+
+.tauri-app .app-shell-access .access-gate {
+  top: var(--window-titlebar-height);
+}
+
+.diagnostics-workspace {
+  min-height: 100dvh;
+  font-family: var(--font-space-mono), ui-monospace, monospace;
 }
 
 .window-drag-region {
@@ -317,12 +316,11 @@ body:has(.app-shell) :focus-visible {
   grid-template-columns: auto max-content minmax(100px, 1fr) max-content;
   align-items: center;
   height: var(--topbar-height);
-  gap: 16px;
-  padding: 0 32px;
-  background: rgb(15 15 15 / 0.96);
+  gap: 10px;
+  padding: 0 var(--page-gutter);
+  background: var(--color-page);
   border-bottom: 1px solid var(--color-border);
   box-shadow: none;
-  backdrop-filter: blur(8px);
 }
 
 /* No `will-change: transform` promotion on .topbar: on WebKitGTK (Tauri on
@@ -331,18 +329,30 @@ body:has(.app-shell) :focus-visible {
    their real hit boxes. The scroll-repaint win was marginal; correctness wins. */
 
 .brand-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   align-self: center;
   justify-self: start;
   padding: 0;
   background: transparent;
-  color: var(--color-brand);
-  font-family: var(--font-space-mono), ui-monospace, monospace;
-  font-size: 1.25rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: var(--color-text);
+  font-size: 0.9375rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
   text-shadow: none;
   white-space: nowrap;
+}
+
+.brand-button .brand-mark {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  color: #fff;
+  background: var(--color-brand);
+  font-size: 0.75rem;
 }
 
 .section-tabs.mobile-tabs { display: none; }
@@ -368,8 +378,8 @@ body:has(.app-shell) :focus-visible {
   color: var(--color-muted);
   font-weight: 500;
   white-space: nowrap;
-  height: 40px;
-  font-size: 0.875rem;
+  height: 34px;
+  font-size: 0.8125rem;
   border-radius: var(--radius-control);
 }
 
@@ -389,11 +399,11 @@ body:has(.app-shell) :focus-visible {
   min-width: 0;
   width: 100%;
   max-width: 520px;
-  height: 40px;
-  padding: 0 15px;
+  height: 34px;
+  padding: 0 10px;
   border: 1px solid var(--color-border);
   border-radius: var(--radius-control);
-  background: #121212;
+  background: var(--color-surface);
   color: var(--color-muted);
   transition: border-color 160ms ease, background-color 160ms ease, box-shadow 160ms ease;
 }
@@ -403,10 +413,8 @@ body:has(.app-shell) :focus-visible {
 }
 
 .topbar-search:focus-within {
-  border-color: var(--color-brand);
-  background: #0d0d0d;
+  border-color: rgb(255 255 255 / 0.28);
   color: var(--color-text);
-  box-shadow: inset 0 0 0 1px var(--color-brand);
 }
 
 .topbar-search input {
@@ -420,10 +428,10 @@ body:has(.app-shell) :focus-visible {
   min-height: 0;
   height: 100%;
   padding: 0;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
 }
 
-.topbar-search input:focus {
+.desktop-workspace .topbar-search input:focus {
   outline: none;
 }
 
@@ -452,8 +460,8 @@ body:has(.app-shell) :focus-visible {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
   flex-shrink: 0;
   border: 1px solid transparent;
   background: transparent;
@@ -472,8 +480,8 @@ body:has(.app-shell) :focus-visible {
 }
 
 .refresh-button {
-  width: 40px;
-  height: 40px;
+  width: 34px;
+  height: 34px;
   box-shadow: none;
 }
 
@@ -481,8 +489,8 @@ body:has(.app-shell) :focus-visible {
   display: flex;
   align-items: center;
   gap: 8px;
-  min-height: 40px;
-  max-width: 180px;
+  min-height: 34px;
+  max-width: 148px;
   min-width: 0;
   padding: 0 8px;
   border: 1px solid var(--color-border);
@@ -492,7 +500,7 @@ body:has(.app-shell) :focus-visible {
   font-weight: 400;
   box-shadow: none;
   transition: transform 0.1s, box-shadow 0.1s;
-  font-size: 0.875rem;
+  font-size: 0.8125rem;
 }
 
 .profile-option-name,
@@ -536,12 +544,13 @@ body:has(.app-shell) :focus-visible {
 
 .profile-popover {
   position: absolute;
-  top: 52px;
+  top: calc(100% + 8px);
   right: 0;
   display: grid;
   gap: 4px;
-  width: 280px;
-  padding: 8px;
+  width: 240px;
+  padding: 5px;
+  font-size: var(--type-control);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
   background: var(--color-surface);
@@ -554,8 +563,8 @@ body:has(.app-shell) :focus-visible {
   display: flex;
   align-items: center;
   gap: 12px;
-  min-height: 48px;
-  padding: 0 10px;
+  min-height: 34px;
+  padding: 0 8px;
   border-radius: var(--radius-control);
   background: transparent;
   color: var(--color-text);
@@ -750,6 +759,32 @@ body:has(.app-shell) :focus-visible {
   flex: 1 0 auto;
 }
 
+.video-card .video-meta {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: start;
+  align-items: start;
+  column-gap: 9px;
+  row-gap: 2px;
+}
+
+.card-avatar {
+  grid-column: 1;
+  grid-row: 1 / 3;
+}
+
+.card-avatar .avatar {
+  width: 30px;
+  height: 30px;
+}
+
+.video-card .video-title-row,
+.video-card .video-byline,
+.video-card .subscribe-button {
+  grid-column: 2;
+}
+
 .video-title-row {
   display: flex;
   align-items: flex-start;
@@ -763,17 +798,17 @@ body:has(.app-shell) :focus-visible {
   flex: 1 1 auto;
   min-width: 0;
   margin: 0;
-  font-size: var(--type-body);
-  line-height: var(--line-body);
-  max-height: calc(2 * var(--line-body));
+  font-size: 0.9rem;
+  line-height: 1.35;
+  max-height: 2.7em;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-overflow: ellipsis;
   word-break: break-word;
-  font-weight: 600;
-  letter-spacing: 0;
+  font-weight: 500;
+  letter-spacing: -0.01em;
   text-wrap: pretty;
   color: var(--color-text);
   transition: color 140ms ease;
@@ -799,9 +834,9 @@ body:has(.app-shell) :focus-visible {
 .video-actions summary {
   display: grid;
   place-items: center;
-  width: 32px;
-  height: 32px;
-  margin: -4px -6px 0 0;
+  width: 28px;
+  height: 28px;
+  margin: -5px -6px -5px 0;
   border-radius: 50%;
   background: transparent;
   color: var(--color-muted);
@@ -1101,7 +1136,7 @@ body:has(.app-shell) :focus-visible {
 }
 
 /* Global queue and intentionally quiet saved-library controls. */
-.queue-topbar-button { display: inline-flex; align-items: center; gap: 6px; min-height: 40px; border-radius: var(--radius-control); padding: 0 9px; color: var(--color-muted); background: transparent; }
+.queue-topbar-button { display: inline-flex; align-items: center; gap: 6px; min-height: 34px; font-size: var(--type-control); border-radius: var(--radius-control); padding: 0 9px; color: var(--color-muted); background: transparent; }
 .queue-topbar-button.active, .queue-topbar-button:hover { color: var(--color-text); background: var(--color-surface-soft); }
 .queue-topbar-count { display: grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; border-radius: 9px; background: var(--color-brand); color: white; font-size: 11px; font-weight: 500; }
 .global-queue { position: fixed; z-index: 30; right: 18px; top: calc(var(--window-titlebar-height) + var(--topbar-height) + 10px); width: min(390px, calc(100vw - 36px)); max-height: calc(100dvh - var(--window-titlebar-height) - var(--topbar-height) - 28px); overflow: auto; background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-card); box-shadow: var(--shadow-popover); }
@@ -1211,6 +1246,32 @@ body:has(.app-shell) :focus-visible {
   min-width: 0;
   min-height: 40px;
   width: 100%;
+}
+
+.video-card .video-byline {
+  gap: 0;
+  margin: 0;
+  min-height: 0;
+  text-align: left;
+}
+
+.video-card .video-byline .channel-name {
+  flex: 0 1 auto;
+  min-width: min(25%, 4rem);
+  font-weight: 400;
+  color: var(--color-muted);
+}
+
+.video-card .published-line {
+  display: block;
+  flex: 0 0 auto;
+  max-width: 74%;
+  color: var(--color-faint);
+}
+
+.video-card .published-line::before {
+  content: "·";
+  margin: 0 5px;
 }
 
 .byline-copy {
@@ -2655,101 +2716,11 @@ img.avatar {
   border: 0;
 }
 
-.wizard-tracker {
-  display: flex;
-  gap: 10px;
-  margin: 0;
-  padding: 0 0 22px;
-  list-style: none;
-}
-
-.wizard-tracker li {
-  display: flex;
-  flex: 1;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  padding-top: 10px;
-  border-top: 1px solid var(--color-border);
-  color: var(--color-faint);
-  font-size: var(--type-meta);
-  font-weight: 500;
-  letter-spacing: 0;
-  text-transform: none;
-}
-
-.wizard-tracker li.current {
-  border-top-color: var(--color-brand);
-  color: var(--color-text);
-}
-
-.wizard-tracker li.done {
-  border-top-color: var(--color-brand-soft);
-  color: var(--color-muted);
-}
-
-.wizard-dot {
-  display: grid;
-  flex: 0 0 auto;
-  width: 20px;
-  height: 20px;
-  place-items: center;
-  border: 1px solid currentColor;
-  font-size: 0.7rem;
-  font-weight: 500;
-  border-radius: 50%;
-}
-
-.wizard-tracker li.current .wizard-dot {
-  border-color: var(--color-brand);
-  background: var(--color-brand-soft);
-  color: var(--color-brand);
-}
-
-.wizard-tracker li.done .wizard-dot {
-  border-color: var(--color-brand);
-  background: var(--color-brand);
-  color: #fff;
-}
-
-.wizard-label {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.wizard-step-head h2 {
-  margin: 0 0 4px;
-  font-size: var(--type-dialog);
-  line-height: 1.75rem;
-}
-
-.wizard-step-head p {
-  margin: 0 0 14px;
-  color: var(--color-muted);
-  font-weight: 400;
-}
-
-.wizard-body {
-  display: grid;
-  gap: 14px;
-  min-height: 220px;
-  align-content: start;
-}
-
 .wizard-nav {
   display: flex;
   align-items: center;
   gap: 12px;
   margin-top: 6px;
-}
-
-.wizard-count {
-  margin-right: auto;
-  color: var(--color-faint);
-  font-size: 0.82rem;
-  font-weight: 500;
-  letter-spacing: 0;
 }
 
 .wizard-next {
@@ -2761,26 +2732,214 @@ img.avatar {
   font-weight: 500;
 }
 
-.suggestion-row {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
+.profile-backdrop {
+  background: #0c0c0e;
 }
 
-.suggestion-row button {
-  min-height: 30px;
-  padding: 0 10px;
-  border: 1px dashed var(--color-border-strong);
-  border-radius: 6px;
+.profile-backdrop .profile-modal {
+  width: min(440px, 100%);
+  max-height: calc(100dvh - 32px);
+  padding: 24px;
+  background: #141417;
+  border-color: rgb(255 255 255 / 0.08);
+  border-radius: 12px;
+  box-shadow: none;
+  color: #ececee;
+  font-size: 0.8125rem;
+}
+
+.profile-backdrop .modal-head {
+  position: static;
+  align-items: start;
+  padding: 0;
+  margin-bottom: 20px;
   background: transparent;
+}
+
+.profile-backdrop .modal-head h1 {
+  font-size: 1.25rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+.profile-backdrop .modal-head p {
+  margin: 4px 0 0;
+  color: #94949c;
+}
+
+.profile-form {
+  gap: 16px;
+}
+
+.profile-form :is(.tag-editor, .profile-channel-editor) {
+  display: grid;
+  gap: 6px;
+}
+
+.profile-form .profile-channel-editor > label {
+  display: block;
+}
+
+.profile-form :is(label > input, .tag-input, .profile-channel-search) {
+  min-height: 36px;
+  background: #0e0e11;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+}
+
+.profile-form label > input {
+  height: 36px;
+  padding: 0 10px;
+}
+
+.profile-form :is(.tag-input, .profile-channel-search):focus-within {
+  border-color: rgb(255 255 255 / 0.28);
+}
+
+.profile-form label > input:focus {
+  outline-color: rgb(255 255 255 / 0.56);
+  border-color: rgb(255 255 255 / 0.28);
+}
+
+.profile-form :is(.tag-input, .profile-channel-search) input {
+  min-height: 26px;
+  padding: 0;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  outline: none;
+  box-shadow: none;
+}
+
+.profile-form input::placeholder {
+  color: var(--color-faint);
+}
+
+.profile-form .tag-input {
+  gap: 4px;
+  padding: 4px 8px;
+}
+
+.profile-form .tag-input input {
+  flex-basis: 88px;
+}
+
+.profile-channel-search {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
   color: var(--color-muted);
-  font-size: 0.82rem;
+}
+
+.profile-channel-search input {
+  flex: 1;
+  min-width: 0;
+}
+
+.profile-channel-search .channel-results-popup {
+  max-height: 172px;
+  border-radius: 8px;
+}
+
+.profile-channel-search .channel-popup-item {
+  width: 100%;
+  min-height: 34px;
+  gap: 8px;
+  padding: 5px 8px;
   font-weight: 400;
 }
 
-.suggestion-row button:hover {
-  border-color: var(--color-brand);
-  color: var(--color-brand);
+.suggestion-row,
+.profile-channel-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.profile-form .tag-input button,
+.profile-channel-chips button,
+.suggestion-row button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  min-height: 24px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 400;
+}
+
+.profile-form .tag-input button,
+.profile-channel-chips button {
+  background: var(--color-surface-soft);
+  color: var(--color-text);
+}
+
+.profile-channel-chips button {
+  padding-inline-start: 3px;
+}
+
+.profile-channel-chips button > span:nth-child(2),
+.profile-form .tag-input button {
+  overflow-wrap: anywhere;
+}
+
+.suggestion-row button {
+  border: 1px solid var(--color-border);
+  color: var(--color-muted);
+}
+
+.suggestion-row button:hover,
+.profile-form .tag-input button:hover,
+.profile-channel-chips button:hover {
+  color: var(--color-text);
+  background: var(--color-surface-hi);
+}
+
+.profile-channel-avatar {
+  display: grid;
+  place-items: center;
+  position: relative;
+  width: 20px;
+  height: 20px;
+  flex: none;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--color-surface-hi);
+  color: var(--color-text);
+  font-size: 0.625rem;
+}
+
+.profile-channel-avatar img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.profile-list-return {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  justify-self: start;
+  color: var(--color-muted);
+  padding: 0;
+}
+
+.profile-form > .profile-create-button[type="submit"] {
+  min-height: 36px;
+  justify-content: center;
+  background: var(--color-text);
+  color: var(--color-page);
+  font-weight: 500;
+}
+
+.profile-form > .profile-create-button[type="submit"]:hover {
+  background: #fff;
 }
 
 .feed-build-status {
@@ -3004,20 +3163,8 @@ textarea:focus {
 
 .channel-popup-item:hover,
 .channel-popup-item.highlighted {
-  background: var(--color-brand-soft);
+  background: var(--color-surface-soft);
   color: var(--color-text);
-}
-
-.channel-popup-item.added {
-  opacity: 0.65;
-}
-
-.channel-popup-item img {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  object-fit: cover;
-  flex-shrink: 0;
 }
 
 .channel-popup-name {
@@ -3036,36 +3183,6 @@ textarea:focus {
   color: var(--color-muted);
   font-size: 0.88rem;
   font-weight: 500;
-}
-
-.channel-popup-status.empty {
-  justify-content: center;
-  text-align: center;
-}
-
-.channel-popup-spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid var(--color-brand-soft);
-  border-top-color: var(--color-brand);
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-  flex-shrink: 0;
-}
-
-.channel-avatar-fallback {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  background: var(--color-brand-soft);
-  color: var(--color-brand);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  font-weight: 500;
-  flex-shrink: 0;
-  user-select: none;
 }
 
 .setup-form > button[type="submit"] {
@@ -3778,30 +3895,6 @@ button.saved-chip.small {
   }
 }
 
-@media (max-width: 1200px) {
-  .topbar {
-    padding: 0 20px;
-    gap: 16px;
-  }
-
-  .section-tabs {
-    gap: 0;
-  }
-
-  .topbar {
-    grid-template-columns: auto max-content minmax(100px, 1fr) max-content;
-  }
-
-  /* Columns are driven by the grid's min track, so each breakpoint retunes one
-     variable instead of re-declaring a column count. */
-  .video-grid,
-  .more-grid {
-    --grid-min-col: 300px;
-    --grid-col-gap: 20px;
-  }
-
-}
-
 @media (max-width: 1024px) {
   .watch-layout {
     grid-template-columns: 1fr;
@@ -3827,20 +3920,12 @@ button.saved-chip.small {
     grid-column: 1 / -1;
   }
 
-  .topbar-actions {
-    gap: 8px;
-  }
-
   .topbar-actions .profile-menu {
     flex: 0 0 auto;
   }
 
   .topbar-actions .queue-topbar-button {
     flex: 0 0 auto;
-  }
-
-  body:has(.app-shell) {
-    --topbar-height: 64px;
   }
 
   .app-shell {
@@ -3851,21 +3936,10 @@ button.saved-chip.small {
     padding-bottom: calc(84px + env(safe-area-inset-bottom, 0px));
   }
 
-  .video-grid,
-  .more-grid {
-    --grid-min-col: 300px;
-    --grid-col-gap: 16px;
-    --grid-row-gap: 32px;
-  }
-
   .topbar {
-    grid-template-columns: auto minmax(140px, 1fr) max-content;
-    gap: 12px;
+    grid-template-columns: auto minmax(0, 1fr) max-content;
+    gap: 10px;
     padding: 0 14px;
-  }
-
-  .brand-button {
-    font-size: 1.25rem;
   }
 
   .desktop-tabs { display: none; }
@@ -3888,10 +3962,6 @@ button.saved-chip.small {
     -webkit-backdrop-filter: blur(16px);
     border-top: 1px solid var(--color-border);
     box-shadow: 0 -4px 24px rgba(0, 0, 0, 0.6);
-  }
-
-  .topbar-search {
-    height: 40px;
   }
 
   .topbar-actions .profile-button-name,
@@ -4004,6 +4074,14 @@ button.saved-chip.small {
   }
 }
 
+@media (pointer: coarse) {
+  .topbar-search,
+  .topbar-actions :is(.settings-button, .queue-topbar-button, .profile-button),
+  .profile-popover button {
+    min-height: 44px;
+  }
+}
+
 @media (max-width: 560px) {
   .topbar { gap: 8px; padding: 0 16px; }
   .topbar-actions { gap: 0; }
@@ -4013,10 +4091,6 @@ button.saved-chip.small {
   .topbar-actions .settings-button, .topbar-actions .profile-button { width: 44px; min-width: 44px; height: 44px; }
   .global-queue { max-height: calc(100dvh - var(--window-titlebar-height) - var(--topbar-height) - 90px - env(safe-area-inset-bottom, 0px)); }
   .modal-head { top: -16px; }
-  body:has(.app-shell) {
-    --topbar-height: 58px;
-  }
-
   .app-shell {
     width: calc(100% - 2 * var(--page-gutter));
     padding-top: calc(var(--window-titlebar-height) + var(--topbar-height) + var(--space-section));

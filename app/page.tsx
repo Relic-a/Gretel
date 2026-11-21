@@ -1,4 +1,5 @@
 import "./landing.css";
+import { spaceMono } from "./fonts/space-mono";
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
@@ -112,7 +113,7 @@ const tools = {
 
 export default function LandingPage() {
   return (
-    <div className="landing">
+    <div className={`landing ${spaceMono.variable}`}>
       <SiteHeader />
 
       <main>

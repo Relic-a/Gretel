@@ -1,4 +1,5 @@
 import "../landing.css";
+import { spaceMono } from "../fonts/space-mono";
 import type { Metadata } from "next";
 import Link from "next/link";
 
@@ -18,7 +19,7 @@ const EFFECTIVE_DATE = "September 19, 2026";
 
 export default function TermsPage() {
   return (
-    <div className="legal">
+    <div className={`legal ${spaceMono.variable}`}>
       <header className="legal-topbar">
         <Link className="site-brand" href="/" aria-label="Gretel home">
           <GretelMark size={24} />

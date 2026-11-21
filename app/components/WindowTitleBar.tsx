@@ -5,7 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { Minus, Square, X } from "lucide-react";
 import { useEffect, useState } from "react";
 
-export function WindowTitleBar() {
+export function WindowTitleBar({ inline = false }: { inline?: boolean }) {
   const [maximized, setMaximized] = useState(false);
 
   useEffect(() => {
@@ -56,7 +56,7 @@ export function WindowTitleBar() {
   }
 
   return (
-    <div className="window-titlebar" data-tauri-drag-region>
+    <div className={inline ? "window-titlebar window-titlebar-inline" : "window-titlebar"} data-tauri-drag-region>
       <div
         className="window-drag-region"
         data-tauri-drag-region
@@ -67,8 +67,10 @@ export function WindowTitleBar() {
         }}
         onDoubleClick={() => runWindowAction(() => getCurrentWindow().toggleMaximize())}
       >
-        <span className="window-app-mark" aria-hidden="true">G</span>
-        <span className="window-title">Gretel</span>
+        {!inline && <>
+          <span className="window-app-mark" aria-hidden="true">G</span>
+          <span className="window-title">Gretel</span>
+        </>}
       </div>
       <div className="window-controls" aria-label="Window controls">
         <button

@@ -1,6 +1,6 @@
-import { ArrowLeft, Plus, Trash2 } from "lucide-react";
+import { ArrowLeft, Plus, Search, Trash2, X } from "lucide-react";
 import { profileInitials } from "./profile-identity";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useId, useRef, useState } from "react";
 
 import type { ChannelResult, Profile, UserSettings } from "../types";
 import { normalize } from "./video-utils";
@@ -9,15 +9,13 @@ import { FeedBuildProgress } from "./FeedBuildProgress";
 import { useDialogFocus } from "./use-dialog-focus";
 import { usePopoverDismissal } from "./use-popover-dismissal";
 
-type StepId = "name" | "topics" | "channels" | "key";
-
 type ProfileModalProps = {
   manageProfiles: boolean;
   feedOpen: boolean;
   profiles: Profile[];
   profileName: string;
   tags: string[];
-  channels: string[];
+  channels: ChannelResult[];
   tagDraft: string;
   channelDraft: string;
   channelResults: ChannelResult[];
@@ -36,159 +34,87 @@ type ProfileModalProps = {
   onChannelDraftChange: (value: string) => void;
   onAddTag: (value: string) => void;
   onRemoveTag: (value: string) => void;
-  onAddChannel: (value: string) => void;
+  onAddChannel: (channel: ChannelResult) => void;
   onRemoveChannel: (value: string) => void;
   onDeleteProfile: (profileId: string) => void;
 };
 
-const stepCopy: Record<StepId, { title: string; help: string }> = {
-  name: {
-    title: "Name this profile",
-    help: "You can run several profiles side by side — one per project, mood, or person."
-  },
-  topics: {
-    title: "What are you into?",
-    help: "Add topics and Gretel will hunt for videos around them. You can add more later."
-  },
-  channels: {
-    title: "Any channels you already trust?",
-    help: "Optional. Channels you follow seed your feed with videos they publish."
-  },
-  key: {
-    title: "Connect OpenRouter",
-    help: "Gretel needs your API key to build the first feed. It stays on your machine."
-  }
-};
+function ChannelAvatar({ name, url }: { name: string; url?: string }) {
+  return (
+    <span className="profile-channel-avatar" aria-hidden="true">
+      {profileInitials(name).slice(0, 1)}
+      {url && <img src={url} alt="" onError={(event) => { event.currentTarget.hidden = true; }} />}
+    </span>
+  );
+}
 
 export function ProfileModal(props: ProfileModalProps) {
-  const steps = useMemo(() => {
-    const list: { id: StepId; label: string }[] = [
-      { id: "name", label: "Name" },
-      { id: "topics", label: "Topics" },
-      { id: "channels", label: "Channels" }
-    ];
-
-    if (props.needsOpenRouterKey) {
-      list.push({ id: "key", label: "API key" });
-    }
-
-    return list;
-  }, [props.needsOpenRouterKey]);
   const [creating, setCreating] = useState(!props.manageProfiles);
-  const [step, setStep] = useState(0);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
-  const [channelResultsOpen, setChannelResultsOpen] = useState(true);
+  const [channelResultsOpen, setChannelResultsOpen] = useState(false);
+  const channelId = useId();
+  const channelListId = `${channelId}-results`;
+  const showResults = channelResultsOpen && props.channelDraft.trim().length >= 2;
+  const nameRef = useRef<HTMLInputElement>(null);
   const channelInputRef = useRef<HTMLInputElement>(null);
   const channelEditorRef = useRef<HTMLDivElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
   useDialogFocus(dialogRef, props.feedOpen, props.onClose);
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
-      if (creating) dialogRef.current?.querySelector<HTMLInputElement>(".wizard-body input")?.focus();
+      if (props.loading && creating) dialogRef.current?.focus();
+      else if (creating) nameRef.current?.focus();
       else dialogRef.current?.querySelector<HTMLButtonElement>(".profile-list-head button")?.focus();
     });
     return () => window.cancelAnimationFrame(frame);
-  }, [creating, step]);
-  usePopoverDismissal(channelEditorRef, () => setChannelResultsOpen(false), channelResultsOpen);
+  }, [creating, props.loading]);
+  usePopoverDismissal(channelEditorRef, () => setChannelResultsOpen(false), showResults);
 
   useEffect(() => {
-    setStep((current) => Math.min(current, steps.length - 1));
-  }, [steps.length]);
-
-  useEffect(() => {
-    if (props.channelResults.length > 0) {
-      setHighlightedIndex(0);
-    } else {
-      setHighlightedIndex(-1);
-    }
+    setHighlightedIndex(props.channelResults.length > 0 ? 0 : -1);
   }, [props.channelResults]);
 
+  useEffect(() => {
+    if (showResults && highlightedIndex >= 0) {
+      document.getElementById(`${channelListId}-${highlightedIndex}`)?.scrollIntoView({ block: "nearest" });
+    }
+  }, [showResults, channelListId, highlightedIndex]);
+
+  function selectChannel(channel: ChannelResult) {
+    props.onAddChannel(channel);
+    setChannelResultsOpen(false);
+    channelInputRef.current?.focus();
+  }
+
   function handleChannelKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
-    if (props.channelResults.length === 0) {
+    if (event.nativeEvent.isComposing) return;
+    if (showResults && event.key === "Escape") {
+      event.preventDefault();
+      setChannelResultsOpen(false);
       return;
     }
-
-    if (event.key === "ArrowDown") {
+    if (event.key === "Enter") {
       event.preventDefault();
-      setHighlightedIndex((prev) => (prev + 1) % props.channelResults.length);
-    } else if (event.key === "ArrowUp") {
-      event.preventDefault();
-      setHighlightedIndex((prev) => (prev <= 0 ? props.channelResults.length - 1 : prev - 1));
-    } else if (event.key === "Enter") {
-      if (highlightedIndex >= 0 && highlightedIndex < props.channelResults.length) {
-        event.preventDefault();
-        const selected = props.channelResults[highlightedIndex];
-        props.onAddChannel(selected.name);
-        setHighlightedIndex(-1);
-      }
-    } else if (event.key === "Escape") {
-      event.preventDefault();
-      props.onChannelDraftChange("");
-      setHighlightedIndex(-1);
+      const selected = showResults ? props.channelResults[highlightedIndex] : undefined;
+      if (selected) selectChannel(selected);
+      return;
     }
-  }
-
-  const activeStep = steps[Math.min(step, steps.length - 1)];
-  const isLast = step === steps.length - 1;
-
-  function canContinue() {
-    if (activeStep.id === "name") {
-      return props.profileName.trim().length > 0;
-    }
-
-    if (activeStep.id === "key") {
-      return (
-        props.settings.openRouterApiKey === "set" ||
-        (props.settings.openRouterApiKey || "").trim().length > 0
-      );
-    }
-
-    return true;
-  }
-
-  function stepIsEmpty() {
-    if (activeStep.id === "topics") {
-      return props.tags.length === 0 && !props.tagDraft.trim();
-    }
-
-    if (activeStep.id === "channels") {
-      return props.channels.length === 0 && !props.channelDraft.trim();
-    }
-
-    return false;
-  }
-
-  function handleSubmit(event: FormEvent) {
+    const count = props.channelResults.length;
+    if (!count || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
     event.preventDefault();
-
-    if (props.loading) {
-      return;
-    }
-
-    if (!isLast) {
-      if (canContinue()) {
-        setStep(step + 1);
-      }
-      return;
-    }
-
-    props.onSubmit(event);
+    setChannelResultsOpen(true);
+    setHighlightedIndex((index) => {
+      if (!showResults || index < 0) return event.key === "ArrowDown" ? 0 : count - 1;
+      return (index + (event.key === "ArrowDown" ? 1 : count - 1)) % count;
+    });
   }
 
   const topicSuggestions = props.topicSuggestions.filter(
     (suggestion) => !props.tags.some((tag) => normalize(tag) === normalize(suggestion))
   );
-  const nextLabel = isLast
-    ? props.manageProfiles
-      ? "Add profile"
-      : "Create profile"
-    : stepIsEmpty()
-      ? "Skip"
-      : "Next";
-
   return (
     <div
-      className="modal-backdrop"
+      className="modal-backdrop profile-backdrop"
       onPointerDown={(event) => {
         if (props.feedOpen && event.target === event.currentTarget) props.onClose();
       }}
@@ -199,10 +125,14 @@ export function ProfileModal(props: ProfileModalProps) {
         role="dialog"
         aria-modal="true"
         aria-labelledby="profile-dialog-title"
+        aria-describedby={creating ? "profile-dialog-description" : undefined}
         tabIndex={-1}
       >
         <div className="modal-head">
-          <h1 id="profile-dialog-title">{props.manageProfiles && !creating ? "Manage profiles" : "Create a profile"}</h1>
+          <div>
+            <h1 id="profile-dialog-title">{creating ? "Create a feed" : "Manage profiles"}</h1>
+            {creating && <p id="profile-dialog-description">Pick a few topics or channels to seed your feed.</p>}
+          </div>
           {props.feedOpen && (
             <button type="button" className="icon-button" onClick={props.onClose}>
               Close
@@ -212,7 +142,7 @@ export function ProfileModal(props: ProfileModalProps) {
 
         {props.manageProfiles && !creating && (
           <div className="profile-list">
-            <div className="profile-list-head"><strong>Your profiles ({props.profiles.length})</strong><button type="button" className="action-button" onClick={() => { setStep(0); setCreating(true); }}><Plus size={16} aria-hidden="true" /> New profile</button></div>
+            <div className="profile-list-head"><strong>Your profiles ({props.profiles.length})</strong><button type="button" className="action-button" onClick={() => setCreating(true)}><Plus size={16} aria-hidden="true" /> New profile</button></div>
             <div className="profile-list-scroll">
             {props.profiles.map((profile) => (
               <div className="profile-row" key={profile.id}>
@@ -231,196 +161,145 @@ export function ProfileModal(props: ProfileModalProps) {
             variant="compact"
             profileName={props.profileName}
             tags={props.tags}
-            channels={props.channels}
+            channels={props.channels.map((channel) => channel.name)}
             loadingLabel={props.loadingLabel}
           />
         ) : (
-          <form onSubmit={handleSubmit} className="setup-form">
-            {props.manageProfiles && <button type="button" className="wizard-back" onClick={() => setCreating(false)}><ArrowLeft size={16} aria-hidden="true" /> Back to profiles</button>}
-            <ol className="wizard-tracker" aria-label="Setup steps">
-              {steps.map((entry, index) => (
-                <li
-                  key={entry.id}
-                  className={index < step ? "done" : index === step ? "current" : ""}
-                  aria-current={index === step ? "step" : undefined}
-                >
-                  <span className="wizard-dot" aria-hidden="true">
-                    {index < step ? "✓" : index + 1}
-                  </span>
-                  <span className="wizard-label">{entry.label}</span>
-                </li>
-              ))}
-            </ol>
+          <form onSubmit={props.onSubmit} className="setup-form profile-form">
+            {props.manageProfiles && (
+              <button type="button" className="profile-list-return" onClick={() => setCreating(false)}>
+                <ArrowLeft size={14} aria-hidden="true" /> All profiles
+              </button>
+            )}
+            <label>
+              <span>Name</span>
+              <input
+                ref={nameRef}
+                maxLength={60}
+                value={props.profileName}
+                onChange={(event) => props.onProfileNameChange(event.target.value)}
+                placeholder="e.g. Systems & AI"
+              />
+            </label>
 
-            <div className="wizard-body">
-              <div className="wizard-step-head">
-                <h2>{stepCopy[activeStep.id].title}</h2>
-                <p>{stepCopy[activeStep.id].help}</p>
+            <TagEditor
+              label="Topics"
+              values={props.tags}
+              draft={props.tagDraft}
+              setDraft={props.onTagDraftChange}
+              addValue={props.onAddTag}
+              removeValue={props.onRemoveTag}
+              placeholder="Add a topic"
+              suggestions={topicSuggestions}
+            />
+
+            <div ref={channelEditorRef} className="profile-channel-editor">
+              <label htmlFor={channelId}>Channels <small>(optional)</small></label>
+              <div className="profile-channel-search">
+                <Search size={15} aria-hidden="true" />
+                <input
+                  id={channelId}
+                  ref={channelInputRef}
+                  role="combobox"
+                  aria-autocomplete="list"
+                  aria-expanded={showResults}
+                  aria-controls={showResults ? channelListId : undefined}
+                  aria-activedescendant={showResults && props.channelResults[highlightedIndex] ? `${channelListId}-${highlightedIndex}` : undefined}
+                  autoComplete="off"
+                  maxLength={80}
+                  placeholder="Search YouTube channels..."
+                  value={props.channelDraft}
+                  onChange={(event) => {
+                    props.onChannelDraftChange(event.target.value);
+                    setChannelResultsOpen(true);
+                  }}
+                  onFocus={() => setChannelResultsOpen(true)}
+                  onBlur={() => setChannelResultsOpen(false)}
+                  onKeyDown={handleChannelKeyDown}
+                />
+                {showResults && (
+                  <div className="channel-results-popup">
+                    <div id={channelListId} role="listbox" aria-label="Channel search results">
+                      {props.channelResults.map((channel, index) => (
+                        <button
+                          id={`${channelListId}-${index}`}
+                          type="button"
+                          key={channel.id}
+                          tabIndex={-1}
+                          className={`channel-popup-item${index === highlightedIndex ? " highlighted" : ""}`}
+                          role="option"
+                          aria-selected={index === highlightedIndex}
+                          onMouseEnter={() => setHighlightedIndex(index)}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => selectChannel(channel)}
+                        >
+                          <ChannelAvatar name={channel.name} url={channel.thumbnailUrl} />
+                          <span className="channel-popup-name">{channel.name}</span>
+                        </button>
+                      ))}
+                    </div>
+                    {props.channelResults.length === 0 && (
+                      <div className="channel-popup-status" role="status">
+                        {props.isSearchingChannels ? "Searching YouTube channels..." : "No channels found."}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
+              {props.channels.length > 0 && (
+                <div className="profile-channel-chips">
+                  {props.channels.map((channel) => (
+                    <button type="button" key={channel.id} aria-label={`Remove ${channel.name}`} onClick={() => props.onRemoveChannel(channel.name)}>
+                      <ChannelAvatar name={channel.name} url={channel.thumbnailUrl} />
+                      <span>{channel.name}</span>
+                      <X size={12} aria-hidden="true" />
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
 
-              {activeStep.id === "name" && (
+            {props.needsOpenRouterKey && (
+              <>
                 <label>
-                  <span>Profile name</span>
+                  <span>OpenRouter API key</span>
                   <input
-                    autoFocus
-                    maxLength={60}
-                    value={props.profileName}
-                    onChange={(event) => props.onProfileNameChange(event.target.value)}
-                    placeholder="e.g. Systems design"
+                    type="password"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={props.settings.openRouterApiKey === "set" ? "" : props.settings.openRouterApiKey || ""}
+                    onChange={(event) =>
+                      props.onSettingsChange({
+                        ...props.settings,
+                        openRouterApiKey: event.target.value
+                      })
+                    }
+                    placeholder={props.settings.openRouterApiKey === "set" ? "API key already saved" : "sk-or-v1-..."}
                   />
                 </label>
-              )}
 
-              {activeStep.id === "topics" && (
-                <>
-                  <TagEditor
-                    label="Topics"
-                    helperText="Press Enter or comma after each topic. Click a tag to remove it."
-                    values={props.tags}
-                    draft={props.tagDraft}
-                    setDraft={props.onTagDraftChange}
-                    addValue={props.onAddTag}
-                    removeValue={props.onRemoveTag}
-                    placeholder="Add a topic"
-                    suggestions={topicSuggestions}
+                <label>
+                  <span>OpenRouter model</span>
+                  <small>Optional. Leave blank to use the default embedding model.</small>
+                  <input
+                    type="text"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={props.settings.openRouterModel || ""}
+                    onChange={(event) =>
+                      props.onSettingsChange({
+                        ...props.settings,
+                        openRouterModel: event.target.value
+                      })
+                    }
+                    placeholder="qwen/qwen3-embedding-8b"
                   />
-                </>
-              )}
+                </label>
+              </>
+            )}
 
-              {activeStep.id === "channels" && (
-                <TagEditor
-                  label="Subscriptions"
-                  helperText="Search for a channel, then click it to add it."
-                  values={props.channels}
-                  draft={props.channelDraft}
-                  setDraft={props.onChannelDraftChange}
-                  addValue={props.onAddChannel}
-                  removeValue={props.onRemoveChannel}
-                  placeholder="Search channel"
-                  inputRef={channelInputRef}
-                  containerRef={channelEditorRef}
-                  onFocus={() => setChannelResultsOpen(true)}
-                  onKeyDown={handleChannelKeyDown}
-                  dropdown={
-                    channelResultsOpen && props.channelDraft.trim().length >= 2 ? (
-                      <div className="channel-results-popup" role="listbox" aria-label="Channel search results">
-                        {props.channelResults.length > 0 ? (
-                          props.channelResults.map((channel, index) => {
-                            const isHighlighted = highlightedIndex === index;
-                            const isAdded = props.channels.some(
-                              (c) => normalize(c) === normalize(channel.name)
-                            );
-                            return (
-                              <button
-                                type="button"
-                                key={channel.id}
-                                className={`channel-popup-item ${isHighlighted ? "highlighted" : ""} ${isAdded ? "added" : ""}`}
-                                role="option"
-                                aria-selected={isHighlighted}
-                                onMouseEnter={() => setHighlightedIndex(index)}
-                                onMouseDown={(event) => event.preventDefault()}
-                                onClick={() => {
-                                  props.onAddChannel(channel.name);
-                                  setHighlightedIndex(-1);
-                                  channelInputRef.current?.focus();
-                                }}
-                              >
-                                {channel.thumbnailUrl ? (
-                                  <img
-                                    src={channel.thumbnailUrl}
-                                    alt=""
-                                    onError={(event) => {
-                                      event.currentTarget.style.display = "none";
-                                      const next = event.currentTarget.nextElementSibling;
-                                      if (next instanceof HTMLElement && next.classList.contains("channel-avatar-fallback")) {
-                                        next.style.display = "flex";
-                                      }
-                                    }}
-                                  />
-                                ) : null}
-                                <span
-                                  className="channel-avatar-fallback"
-                                  style={{ display: channel.thumbnailUrl ? "none" : "flex" }}
-                                  aria-hidden="true"
-                                >
-                                  {channel.name.trim().charAt(0).toUpperCase()}
-                                </span>
-                                <span className="channel-popup-name">{channel.name}</span>
-                              </button>
-                            );
-                          })
-                        ) : props.isSearchingChannels ? (
-                          <div className="channel-popup-status">
-                            <span className="channel-popup-spinner" />
-                            <span>Searching YouTube channels...</span>
-                          </div>
-                        ) : (
-                          <div className="channel-popup-status empty">
-                            <span>No channels found for &ldquo;{props.channelDraft.trim()}&rdquo;</span>
-                          </div>
-                        )}
-                      </div>
-                    ) : null
-                  }
-                />
-              )}
-
-              {activeStep.id === "key" && (
-                <>
-                  <label>
-                    <span>OpenRouter API key</span>
-                    <input
-                      autoFocus
-                      type="password"
-                      autoComplete="off"
-                      spellCheck={false}
-                      value={props.settings.openRouterApiKey === "set" ? "" : props.settings.openRouterApiKey || ""}
-                      onChange={(event) =>
-                        props.onSettingsChange({
-                          ...props.settings,
-                          openRouterApiKey: event.target.value
-                        })
-                      }
-                      placeholder={props.settings.openRouterApiKey === "set" ? "API key already saved" : "sk-or-v1-..."}
-                    />
-                  </label>
-
-                  <label>
-                    <span>OpenRouter model</span>
-                    <small>Optional. Leave blank to use the default embedding model.</small>
-                    <input
-                      type="text"
-                      autoComplete="off"
-                      spellCheck={false}
-                      value={props.settings.openRouterModel || ""}
-                      onChange={(event) =>
-                        props.onSettingsChange({
-                          ...props.settings,
-                          openRouterModel: event.target.value
-                        })
-                      }
-                      placeholder="qwen/qwen3-embedding-8b"
-                    />
-                  </label>
-                </>
-              )}
-            </div>
-
-            <div className="wizard-nav">
-              <span className="wizard-count">
-                {step + 1} / {steps.length}
-              </span>
-              {step > 0 && (
-                <button type="button" className="secondary-button" onClick={() => setStep(step - 1)}>
-                  Back
-                </button>
-              )}
-              <button type="submit" className="wizard-next" disabled={!canContinue()}>
-                {nextLabel}
-              </button>
-            </div>
-
-            {props.error && <p className="error">{props.error}</p>}
+            {props.error && <p className="error" role="alert">{props.error}</p>}
+            <button type="submit" className="action-button profile-create-button">Create feed</button>
           </form>
         ))}
       </section>

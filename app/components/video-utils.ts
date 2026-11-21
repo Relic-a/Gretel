@@ -81,7 +81,7 @@ export function formatCardMeta(video: FeedVideo) {
       ? new Intl.DateTimeFormat(undefined, { dateStyle: "medium" }).format(video.publishedAt)
       : "";
 
-  return [published, formatViewCount(video.viewCount)].filter(Boolean).join(" · ");
+  return [formatViewCount(video.viewCount), published].filter(Boolean).join(" · ");
 }
 
 /** How far you got, as a percentage for the resume bar. 0 hides the bar. */
