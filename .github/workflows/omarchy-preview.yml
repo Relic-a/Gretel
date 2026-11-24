@@ -1,0 +1,74 @@
+name: Build Omarchy preview
+
+on:
+  push:
+    branches: [gretel-lite-desktop]
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    name: Build Linux input package
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          shared-key: release-linux
+          cache-workspace-crates: true
+      - name: Install Linux packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev gstreamer1.0-plugins-base gstreamer1.0-plugins-good gstreamer1.0-plugins-bad gstreamer1.0-libav
+      - run: npm ci
+      - name: Build Debian package for repackaging
+        run: |
+          npm run tauri -- build --target x86_64-unknown-linux-gnu --bundles deb --config '{"bundle":{"createUpdaterArtifacts":false}}'
+          node -p '"v" + require("./package.json").version' > version.txt
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Gretel-Linux
+          path: |
+            version.txt
+            src-tauri/target/x86_64-unknown-linux-gnu/release/bundle/deb/*.deb
+          if-no-files-found: error
+
+  arch:
+    name: Package Arch from Linux artifact
+    needs: linux
+    runs-on: ubuntu-latest
+    container: archlinux:base-devel
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v8
+        with:
+          name: Gretel-Linux
+          path: linux-artifacts
+      - name: Build Arch package
+        shell: bash
+        run: |
+          mapfile -t debs < <(find linux-artifacts -type f -name '*.deb')
+          test "${#debs[@]}" -eq 1
+          useradd --create-home builder
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+          runuser -u builder -- bash scripts/package-arch-release.sh "$(cat linux-artifacts/version.txt)" "${debs[0]}" "$GITHUB_WORKSPACE/arch-package"
+      - name: Verify Arch package and install marker
+        shell: bash
+        run: |
+          packages=(arch-package/*-x86_64.pkg.tar.zst)
+          test "${#packages[@]}" -eq 1
+          pacman --query --file "${packages[0]}"
+          bsdtar -tf "${packages[0]}" | grep -Fxq 'usr/bin/gretel'
+          bsdtar -tf "${packages[0]}" | grep -Fxq 'usr/lib/Gretel/.arch-package'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Gretel-Arch
+          path: arch-package/*-x86_64.pkg.tar.zst
+          if-no-files-found: error
